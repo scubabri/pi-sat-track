@@ -4,6 +4,7 @@
   "description": "Minimal hello-world for nginx proxy test",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   }
 }

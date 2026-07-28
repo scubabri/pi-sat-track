@@ -3,76 +3,127 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pi Sat Track – Blue Marble</title>
+  <title>Pi Sat Track</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-        crossorigin=""/>
-
-  <style>
-    html, body, #map {
-      height: 100%;
-      margin: 0;
-      padding: 0;
-      background: #000;
-    }
-    .leaflet-control-attribution {
-      background: rgba(0,0,0,0.65) !important;
-      color: #ccc !important;
-      font-size: 11px;
-    }
-    .leaflet-control-attribution a { color: #8cf !important; }
-  </style>
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <div id="map"></div>
+
+  <!-- TOP BAR -->
+  <header id="topbar">
+    <div id="sat-name">RS-44</div>
+
+    <div id="pass-status">
+      <div class="status-dot yellow"></div>
+      <span>Next AOS in</span>
+      <span id="countdown">00:42:17</span>
+    </div>
+
+    <div id="top-controls">
+      <button class="btn" id="btn-radio">Radio</button>
+      <button class="btn" id="btn-antenna">Antenna</button>
+
+      <div id="config-wrapper">
+        <button class="btn btn-icon" id="btn-config" title="Configuration">⚙</button>
+
+        <div id="config-panel">
+          <h3>Station Configuration</h3>
+
+          <div class="form-row">
+            <label for="cfg-callsign">Callsign</label>
+            <input type="text" id="cfg-callsign" placeholder="N0CALL" maxlength="10">
+          </div>
+
+          <div class="form-row">
+            <label for="cfg-grid">Gridsquare</label>
+            <input type="text" id="cfg-grid" placeholder="DN40" maxlength="8">
+          </div>
+
+          <div class="form-row">
+            <label for="cfg-elev">Elevation (m)</label>
+            <input type="number" id="cfg-elev" placeholder="1324" step="1">
+          </div>
+
+          <!-- Future config items will go here -->
+
+          <div id="config-actions">
+            <button class="btn" id="btn-center-grid">Center Map</button>
+            <button class="btn active" id="btn-save-config">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <div id="main">
+    <div id="map-container">
+      <div id="map"></div>
+    </div>
+
+    <aside id="sidebar">
+      <section class="panel-section">
+        <h3>Next Pass</h3>
+        <div class="pass-row"><span class="label">AOS</span><span class="value">14:32:05 UTC</span></div>
+        <div class="pass-row"><span class="label">LOS</span><span class="value">14:44:51 UTC</span></div>
+        <div class="pass-row"><span class="label">Max Elev</span><span class="value">47.2°</span></div>
+        <div class="pass-row"><span class="label">Duration</span><span class="value">12m 46s</span></div>
+      </section>
+
+      <section class="panel-section">
+        <h3>Frequencies</h3>
+        <div class="freq-block">
+          <div class="freq-label">Uplink (LSB)</div>
+          <div class="freq-value uplink">145.960.000</div>
+        </div>
+        <div class="freq-block">
+          <div class="freq-label">Downlink (USB)</div>
+          <div class="freq-value downlink">435.640.000</div>
+        </div>
+        <div class="fine-tune">
+          <button class="btn">−</button>
+          <input type="text" value="100" readonly>
+          <span class="unit">Hz</span>
+          <button class="btn">+</button>
+        </div>
+      </section>
+
+      <section class="panel-section">
+        <h3>Controls</h3>
+        <div class="toggle-row">
+          <span class="toggle-label">Radio (TCI)</span>
+          <label class="switch">
+            <input type="checkbox" id="toggle-radio">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">Antenna (Rotor)</span>
+          <label class="switch">
+            <input type="checkbox" id="toggle-antenna">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel-section">
+        <h3>Status</h3>
+        <div class="status-item"><span class="label">TCI</span><span>Disconnected</span></div>
+        <div class="status-item"><span class="label">Rotor AZ</span><span>—</span></div>
+        <div class="status-item"><span class="label">Rotor EL</span><span>—</span></div>
+        <div class="status-item"><span class="label">TLE age</span><span>—</span></div>
+      </section>
+    </aside>
+  </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-          crossorigin=""></script>
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
-  <script>
-    const map = L.map('map', {
-      center: [20, 0],
-      zoom: 2,
-      minZoom: 1,
-      maxZoom: 8,
-      worldCopyJump: true
-    });
-
-    // Primary: NASA GIBS Blue Marble (Shaded Relief + Bathymetry)
-    const blueMarble = L.tileLayer(
-      'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/' +
-      'BlueMarble_ShadedRelief_Bathymetry/default/' +
-      'GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg',
-      {
-        attribution: 'Imagery © <a href="https://earthdata.nasa.gov/gibs">NASA GIBS</a> / Blue Marble',
-        maxZoom: 8,
-        tileSize: 256,
-        errorTileUrl: ''   // prevents broken-image icons
-      }
-    );
-
-    // Reliable fallback (looks very similar)
-    const esriWorld = L.tileLayer(
-      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      {
-        attribution: 'Tiles © Esri',
-        maxZoom: 19
-      }
-    );
-
-    // Try Blue Marble first; fall back if tiles fail
-    blueMarble.addTo(map);
-
-    blueMarble.on('tileerror', function() {
-      // Once we get an error we switch to the reliable layer
-      if (map.hasLayer(blueMarble)) {
-        map.removeLayer(blueMarble);
-        esriWorld.addTo(map);
-        console.log('Switched to Esri World Imagery fallback');
-      }
-    });
-  </script>
+  <script src="js/maidenhead.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>
