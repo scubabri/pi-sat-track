@@ -1,5 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   initMap();
+  initRadar();
+  initProfile();
   initConfig();
 
   // Apply saved gridsquare after a short delay so the map is fully ready

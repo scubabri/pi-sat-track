@@ -59,10 +59,24 @@
 
   <!-- MAIN -->
   <div id="main">
-    <div id="map-container">
-      <div id="map"></div>
+    <!-- Left column: map + radar + pass profile -->
+    <div id="left-column">
+      <div id="map-container">
+        <div id="map"></div>
+
+        <!-- Polar radar (upper left) -->
+        <div id="radar">
+          <canvas id="radar-canvas" width="220" height="220"></canvas>
+        </div>
+      </div>
+
+      <!-- Pass elevation profile (bottom) -->
+      <div id="pass-profile">
+        <canvas id="profile-canvas"></canvas>
+      </div>
     </div>
 
+    <!-- Right sidebar -->
     <aside id="sidebar">
       <section class="panel-section">
         <h3>Next Pass</h3>
@@ -123,6 +137,8 @@
 
   <script src="js/maidenhead.js"></script>
   <script src="js/map.js"></script>
+  <script src="js/radar.js"></script>
+  <script src="js/profile.js"></script>
   <script src="js/config.js"></script>
   <script src="js/app.js"></script>
 </body>
