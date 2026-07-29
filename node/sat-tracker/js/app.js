@@ -1,22 +1,31 @@
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener("DOMContentLoaded", () => {
   initMap();
   initRadar();
   initProfile();
   initConfig();
 
-  // Apply saved gridsquare after a short delay so the map is fully ready
+  if (typeof initTimeToggle === "function") initTimeToggle();
+  if (typeof initSatSelector === "function") initSatSelector();
+
   setTimeout(() => {
     applySavedGrid();
   }, 300);
 
-  // Simple button toggles (placeholder)
-  document.getElementById('btn-radio').addEventListener('click', function () {
-    this.classList.toggle('active');
-    document.getElementById('toggle-radio').checked = this.classList.contains('active');
+  if (typeof connectTracker === "function") {
+    connectTracker();
+  } else {
+    console.error("connectTracker is not defined – check js/tracker.js");
+  }
+
+  document.getElementById("btn-radio").addEventListener("click", function () {
+    this.classList.toggle("active");
+    document.getElementById("toggle-radio").checked =
+      this.classList.contains("active");
   });
 
-  document.getElementById('btn-antenna').addEventListener('click', function () {
-    this.classList.toggle('active');
-    document.getElementById('toggle-antenna').checked = this.classList.contains('active');
+  document.getElementById("btn-antenna").addEventListener("click", function () {
+    this.classList.toggle("active");
+    document.getElementById("toggle-antenna").checked =
+      this.classList.contains("active");
   });
 });

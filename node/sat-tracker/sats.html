@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Select Satellite – Pi Sat Track</title>
+    <link rel="stylesheet" href="css/style.css" />
+    <style>
+      body {
+        overflow: auto;
+      }
+      #picker {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 24px 16px 48px;
+      }
+      #picker h1 {
+        font-size: 1.4rem;
+        margin-bottom: 8px;
+      }
+      #picker .meta {
+        color: var(--text-dim);
+        font-size: 0.85rem;
+        margin-bottom: 16px;
+      }
+      #filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 16px;
+        align-items: center;
+      }
+      #filters input[type="search"] {
+        flex: 1;
+        min-width: 180px;
+        background: #0d1117;
+        border: 1px solid var(--border);
+        color: var(--text);
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 0.95rem;
+      }
+      #filters .btn.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      #sat-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+      }
+      #sat-table th {
+        text-align: left;
+        color: var(--text-dim);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border);
+      }
+      #sat-table td {
+        padding: 8px 10px;
+        border-bottom: 1px solid #21262d;
+        vertical-align: middle;
+      }
+      #sat-table tr {
+        cursor: pointer;
+      }
+      #sat-table tr:hover td {
+        background: #21262d;
+      }
+      #sat-table tr.heard td:first-child {
+        color: var(--green);
+        font-weight: 600;
+      }
+      .badge {
+        display: inline-block;
+        font-size: 0.7rem;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: #21262d;
+        color: var(--text-dim);
+      }
+      .badge.heard {
+        background: rgba(63, 185, 80, 0.2);
+        color: var(--green);
+      }
+      .badge.active {
+        background: rgba(88, 166, 255, 0.15);
+        color: var(--accent);
+      }
+      .freq {
+        font-variant-numeric: tabular-nums;
+        color: var(--text-dim);
+        font-size: 0.85rem;
+      }
+      a.back {
+        color: var(--accent);
+        text-decoration: none;
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="picker">
+      <p><a class="back" href="/">← Back to tracker</a></p>
+      <h1>Select satellite</h1>
+      <p class="meta" id="meta">Loading catalog…</p>
+
+      <div id="filters">
+        <input
+          type="search"
+          id="search"
+          placeholder="Search name or NORAD…"
+          autocomplete="off"
+        />
+        <button type="button" class="btn active" data-filter="all">
+          All trackable
+        </button>
+        <button type="button" class="btn" data-filter="heard">
+          Heard (AMSAT)
+        </button>
+        <button type="button" class="btn" data-filter="active">
+          JE9PEL active
+        </button>
+      </div>
+
+      <table id="sat-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>NORAD</th>
+            <th>Mode</th>
+            <th>Uplink</th>
+            <th>Downlink</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="sat-body"></tbody>
+      </table>
+    </div>
+
+    <script>
+      let allSats = [];
+      let filter = "all";
+      let query = "";
+
+      async function load() {
+        const res = await fetch("/api/sats?filter=trackable");
+        const data = await res.json();
+        allSats = data.satellites || [];
+        document.getElementById("meta").textContent =
+          `${data.count} trackable · ${data.catalogNote} · ${data.statusNote}`;
+        render();
+      }
+
+      function render() {
+        const q = query.trim().toLowerCase();
+        const body = document.getElementById("sat-body");
+        body.innerHTML = "";
+
+        const rows = allSats.filter((s) => {
+          if (filter === "heard" && !s.heard) return false;
+          if (filter === "active" && s.status !== "active") return false;
+          if (!q) return true;
+          return (
+            s.name.toLowerCase().includes(q) ||
+            String(s.norad).includes(q) ||
+            (s.mode || "").toLowerCase().includes(q)
+          );
+        });
+
+        for (const s of rows) {
+          const tr = document.createElement("tr");
+          if (s.heard) tr.classList.add("heard");
+          tr.innerHTML = `
+          <td>${escapeHtml(s.name)}
+            ${s.heard ? '<span class="badge heard">heard</span>' : ""}
+            ${s.status === "active" ? '<span class="badge active">active</span>' : ""}
+          </td>
+          <td>${s.norad}</td>
+          <td>${escapeHtml(s.mode || "—")}</td>
+          <td class="freq">${escapeHtml(s.uplink || "—")}</td>
+          <td class="freq">${escapeHtml(s.downlink || "—")}</td>
+          <td>${escapeHtml(s.status || "—")}</td>
+        `;
+          tr.addEventListener("click", () => {
+            localStorage.setItem("satTrackerSat", s.key);
+            location.href = "/";
+          });
+          body.appendChild(tr);
+        }
+      }
+
+      function escapeHtml(s) {
+        return String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      document.getElementById("search").addEventListener("input", (e) => {
+        query = e.target.value;
+        render();
+      });
+
+      document.querySelectorAll("#filters .btn[data-filter]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          document
+            .querySelectorAll("#filters .btn[data-filter]")
+            .forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          filter = btn.dataset.filter;
+          render();
+        });
+      });
+
+      load().catch((err) => {
+        document.getElementById("meta").textContent =
+          "Failed to load: " + err.message;
+      });
+    </script>
+  </body>
+</html>
