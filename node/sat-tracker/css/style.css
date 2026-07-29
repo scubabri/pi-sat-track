@@ -390,3 +390,161 @@ input:checked + .slider:before {
 .sat-option.heard {
   color: var(--green);
 }
+.sat-option.sat-browse {
+  display: block;
+  text-decoration: none;
+  color: var(--accent);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  padding-bottom: 10px;
+}
+
+/* Horizon / timing colors */
+.sat-option.sat-up {
+  color: var(--green); /* above horizon */
+}
+.sat-option.sat-soon {
+  color: #f0883e; /* orange: AOS within 15 min */
+}
+.sat-option.sat-down {
+  color: var(--accent); /* blue: below horizon */
+}
+
+.sat-option.sat-up.active,
+.sat-option.sat-soon.active,
+.sat-option.sat-down.active {
+  font-weight: 600;
+  text-decoration: underline;
+}
+.sat-option.sat-browse {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  text-decoration: none;
+  color: var(--accent);
+  background: rgba(88, 166, 255, 0.08);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 0 0 8px 0;
+  padding: 10px 12px;
+  font-weight: 600;
+  text-align: left;
+}
+.sat-option.sat-browse:hover {
+  background: rgba(88, 166, 255, 0.18);
+}
+
+.sat-menu-section {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  margin: 4px 0 6px;
+  padding: 0 4px;
+}
+
+.sat-menu-empty {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  padding: 8px;
+}
+
+.sat-option.sat-up {
+  color: var(--green);
+}
+.sat-option.sat-soon {
+  color: #f0883e;
+}
+.sat-option.sat-down {
+  color: var(--accent);
+}
+.sat-option.active {
+  font-weight: 600;
+  text-decoration: underline;
+}
+/* --- Sat selector dropdown --- */
+#sat-selector {
+  position: relative;
+  z-index: 3000;
+}
+
+#sat-menu {
+  position: absolute;
+  top: calc(100% + 10px); /* clear the topbar button */
+  left: 0;
+  min-width: 280px;
+  max-width: min(920px, 92vw);
+  max-height: 70vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  z-index: 3000;
+  padding: 12px;
+  background: #161b22;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+}
+
+/* Topbar must not clip the dropdown */
+#topbar {
+  overflow: visible;
+  position: relative;
+  z-index: 2000;
+}
+
+.sat-option.sat-browse {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  text-decoration: none;
+  color: var(--accent);
+  background: rgba(88, 166, 255, 0.08);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 0 0 10px 0;
+  padding: 10px 12px;
+  font-weight: 600;
+  text-align: left;
+}
+.sat-option.sat-browse:hover {
+  background: rgba(88, 166, 255, 0.18);
+}
+
+.sat-menu-section {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  margin: 4px 0 8px;
+  padding: 0 2px;
+}
+
+/* Chip row under the section header */
+#sat-menu .sat-option:not(.sat-browse) {
+  display: inline-block;
+  margin: 0 6px 6px 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #0d1117;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.sat-option.sat-up {
+  color: var(--green);
+}
+.sat-option.sat-soon {
+  color: #f0883e;
+}
+.sat-option.sat-down {
+  color: var(--accent);
+}
+.sat-option.active {
+  font-weight: 600;
+  outline: 1px solid var(--accent);
+}
+
+.status-dot.orange {
+  background: #f0883e;
+}

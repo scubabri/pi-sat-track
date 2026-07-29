@@ -1,11 +1,13 @@
 let ws = null;
 let reconnectTimer = null;
+let countdownTimer = null;
 
 let timeMode = localStorage.getItem("satTrackerTimeMode") || "utc";
 let lastPass = null;
 let currentSatKey = localStorage.getItem("satTrackerSat") || null;
 let currentSatLabel = null;
 let lastSatList = null;
+let lastStateSat = null;
 
 function getObserverFromConfig() {
   const cfg = loadConfig();
@@ -37,16 +39,12 @@ function sendObserver() {
 function setSatButtonLabel(label) {
   currentSatLabel = label;
   const btn = document.getElementById("sat-name");
-  if (btn) btn.textContent = (label || "—") + " ▾";
+  if (btn) btn.textContent = (label || "-") + " \u25BE";
   document.querySelectorAll(".sat-option[data-sat]").forEach((el) => {
     el.classList.toggle("active", el.dataset.sat === currentSatKey);
   });
 }
 
-/**
- * Quick menu: heard first, then a few active, always include current.
- * Full list lives on /sats.html
- */
 function renderSatMenu(payload) {
   const menu = document.getElementById("sat-menu");
   if (!menu) return;
@@ -54,28 +52,23 @@ function renderSatMenu(payload) {
   lastSatList = payload;
   const sats = payload.satellites || [];
 
-  // Keep browse link + section header; rebuild the rest
-  const browse = menu.querySelector(".sat-browse");
-  const section = menu.querySelector(".sat-menu-section");
   menu.innerHTML = "";
-  if (browse) menu.appendChild(browse);
-  else {
-    const a = document.createElement("a");
-    a.className = "sat-option sat-browse";
-    a.href = "/sats.html";
-    a.textContent = "Browse all satellites…";
-    menu.appendChild(a);
-  }
-  if (section) menu.appendChild(section);
-  else {
-    const head = document.createElement("div");
-    head.className = "sat-menu-section";
-    head.textContent = "Heard / active";
-    menu.appendChild(head);
-  }
 
+  // Browse full catalog — always first, distinct from chips
+  const browse = document.createElement("a");
+  browse.className = "sat-option sat-browse";
+  browse.href = "/sats.html";
+  browse.textContent = "Browse full catalog...";
+  browse.title = "Search all JE9PEL satellites";
+  menu.appendChild(browse);
+
+  const head = document.createElement("div");
+  head.className = "sat-menu-section";
+  head.textContent = "Heard on AMSAT";
+  menu.appendChild(head);
+
+  // ONLY AMSAT-heard (plus current). Do NOT dump JE9PEL "active".
   const heard = sats.filter((s) => s.heard);
-  const active = sats.filter((s) => !s.heard && s.status === "active");
   const quick = [];
   const seen = new Set();
 
@@ -85,42 +78,52 @@ function renderSatMenu(payload) {
     quick.push(s);
   }
 
-  // Current first if known
-  if (currentSatKey) {
-    add(sats.find((s) => s.key === currentSatKey));
-  }
+  if (currentSatKey) add(sats.find((s) => s.key === currentSatKey));
+  heard.filter((s) => s.above).forEach(add);
+  heard.filter((s) => s.soon && !s.above).forEach(add);
   heard.forEach(add);
-  active.slice(0, 12).forEach(add);
 
-  // Cap quick list
-  const shown = quick.slice(0, 20);
+  if (quick.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "sat-menu-empty";
+    empty.textContent = "No AMSAT reports loaded";
+    menu.appendChild(empty);
+  }
 
-  shown.forEach((s) => {
+  quick.slice(0, 30).forEach((s) => {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "sat-option" + (s.key === currentSatKey ? " active" : "");
-    if (s.heard) btn.classList.add("heard");
+    btn.className = "sat-option";
+    if (s.key === currentSatKey) btn.classList.add("active");
+
+    if (s.above) btn.classList.add("sat-up");
+    else if (s.soon) btn.classList.add("sat-soon");
+    else btn.classList.add("sat-down");
+
+    btn.classList.add("heard");
     btn.dataset.sat = s.key;
     btn.textContent = s.name;
-    btn.title = `${s.name}  (NORAD ${s.norad})` + (s.heard ? " · heard" : "");
+    let tip = s.name + "  (NORAD " + s.norad + ")";
+    if (s.above) tip += " - above horizon";
+    else if (s.soon) tip += " - AOS < 15 min";
+    else tip += " - heard (AMSAT)";
+    btn.title = tip;
     btn.addEventListener("click", () => selectSatellite(s.key, s.name));
     menu.appendChild(btn);
   });
 
   const statusCat = document.getElementById("status-catalog");
   if (statusCat) {
-    const n = sats.length;
-    statusCat.textContent = `${n} · ${payload.catalogNote || "?"}`;
+    statusCat.textContent = sats.length + " - " + (payload.catalogNote || "?");
   }
 
-  // Sync label from list
   if (currentSatKey) {
     const match = sats.find((s) => s.key === currentSatKey);
     if (match) setSatButtonLabel(match.name);
     else if (!currentSatLabel) setSatButtonLabel(currentSatKey);
-  } else if (shown.length) {
-    currentSatKey = shown[0].key;
-    setSatButtonLabel(shown[0].name);
+  } else if (quick.length) {
+    currentSatKey = quick[0].key;
+    setSatButtonLabel(quick[0].name);
   }
 }
 
@@ -128,6 +131,7 @@ function selectSatellite(key, label) {
   currentSatKey = key;
   setSatButtonLabel(label || key);
   localStorage.setItem("satTrackerSat", key);
+  lastPass = null;
 
   const menu = document.getElementById("sat-menu");
   if (menu) menu.hidden = true;
@@ -139,7 +143,7 @@ function selectSatellite(key, label) {
 
 function connectTracker() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  const url = `${proto}://${location.host}/ws`;
+  const url = proto + "://" + location.host + "/ws";
 
   console.log("Connecting to", url);
   ws = new WebSocket(url);
@@ -169,15 +173,22 @@ function connectTracker() {
       if (msg.type !== "state") return;
 
       if (msg.sat) {
+        if (msg.sat !== lastStateSat) {
+          lastPass = null;
+          lastStateSat = msg.sat;
+        }
         currentSatKey = msg.sat;
         setSatButtonLabel(msg.display || msg.sat);
       }
 
-      // Frequencies from catalog
       const ul = document.getElementById("freq-ul");
       const dl = document.getElementById("freq-dl");
-      if (ul) ul.textContent = msg.uplink || "—";
-      if (dl) dl.textContent = msg.downlink || "—";
+      if (ul) ul.textContent = msg.uplink || "-";
+      if (dl) dl.textContent = msg.downlink || "-";
+
+      const labels = document.querySelectorAll(".freq-block .freq-label");
+      if (labels[0] && msg.ulLabel) labels[0].textContent = msg.ulLabel;
+      if (labels[1] && msg.dlLabel) labels[1].textContent = msg.dlLabel;
 
       updateMapTracking(msg);
 
@@ -196,7 +207,7 @@ function connectTracker() {
   };
 
   ws.onclose = () => {
-    console.log("Tracker WebSocket closed – reconnecting in 2s");
+    console.log("Tracker WebSocket closed - reconnecting in 2s");
     clearTimeout(reconnectTimer);
     reconnectTimer = setTimeout(connectTracker, 2000);
   };
@@ -234,61 +245,112 @@ function toggleTimeMode() {
   renderPassTimes();
 }
 
+function formatCountdown(sec) {
+  if (sec < 0 || !Number.isFinite(sec)) return "-";
+  sec = Math.floor(sec);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) {
+    return (
+      String(h).padStart(2, "0") +
+      ":" +
+      String(m).padStart(2, "0") +
+      ":" +
+      String(s).padStart(2, "0")
+    );
+  }
+  return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+}
+
+function tickCountdown() {
+  const countdownEl = document.getElementById("countdown");
+  const labelEl = document.getElementById("pass-label");
+  const dot = document.querySelector("#pass-status .status-dot");
+  if (!countdownEl) return;
+
+  if (!lastPass || !lastPass.aos || !lastPass.los) {
+    if (labelEl) labelEl.textContent = "Next AOS in";
+    countdownEl.textContent = "-";
+    if (dot) dot.className = "status-dot";
+    return;
+  }
+
+  const now = Date.now();
+  const aosMs = new Date(lastPass.aos).getTime();
+  const losMs = new Date(lastPass.los).getTime();
+  const secToAos = (aosMs - now) / 1000;
+  const secToLos = (losMs - now) / 1000;
+
+  if (secToAos > 0) {
+    if (labelEl) labelEl.textContent = "Next AOS in";
+    countdownEl.textContent = formatCountdown(secToAos);
+    if (dot) {
+      dot.className =
+        "status-dot " +
+        (secToAos > 1800 ? "green" : secToAos > 300 ? "orange" : "red");
+    }
+  } else if (secToLos > 0) {
+    if (labelEl) labelEl.textContent = "LOS in";
+    countdownEl.textContent = formatCountdown(secToLos);
+    if (dot) dot.className = "status-dot red";
+  } else {
+    lastPass = null;
+    if (labelEl) labelEl.textContent = "Next AOS in";
+    countdownEl.textContent = "-";
+    if (dot) dot.className = "status-dot";
+  }
+}
+
+function startCountdownTimer() {
+  if (countdownTimer) clearInterval(countdownTimer);
+  tickCountdown();
+  countdownTimer = setInterval(tickCountdown, 1000);
+}
+
 function updateSidebar(state) {
   const tleEl = document.getElementById("status-tle");
-  if (tleEl) tleEl.textContent = state.tleNote || "—";
+  if (tleEl) tleEl.textContent = state.tleNote || "-";
 
   if (state.passes && state.passes.length) {
     const p = state.passes[0];
-    lastPass = p;
+    const now = Date.now();
+
+    const needLock =
+      !lastPass ||
+      lastPass.sat !== state.sat ||
+      now > new Date(lastPass.los).getTime() + 2000 ||
+      Math.abs(new Date(p.aos).getTime() - new Date(lastPass.aos).getTime()) >
+        120000;
+
+    if (needLock) {
+      lastPass = {
+        sat: state.sat,
+        aos: p.aos,
+        los: p.los,
+        maxEl: p.maxEl,
+        aosAz: p.aosAz,
+      };
+    }
+
     renderPassTimes();
 
     const maxEl = document.getElementById("pass-maxel");
     const durEl = document.getElementById("pass-duration");
-    if (maxEl) maxEl.textContent = p.maxEl.toFixed(1) + "°";
+    if (maxEl)
+      maxEl.textContent = (lastPass.maxEl || p.maxEl).toFixed(1) + " deg";
 
     if (durEl) {
-      const aos = new Date(p.aos);
-      const los = new Date(p.los);
+      const aos = new Date(lastPass.aos);
+      const los = new Date(lastPass.los);
       const durSec = (los - aos) / 1000;
       const durMin = Math.floor(durSec / 60);
       const durS = Math.floor(durSec % 60);
-      durEl.textContent = `${durMin}m ${durS}s`;
+      durEl.textContent = durMin + "m " + durS + "s";
     }
 
-    const now = Date.now();
-    const secToAos = (new Date(p.aos).getTime() - now) / 1000;
-    const secToLos = (new Date(p.los).getTime() - now) / 1000;
-    const countdownEl = document.getElementById("countdown");
-    const dot = document.querySelector("#pass-status .status-dot");
-
-    if (countdownEl) {
-      if (secToAos > 0) {
-        countdownEl.textContent = formatCountdown(secToAos);
-        if (dot) {
-          dot.className =
-            "status-dot " +
-            (secToAos > 1800 ? "green" : secToAos > 300 ? "yellow" : "red");
-        }
-      } else if (secToLos > 0) {
-        countdownEl.textContent = "LOS " + formatCountdown(secToLos);
-        if (dot) dot.className = "status-dot red";
-      } else {
-        countdownEl.textContent = "—";
-      }
-    }
+    tickCountdown();
   }
-}
-
-function formatCountdown(sec) {
-  if (sec < 0) return "—";
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = Math.floor(sec % 60);
-  if (h > 0) {
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  }
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 function notifyObserverChanged() {
@@ -316,4 +378,10 @@ function initSatSelector() {
       menu.hidden = true;
     }
   });
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", startCountdownTimer);
+} else {
+  startCountdownTimer();
 }

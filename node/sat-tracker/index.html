@@ -14,7 +14,6 @@
     <link rel="stylesheet" href="css/style.css" />
   </head>
   <body>
-    <!-- TOP BAR -->
     <header id="topbar">
       <div id="sat-selector">
         <button
@@ -23,21 +22,20 @@
           class="sat-name-btn"
           title="Select satellite"
         >
-          — ▾
+          - ▾
         </button>
         <div id="sat-menu" class="sat-menu" hidden>
           <a class="sat-option sat-browse" href="/sats.html"
-            >Browse all satellites…</a
+            >Browse all satellites...</a
           >
           <div class="sat-menu-section">Heard / active</div>
-          <!-- filled dynamically -->
         </div>
       </div>
 
       <div id="pass-status">
         <div class="status-dot yellow"></div>
-        <span>Next AOS in</span>
-        <span id="countdown">—</span>
+        <span id="pass-label">Next AOS in</span>
+        <span id="countdown">-</span>
       </div>
 
       <div id="top-controls">
@@ -46,7 +44,7 @@
 
         <div id="config-wrapper">
           <button class="btn btn-icon" id="btn-config" title="Configuration">
-            ⚙
+            &#9881;
           </button>
 
           <div id="config-panel">
@@ -86,17 +84,14 @@
       </div>
     </header>
 
-    <!-- MAIN -->
     <div id="main">
       <div id="left-column">
         <div id="map-container">
           <div id="map"></div>
-
           <div id="radar">
             <canvas id="radar-canvas" width="220" height="220"></canvas>
           </div>
         </div>
-
         <div id="pass-profile">
           <canvas id="profile-canvas"></canvas>
         </div>
@@ -107,34 +102,34 @@
           <h3>Next Pass</h3>
           <div class="pass-row">
             <span class="label">AOS</span>
-            <span class="value time-toggle" id="pass-aos">—</span>
+            <span class="value time-toggle" id="pass-aos">-</span>
           </div>
           <div class="pass-row">
             <span class="label">LOS</span>
-            <span class="value time-toggle" id="pass-los">—</span>
+            <span class="value time-toggle" id="pass-los">-</span>
           </div>
           <div class="pass-row">
             <span class="label">Max Elev</span>
-            <span class="value" id="pass-maxel">—</span>
+            <span class="value" id="pass-maxel">-</span>
           </div>
           <div class="pass-row">
             <span class="label">Duration</span>
-            <span class="value" id="pass-duration">—</span>
+            <span class="value" id="pass-duration">-</span>
           </div>
         </section>
 
         <section class="panel-section">
           <h3>Frequencies</h3>
           <div class="freq-block">
-            <div class="freq-label">Uplink</div>
-            <div class="freq-value uplink" id="freq-ul">—</div>
+            <div class="freq-label">Uplink (LSB)</div>
+            <div class="freq-value uplink" id="freq-ul">-</div>
           </div>
           <div class="freq-block">
-            <div class="freq-label">Downlink</div>
-            <div class="freq-value downlink" id="freq-dl">—</div>
+            <div class="freq-label">Downlink (USB)</div>
+            <div class="freq-value downlink" id="freq-dl">-</div>
           </div>
           <div class="fine-tune">
-            <button class="btn" id="btn-fine-minus">−</button>
+            <button class="btn" id="btn-fine-minus">-</button>
             <input type="text" id="fine-step" value="100" readonly />
             <span class="unit">Hz</span>
             <button class="btn" id="btn-fine-plus">+</button>
@@ -165,16 +160,16 @@
             <span class="label">TCI</span><span>Disconnected</span>
           </div>
           <div class="status-item">
-            <span class="label">Rotor AZ</span><span>—</span>
+            <span class="label">Rotor AZ</span><span>-</span>
           </div>
           <div class="status-item">
-            <span class="label">Rotor EL</span><span>—</span>
+            <span class="label">Rotor EL</span><span>-</span>
           </div>
           <div class="status-item">
-            <span class="label">TLE age</span><span id="status-tle">—</span>
+            <span class="label">TLE age</span><span id="status-tle">-</span>
           </div>
           <div class="status-item">
-            <span class="label">Catalog</span><span id="status-catalog">—</span>
+            <span class="label">Catalog</span><span id="status-catalog">-</span>
           </div>
         </section>
       </aside>

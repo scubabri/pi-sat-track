@@ -33,12 +33,12 @@ const mime = {
   ".json": "application/json",
 };
 
-/** @type {Record<string, object>} key → sat */
 let CATALOG = {};
 let catalogNote = "not loaded";
-/** @type {Set<string>} normalized names heard recently on AMSAT status */
+/** base name (norm) -> true if any AMSAT status row reported activity */
 let ACTIVE = new Set();
 let statusNote = "not loaded";
+const satrecCache = new Map();
 
 function ensureCacheDir() {
   if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
@@ -50,16 +50,57 @@ function norm(s) {
     .replace(/[^A-Z0-9]/g, "");
 }
 
+/** Extract designator like AO-7, RS-44, SO-50, FO-29 from a free-form name */
+function designator(name) {
+  const m = String(name || "").match(/\b([A-Z]{1,4})[\s-]?(\d{1,3}[A-Z]?)\b/i);
+  if (!m) return null;
+  return (m[1] + "-" + m[2]).toUpperCase();
+}
+
 function makeKey(name, norad) {
-  const m = String(name).match(/\b([A-Z]{1,4}[\s-]?\d{1,3}[A-Z]?)\b/i);
-  if (m) {
-    return m[1]
-      .toUpperCase()
-      .replace(/([A-Z]+)[\s-]*(\d+)/i, (_, a, d) => a + "-" + d)
-      .replace(/--+/g, "-");
-  }
-  if (norad) return `N${norad}`;
+  const d = designator(name);
+  if (d) return d;
+  if (norad) return "N" + norad;
   return norm(name).slice(0, 16) || "UNKNOWN";
+}
+
+function centerFreqMHz(field) {
+  if (!field || !String(field).trim()) return null;
+  const s = String(field).trim();
+  const primary = s.split(/[\/]/)[0].trim();
+
+  const range = primary.match(/(\d+\.?\d*)\s*[-–]\s*(\d+\.?\d*)/);
+  if (range) {
+    const a = parseFloat(range[1]);
+    const b = parseFloat(range[2]);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    return ((a + b) / 2).toFixed(3);
+  }
+
+  const single = primary.match(/(\d+\.\d+)/);
+  if (single) return parseFloat(single[1]).toFixed(3);
+  return null;
+}
+
+function isFmMode(mode) {
+  if (!mode) return false;
+  const m = mode.toUpperCase();
+  if (/\bFM\b/.test(m)) return true;
+  if (/CTCSS/.test(m)) return true;
+  return false;
+}
+
+function formatFreqDisplay(sat) {
+  const ul = centerFreqMHz(sat.uplink);
+  const dl = centerFreqMHz(sat.downlink);
+  const fm = isFmMode(sat.mode);
+  return {
+    uplink: ul || "-",
+    downlink: dl || "-",
+    ulLabel: fm ? "Uplink (FM)" : "Uplink (LSB)",
+    dlLabel: fm ? "Downlink (FM)" : "Downlink (USB)",
+    isFm: fm,
+  };
 }
 
 async function fetchText(url) {
@@ -67,16 +108,12 @@ async function fetchText(url) {
     headers: { "User-Agent": "sat-tracker/0.1" },
     signal: AbortSignal.timeout(25000),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) throw new Error("HTTP " + res.status);
   return res.text();
 }
 
-/**
- * JE9PEL CSV columns (semicolon):
- * name;norad;uplink;downlink;beacon;mode;callsign;status
- */
 function parseJe9pelCsv(text) {
-  const byNorad = new Map(); // norad → best entry
+  const byNorad = new Map();
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith("#")) continue;
@@ -95,7 +132,6 @@ function parseJe9pelCsv(text) {
     const callsign = (parts[6] || "").trim();
     const status = (parts[7] || "").trim().toLowerCase();
 
-    // Prefer rows with a valid NORAD; merge modes onto same norad
     const entry = {
       name,
       norad: Number.isFinite(norad) ? norad : null,
@@ -113,20 +149,25 @@ function parseJe9pelCsv(text) {
       if (!prev) {
         byNorad.set(entry.norad, entry);
       } else {
-        // Keep richest mode/freq info
-        if (mode && !prev.mode.includes(mode)) {
-          prev.mode = [prev.mode, mode].filter(Boolean).join(", ");
+        const prevHasBand =
+          prev.uplink && prev.downlink && prev.uplink.includes("-");
+        const newHasBand = uplink && downlink && uplink.includes("-");
+        if (newHasBand && !prevHasBand) {
+          prev.uplink = uplink;
+          prev.downlink = downlink;
+          prev.mode = mode || prev.mode;
+        } else {
+          if (mode && prev.mode && !prev.mode.includes(mode)) {
+            prev.mode = [prev.mode, mode].filter(Boolean).join(", ");
+          } else if (mode && !prev.mode) {
+            prev.mode = mode;
+          }
+          if (uplink && !prev.uplink) prev.uplink = uplink;
+          if (downlink && !prev.downlink) prev.downlink = downlink;
         }
-        if (uplink && !prev.uplink) prev.uplink = uplink;
-        if (downlink && !prev.downlink) prev.downlink = downlink;
         if (status === "active") prev.status = "active";
-        // Prefer shorter common name (AO-91 over long form)
         if (name.length < prev.name.length) prev.name = name;
       }
-    } else {
-      // No NORAD — still list, but not trackable until resolved
-      const k = makeKey(name, 0);
-      entry.key = k;
     }
   }
 
@@ -135,36 +176,44 @@ function parseJe9pelCsv(text) {
     const key = makeKey(entry.name, entry.norad);
     entry.key = key;
     entry.display = entry.name;
-    // Trackable only with NORAD
     entry.trackable = !!entry.norad;
     catalog[key] = entry;
   }
   return catalog;
 }
 
-/** AMSAT status: names like AO-123_[FM], cells with report counts */
+/**
+ * AMSAT status rows: AO-73_[U/v], ISS_[FM], CAS-2T_[TLM], ...
+ * Any mode (active OR TLM/beacon) counts as heard for the base name.
+ */
 function parseAmsatStatus(html) {
   const active = new Set();
-  // Links/text: AO-73_[U/v], RS-44_[V/u], ISS_[FM]
-  const re = />([A-Z0-9][A-Z0-9\-]{1,20})_\[[^\]]+\]</gi;
+  const re = /([A-Za-z0-9][A-Za-z0-9\-]{0,24})_\[([^\]]+)\]/g;
   let m;
   while ((m = re.exec(html)) !== null) {
-    active.add(norm(m[1]));
-  }
-  // Also plain designators in table first column
-  const re2 = />([A-Z]{1,4}-?\d{1,3}[A-Z]?)_\[/gi;
-  while ((m = re2.exec(html)) !== null) {
-    active.add(norm(m[1]));
+    const base = m[1].trim();
+    if (!base || base.length < 2) continue;
+    active.add(norm(base));
+    const d = designator(base);
+    if (d) active.add(norm(d));
   }
   return active;
 }
 
+/**
+ * Strict heard check — exact normalized name/key/designator only.
+ * No substring includes() (that caused "Out of the Box", CatSat, etc.).
+ */
 function isHeard(sat) {
-  const n = norm(sat.display || sat.name || sat.key);
-  if (ACTIVE.has(n)) return true;
-  // Partial: RS44 vs RS-44
-  for (const a of ACTIVE) {
-    if (n.includes(a) || a.includes(n)) return true;
+  const candidates = new Set();
+  candidates.add(norm(sat.display));
+  candidates.add(norm(sat.name));
+  candidates.add(norm(sat.key));
+  const d = designator(sat.display || sat.name || sat.key);
+  if (d) candidates.add(norm(d));
+
+  for (const n of candidates) {
+    if (n && ACTIVE.has(n)) return true;
   }
   return false;
 }
@@ -183,18 +232,21 @@ async function refreshCatalog() {
     CATALOG = catalog;
     catalogNote = payload.note;
     console.log(
-      `Catalog: ${Object.keys(CATALOG).length} sats – ${catalogNote}`,
+      "Catalog: " + Object.keys(CATALOG).length + " sats - " + catalogNote,
     );
   } catch (e) {
     if (fs.existsSync(CATALOG_CACHE)) {
       const payload = JSON.parse(fs.readFileSync(CATALOG_CACHE, "utf8"));
       CATALOG = payload.satellites || {};
-      catalogNote = `cache ${payload.fetched_at} (${e.message})`;
+      catalogNote = "cache " + payload.fetched_at + " (" + e.message + ")";
       console.log(
-        `Catalog from cache: ${Object.keys(CATALOG).length} – ${catalogNote}`,
+        "Catalog from cache: " +
+          Object.keys(CATALOG).length +
+          " - " +
+          catalogNote,
       );
     } else {
-      catalogNote = `empty (${e.message})`;
+      catalogNote = "empty (" + e.message + ")";
       console.error("Catalog failed:", e.message);
     }
   }
@@ -212,19 +264,75 @@ async function refreshStatus() {
     };
     fs.writeFileSync(STATUS_CACHE, JSON.stringify(payload));
     ACTIVE = set;
-    statusNote = `${set.size} heard – ${payload.note}`;
-    console.log(`Status: ${statusNote}`);
+    statusNote = set.size + " heard - " + payload.note;
+    console.log("Status: " + statusNote + " -> " + [...set].sort().join(", "));
   } catch (e) {
     if (fs.existsSync(STATUS_CACHE)) {
       const payload = JSON.parse(fs.readFileSync(STATUS_CACHE, "utf8"));
       ACTIVE = new Set(payload.names || []);
-      statusNote = `cache ${payload.fetched_at} (${e.message})`;
-      console.log(`Status from cache: ${ACTIVE.size}`);
+      statusNote = "cache " + payload.fetched_at + " (" + e.message + ")";
+      console.log("Status from cache: " + ACTIVE.size);
     } else {
-      statusNote = `empty (${e.message})`;
+      statusNote = "empty (" + e.message + ")";
       console.error("Status failed:", e.message);
     }
   }
+}
+
+function getSatrecForNorad(norad) {
+  if (satrecCache.has(norad)) return satrecCache.get(norad);
+  const tlePath = path.join(CACHE_DIR, "tle_" + norad + ".txt");
+  try {
+    if (fs.existsSync(tlePath)) {
+      const lines = fs
+        .readFileSync(tlePath, "utf8")
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+      let l1, l2;
+      if (lines[0].startsWith("1 ")) {
+        l1 = lines[0];
+        l2 = lines[1];
+      } else {
+        l1 = lines[1];
+        l2 = lines[2];
+      }
+      const rec = satellite.twoline2satrec(l1, l2);
+      satrecCache.set(norad, rec);
+      return rec;
+    }
+  } catch (_) {}
+  return null;
+}
+
+function horizonFlags(norad) {
+  const rec = getSatrecForNorad(norad);
+  if (!rec) return { above: false, soon: false, el: null, secToAos: null };
+
+  const now = new Date();
+  const look = lookAngles(rec, observer, now);
+  const el = look ? look.el : null;
+  const above = el != null && el >= 0;
+  if (above) return { above: true, soon: false, el, secToAos: 0 };
+
+  const step = 30;
+  let prev = el;
+  let secToAos = null;
+  for (let s = step; s <= 15 * 60; s += step) {
+    const look2 = lookAngles(rec, observer, new Date(now.getTime() + s * 1000));
+    if (!look2) continue;
+    if (prev != null && prev < 0 && look2.el >= 0) {
+      secToAos = s;
+      break;
+    }
+    prev = look2.el;
+  }
+  return {
+    above: false,
+    soon: secToAos != null && secToAos <= 15 * 60,
+    el,
+    secToAos,
+  };
 }
 
 function listSatsPayload(filter) {
@@ -236,18 +344,34 @@ function listSatsPayload(filter) {
     if (filter === "trackable" && (st === "re-entered" || st === "failure"))
       continue;
 
-    rows.push({
+    const freqs = formatFreqDisplay(s);
+    const heard = isHeard(s);
+    const row = {
       key: s.key,
       name: s.display || s.name,
       norad: s.norad,
-      uplink: s.uplink,
-      downlink: s.downlink,
+      uplink: freqs.uplink,
+      downlink: freqs.downlink,
       mode: s.mode,
       status: s.status,
-      heard: isHeard(s),
-    });
+      heard,
+      isFm: freqs.isFm,
+      above: false,
+      soon: false,
+    };
+
+    if (heard || s.status === "active") {
+      const h = horizonFlags(s.norad);
+      row.above = h.above;
+      row.soon = h.soon;
+      row.el = h.el;
+    }
+
+    rows.push(row);
   }
   rows.sort((a, b) => {
+    if (a.above !== b.above) return a.above ? -1 : 1;
+    if (a.soon !== b.soon) return a.soon ? -1 : 1;
     if (a.heard !== b.heard) return a.heard ? -1 : 1;
     if ((a.status === "active") !== (b.status === "active")) {
       return a.status === "active" ? -1 : 1;
@@ -264,16 +388,19 @@ function listSatsPayload(filter) {
 
 async function fetchTLE(norad) {
   ensureCacheDir();
-  const tlePath = path.join(CACHE_DIR, `tle_${norad}.txt`);
-  const metaPath = path.join(CACHE_DIR, `tle_${norad}.meta.json`);
+  const tlePath = path.join(CACHE_DIR, "tle_" + norad + ".txt");
+  const metaPath = path.join(CACHE_DIR, "tle_" + norad + ".meta.json");
 
   try {
-    const url = `https://celestrak.org/NORAD/elements/gp.php?CATNR=${norad}&FORMAT=TLE`;
+    const url =
+      "https://celestrak.org/NORAD/elements/gp.php?CATNR=" +
+      norad +
+      "&FORMAT=TLE";
     const res = await fetch(url, {
       headers: { "User-Agent": "sat-tracker/0.1" },
       signal: AbortSignal.timeout(12000),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw new Error("HTTP " + res.status);
     const text = (await res.text()).trim();
     const lines = text
       .split(/\r?\n/)
@@ -282,7 +409,7 @@ async function fetchTLE(norad) {
 
     let name, l1, l2;
     if (lines[0].startsWith("1 ")) {
-      name = `NORAD ${norad}`;
+      name = "NORAD " + norad;
       l1 = lines[0];
       l2 = lines[1];
     } else {
@@ -291,7 +418,7 @@ async function fetchTLE(norad) {
       l2 = lines[2];
     }
 
-    fs.writeFileSync(tlePath, `${name}\n${l1}\n${l2}\n`);
+    fs.writeFileSync(tlePath, name + "\n" + l1 + "\n" + l2 + "\n");
     fs.writeFileSync(
       metaPath,
       JSON.stringify({
@@ -313,16 +440,16 @@ async function fetchTLE(norad) {
           const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
           const then = new Date(meta.fetched_at);
           const secs = Math.floor((Date.now() - then.getTime()) / 1000);
-          if (secs < 3600) age = `${Math.floor(secs / 60)}m`;
-          else if (secs < 86400) age = `${Math.floor(secs / 3600)}h`;
-          else age = `${Math.floor(secs / 86400)}d`;
-        } catch {}
+          if (secs < 3600) age = Math.floor(secs / 60) + "m";
+          else if (secs < 86400) age = Math.floor(secs / 3600) + "h";
+          else age = Math.floor(secs / 86400) + "d";
+        } catch (_) {}
       }
       return {
         name: lines[0],
         l1: lines[1],
         l2: lines[2],
-        note: `TLE cache age ${age}`,
+        note: "TLE cache age " + age,
       };
     }
     throw err;
@@ -389,35 +516,69 @@ function buildForwardTrack(satrec, now, orbits, stepSec) {
 function findPasses(satrec, observer, now, minEl, hours, stepSec) {
   const passes = [];
   const end = new Date(now.getTime() + hours * 3600 * 1000);
-  let prevEl = null,
-    aosTime = null,
-    aosAz = null,
-    maxEl = minEl;
+  const lookbackMs = 20 * 60 * 1000;
+  const start = new Date(now.getTime() - lookbackMs);
 
-  for (let t = now.getTime(); t <= end.getTime(); t += stepSec * 1000) {
+  let prevEl = null;
+  let aosTime = null;
+  let aosAz = null;
+  let maxEl = minEl;
+
+  for (let t = start.getTime(); t <= end.getTime(); t += stepSec * 1000) {
     const date = new Date(t);
     const look = lookAngles(satrec, observer, date);
     if (!look) continue;
     const el = look.el;
+
     if (prevEl !== null) {
       if (prevEl < minEl && el >= minEl) {
         aosTime = date;
         aosAz = look.az;
         maxEl = el;
       } else if (prevEl >= minEl && el < minEl && aosTime) {
-        passes.push({
-          aos: aosTime.toISOString(),
-          los: date.toISOString(),
-          maxEl,
-          aosAz,
-        });
-        if (passes.length >= 2) break;
+        if (date.getTime() >= now.getTime() - stepSec * 1000) {
+          passes.push({
+            aos: aosTime.toISOString(),
+            los: date.toISOString(),
+            maxEl,
+            aosAz,
+          });
+          if (passes.length >= 2) break;
+        }
         aosTime = null;
-      } else if (aosTime && el > maxEl) maxEl = el;
+        maxEl = minEl;
+      } else if (aosTime && el > maxEl) {
+        maxEl = el;
+      }
     }
     prevEl = el;
   }
-  return passes;
+
+  if (aosTime && passes.length < 2) {
+    const lookEnd = lookAngles(satrec, observer, end);
+    if (lookEnd && lookEnd.el >= minEl) {
+      passes.push({
+        aos: aosTime.toISOString(),
+        los: end.toISOString(),
+        maxEl: Math.max(maxEl, lookEnd.el),
+        aosAz,
+      });
+    }
+  }
+
+  passes.sort((a, b) => new Date(a.aos) - new Date(b.aos));
+
+  const currentIdx = passes.findIndex((p) => {
+    const aos = new Date(p.aos).getTime();
+    const los = new Date(p.los).getTime();
+    return aos <= now.getTime() && los >= now.getTime();
+  });
+  if (currentIdx > 0) {
+    const cur = passes.splice(currentIdx, 1)[0];
+    passes.unshift(cur);
+  }
+
+  return passes.slice(0, 2);
 }
 
 function passSkyPath(satrec, observer, aosIso, losIso, stepSec) {
@@ -443,12 +604,25 @@ let observer = {
 async function loadSatellite(key) {
   const info = CATALOG[key];
   if (!info || !info.norad)
-    throw new Error(`Unknown or non-trackable sat: ${key}`);
+    throw new Error("Unknown or non-trackable sat: " + key);
   currentSatKey = key;
+  console.log(
+    "Catalog freqs for",
+    key,
+    ":",
+    info.uplink,
+    "/",
+    info.downlink,
+    "mode:",
+    info.mode,
+  );
   const tle = await fetchTLE(info.norad);
   satrec = satellite.twoline2satrec(tle.l1, tle.l2);
+  satrecCache.set(info.norad, satrec);
   tleNote = tle.note;
-  console.log(`Loaded ${info.display || key} (${info.norad}) – ${tleNote}`);
+  console.log(
+    "Loaded " + (info.display || key) + " (" + info.norad + ") - " + tleNote,
+  );
 }
 
 function pickDefaultKey() {
@@ -488,12 +662,16 @@ function computeState() {
   }));
 
   const info = CATALOG[currentSatKey] || {};
+  const freqs = formatFreqDisplay(info);
+
   return {
     type: "state",
     sat: currentSatKey,
     display: info.display || info.name || currentSatKey,
-    uplink: info.uplink || "",
-    downlink: info.downlink || "",
+    uplink: freqs.uplink,
+    downlink: freqs.downlink,
+    ulLabel: freqs.ulLabel,
+    dlLabel: freqs.dlLabel,
     mode: info.mode || "",
     tleNote,
     catalogNote,
@@ -531,7 +709,7 @@ const server = http.createServer((req, res) => {
   fs.readFile(filePath, (err, data) => {
     if (err) {
       res.writeHead(404, { "Content-Type": "text/plain" });
-      return res.end(`Not found: ${urlPath}`);
+      return res.end("Not found: " + urlPath);
     }
     const ext = path.extname(filePath).toLowerCase();
     res.writeHead(200, {
@@ -548,7 +726,9 @@ server.on("upgrade", (req, socket, head) => {
     wss.handleUpgrade(req, socket, head, (ws) =>
       wss.emit("connection", ws, req),
     );
-  } else socket.destroy();
+  } else {
+    socket.destroy();
+  }
 });
 
 wss.on("connection", (ws) => {
@@ -609,7 +789,7 @@ setInterval(() => {
   const key = pickDefaultKey();
   if (key) await loadSatellite(key);
   server.listen(PORT, "0.0.0.0", () => {
-    console.log(`Sat Tracker  http://127.0.0.1:${PORT}`);
+    console.log("Sat Tracker  http://127.0.0.1:" + PORT);
   });
 })().catch((err) => {
   console.error(err);
