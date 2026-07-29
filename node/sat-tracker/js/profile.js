@@ -1,150 +1,270 @@
-let profileCanvas, profileCtx;
+let profileCanvas = null;
+let profileCtx = null;
+
+let lockedSky = null;
+let lockedAos = null;
+let lockedLos = null;
+let lockedPassKey = null;
+let lockedName = "";
+let lockedMaxEl = 10;
+let lockedSat = null;
 
 function initProfile() {
-  profileCanvas = document.getElementById('profile-canvas');
+  profileCanvas = document.getElementById("profile-canvas");
   if (!profileCanvas) return;
-
-  // Make canvas resolution match its display size
-  const rect = profileCanvas.parentElement.getBoundingClientRect();
-  profileCanvas.width  = rect.width;
-  profileCanvas.height = rect.height;
-
-  profileCtx = profileCanvas.getContext('2d');
-
-  // Draw a placeholder pass so the panel isn’t empty
-  drawPlaceholderProfile();
-
-  // Redraw on resize
-  window.addEventListener('resize', () => {
-    const r = profileCanvas.parentElement.getBoundingClientRect();
-    profileCanvas.width  = r.width;
-    profileCanvas.height = r.height;
-    drawPlaceholderProfile();
-  });
+  profileCtx = profileCanvas.getContext("2d");
+  resizeProfile();
+  window.addEventListener("resize", resizeProfile);
+  drawProfileEmpty();
 }
 
-/**
- * Placeholder elevation profile (looks like the classic pass plot)
- * Later this will be driven by real pass data.
- */
-function drawPlaceholderProfile() {
-  const ctx = profileCtx;
-  const w = profileCanvas.width;
-  const h = profileCanvas.height;
+function resizeProfile() {
+  if (!profileCanvas) return;
+  const parent = profileCanvas.parentElement;
+  if (!parent) return;
+  const w = parent.clientWidth;
+  const h = parent.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  profileCanvas.width = Math.max(1, Math.floor(w * dpr));
+  profileCanvas.height = Math.max(1, Math.floor(h * dpr));
+  profileCanvas.style.width = w + "px";
+  profileCanvas.style.height = h + "px";
+  profileCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  redrawCurrent();
+}
 
-  ctx.clearRect(0, 0, w, h);
+function drawProfileEmpty() {
+  if (!profileCtx || !profileCanvas) return;
+  const w = profileCanvas.clientWidth;
+  const h = profileCanvas.clientHeight;
+  profileCtx.clearRect(0, 0, w, h);
+  profileCtx.fillStyle = "#8b949e";
+  profileCtx.font = "12px sans-serif";
+  profileCtx.textAlign = "center";
+  profileCtx.fillText("Pass elevation profile", w / 2, h / 2);
+}
 
-  // Padding
-  const padL = 48;   // left (elevation labels)
+function makePassKey(sat, aos) {
+  const t = new Date(aos).getTime();
+  if (!Number.isFinite(t)) return String(sat || "") + "|na";
+  const bucket = Math.round(t / 180000) * 180000;
+  return String(sat || "") + "|" + bucket;
+}
+
+function clearLock() {
+  lockedSky = null;
+  lockedAos = null;
+  lockedLos = null;
+  lockedPassKey = null;
+  lockedName = "";
+  lockedMaxEl = 10;
+  lockedSat = null;
+}
+
+function clearProfileLock() {
+  clearLock();
+  drawProfileEmpty();
+}
+
+function snapshotSky(sky) {
+  const out = [];
+  for (let i = 0; i < sky.length; i++) {
+    const p = sky[i];
+    if (!p) continue;
+    const az = Number(p.az);
+    const el = Number(p.el);
+    if (!Number.isFinite(az) || !Number.isFinite(el)) continue;
+    out.push({ az: az, el: el });
+  }
+  return out;
+}
+
+function redrawCurrent(look) {
+  if (!lockedSky || lockedSky.length < 2) {
+    drawProfileEmpty();
+    return;
+  }
+  drawFixedProfile(lockedSky, lockedMaxEl, lockedName, look || null);
+}
+
+function drawFixedProfile(sky, maxElHint, name, look) {
+  if (!profileCtx || !profileCanvas) return;
+
+  const w = profileCanvas.clientWidth;
+  const h = profileCanvas.clientHeight;
+  const padL = 40;
   const padR = 16;
-  const padT = 28;   // top (azimuth labels)
-  const padB = 20;
-
+  const padT = 16;
+  const padB = 24;
   const plotW = w - padL - padR;
   const plotH = h - padT - padB;
 
-  // Background
-  ctx.fillStyle = '#161b22';
-  ctx.fillRect(0, 0, w, h);
+  profileCtx.clearRect(0, 0, w, h);
 
-  // Grid lines (horizontal elevation)
-  ctx.strokeStyle = 'rgba(48, 54, 61, 0.8)';
-  ctx.lineWidth = 1;
-  ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-  ctx.fillStyle = 'rgba(139, 148, 158, 0.9)';
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
+  let maxEl = 10;
+  for (let i = 0; i < sky.length; i++) {
+    if (sky[i].el > maxEl) maxEl = sky[i].el;
+  }
+  if (maxElHint && maxElHint > maxEl) maxEl = maxElHint;
+  maxEl = Math.min(90, Math.ceil((maxEl + 10) / 10) * 10);
+  if (maxEl < 20) maxEl = 20;
 
-  for (let elev = 0; elev <= 80; elev += 20) {
-    const y = padT + plotH * (1 - elev / 90);
-    ctx.beginPath();
-    ctx.moveTo(padL, y);
-    ctx.lineTo(padL + plotW, y);
-    ctx.stroke();
-    ctx.fillText(elev + '°', padL - 8, y);
+  function xAt(i) {
+    return padL + (i / (sky.length - 1)) * plotW;
+  }
+  function yAt(el) {
+    const e = Math.max(0, Math.min(maxEl, el));
+    return padT + plotH - (e / maxEl) * plotH;
   }
 
-  // Sample placeholder points (azimuth, elevation)
-  // These roughly match the style of the image you showed
-  const points = [
-    { az: 307, el: 5  },
-    { az: 304, el: 12 },
-    { az: 301, el: 18 },
-    { az: 298, el: 24 },
-    { az: 293, el: 30 },
-    { az: 289, el: 35 },
-    { az: 283, el: 40 },
-    { az: 277, el: 44 },
-    { az: 270, el: 47 },
-    { az: 263, el: 49 },
-    { az: 255, el: 50 },
-    { az: 247, el: 49 },
-    { az: 239, el: 47 },
-    { az: 231, el: 44 },
-    { az: 224, el: 40 },
-    { az: 218, el: 35 },
-    { az: 212, el: 30 },
-    { az: 207, el: 24 },
-    { az: 203, el: 18 },
-    { az: 199, el: 12 },
-    { az: 196, el: 5  }
-  ];
+  profileCtx.strokeStyle = "#30363d";
+  profileCtx.lineWidth = 1;
+  profileCtx.fillStyle = "#8b949e";
+  profileCtx.font = "10px sans-serif";
+  profileCtx.textAlign = "right";
+  profileCtx.textBaseline = "middle";
 
-  // Convert to canvas coordinates
-  const toX = (i) => padL + (i / (points.length - 1)) * plotW;
-  const toY = (el) => padT + plotH * (1 - el / 90);
+  for (let el = 0; el <= maxEl; el += 20) {
+    const y = yAt(el);
+    profileCtx.beginPath();
+    profileCtx.moveTo(padL, y);
+    profileCtx.lineTo(padL + plotW, y);
+    profileCtx.stroke();
+    profileCtx.fillText(el + "\u00B0", padL - 6, y);
+  }
 
-  // Draw the curve
-  ctx.beginPath();
-  ctx.strokeStyle = 'rgba(88, 166, 255, 0.85)';
-  ctx.lineWidth = 2;
-  points.forEach((p, i) => {
-    const x = toX(i);
-    const y = toY(p.el);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+  profileCtx.beginPath();
+  profileCtx.strokeStyle = "#58a6ff";
+  profileCtx.lineWidth = 2.5;
+  profileCtx.lineJoin = "round";
+  for (let i = 0; i < sky.length; i++) {
+    const x = xAt(i);
+    const y = yAt(sky[i].el);
+    if (i === 0) profileCtx.moveTo(x, y);
+    else profileCtx.lineTo(x, y);
+  }
+  profileCtx.stroke();
+
+  const labelEvery = Math.max(1, Math.floor(sky.length / 16));
+  profileCtx.font = "10px sans-serif";
+  profileCtx.textAlign = "center";
+  profileCtx.textBaseline = "bottom";
+
+  for (let i = 0; i < sky.length; i++) {
+    const x = xAt(i);
+    const y = yAt(sky[i].el);
+
+    profileCtx.beginPath();
+    profileCtx.fillStyle = "#58a6ff";
+    profileCtx.arc(x, y, 3.2, 0, Math.PI * 2);
+    profileCtx.fill();
+
+    if (i % labelEvery === 0 || i === 0 || i === sky.length - 1) {
+      profileCtx.fillStyle = "#e6edf3";
+      profileCtx.fillText(Math.round(sky[i].az) + "\u00B0", x, y - 6);
+    }
+  }
+
+  if (look && typeof look.progress === "number") {
+    const t = Math.max(0, Math.min(1, look.progress));
+    const x = padL + t * plotW;
+
+    const idxF = t * (sky.length - 1);
+    const i0 = Math.floor(idxF);
+    const i1 = Math.min(sky.length - 1, i0 + 1);
+    const frac = idxF - i0;
+    const elInterp = sky[i0].el * (1 - frac) + sky[i1].el * frac;
+    const y = yAt(typeof look.el === "number" ? look.el : elInterp);
+
+    profileCtx.strokeStyle = "#f85149";
+    profileCtx.lineWidth = 1;
+    profileCtx.setLineDash([4, 4]);
+    profileCtx.beginPath();
+    profileCtx.moveTo(x, padT);
+    profileCtx.lineTo(x, padT + plotH);
+    profileCtx.stroke();
+    profileCtx.setLineDash([]);
+
+    profileCtx.beginPath();
+    profileCtx.fillStyle = "#fff";
+    profileCtx.strokeStyle = "#f85149";
+    profileCtx.lineWidth = 2;
+    profileCtx.arc(x, y, 5, 0, Math.PI * 2);
+    profileCtx.fill();
+    profileCtx.stroke();
+  }
+
+  if (name) {
+    profileCtx.fillStyle = "rgba(88, 166, 255, 0.15)";
+    profileCtx.font = "bold 28px sans-serif";
+    profileCtx.textAlign = "center";
+    profileCtx.textBaseline = "middle";
+    profileCtx.fillText(name, padL + plotW / 2, padT + plotH / 2);
+  }
+}
+
+function updateProfile(state) {
+  if (!state) return;
+
+  const pass = state.passes && state.passes[0] ? state.passes[0] : null;
+  const sat = state.sat || null;
+  const now = Date.now();
+
+  if (lockedSat != null && sat != null && lockedSat !== sat) {
+    clearLock();
+  }
+
+  if (lockedLos) {
+    const losMs = new Date(lockedLos).getTime();
+    if (Number.isFinite(losMs) && now > losMs + 30000) {
+      clearLock();
+    }
+  }
+
+  if (lockedSky && lockedSky.length >= 2 && lockedSat === sat) {
+    let progress = null;
+    if (lockedAos && lockedLos) {
+      const aos = new Date(lockedAos).getTime();
+      const los = new Date(lockedLos).getTime();
+      if (los > aos) progress = (now - aos) / (los - aos);
+    }
+    redrawCurrent({
+      az: state.look ? state.look.az : null,
+      el: state.look ? state.look.el : null,
+      progress: progress,
+    });
+    return;
+  }
+
+  if (!pass || !pass.sky || pass.sky.length < 5) {
+    drawProfileEmpty();
+    return;
+  }
+
+  const sky = snapshotSky(pass.sky);
+  if (sky.length < 5) {
+    drawProfileEmpty();
+    return;
+  }
+
+  lockedSat = sat;
+  lockedPassKey = makePassKey(sat, pass.aos);
+  lockedAos = pass.aos;
+  lockedLos = pass.los;
+  lockedName = state.display || state.sat || "";
+  lockedMaxEl = typeof pass.maxEl === "number" ? pass.maxEl : 10;
+  lockedSky = sky;
+
+  let progress = null;
+  if (lockedAos && lockedLos) {
+    const aos = new Date(lockedAos).getTime();
+    const los = new Date(lockedLos).getTime();
+    if (los > aos) progress = (now - aos) / (los - aos);
+  }
+
+  redrawCurrent({
+    az: state.look ? state.look.az : null,
+    el: state.look ? state.look.el : null,
+    progress: progress,
   });
-  ctx.stroke();
-
-  // Draw dots + azimuth labels
-  ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'bottom';
-
-  points.forEach((p, i) => {
-    const x = toX(i);
-    const y = toY(p.el);
-
-    // Dot
-    ctx.beginPath();
-    ctx.arc(x, y, 4, 0, Math.PI * 2);
-    ctx.fillStyle = '#e6edf3';
-    ctx.fill();
-    ctx.strokeStyle = '#58a6ff';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-
-    // Azimuth label above the point
-    ctx.fillStyle = 'rgba(230, 237, 243, 0.9)';
-    ctx.fillText(p.az + '°', x, y - 8);
-  });
-
-  // Satellite name in the middle
-  ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-  ctx.fillStyle = 'rgba(88, 166, 255, 0.25)';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('RS-44', padL + plotW / 2, padT + plotH / 2);
-
-  // Max elevation marker (vertical dashed line at peak)
-  const peakIdx = points.reduce((best, p, i) => p.el > points[best].el ? i : best, 0);
-  const peakX = toX(peakIdx);
-  ctx.beginPath();
-  ctx.setLineDash([4, 4]);
-  ctx.strokeStyle = 'rgba(248, 81, 73, 0.7)';
-  ctx.lineWidth = 1;
-  ctx.moveTo(peakX, padT);
-  ctx.lineTo(peakX, padT + plotH);
-  ctx.stroke();
-  ctx.setLineDash([]);
 }

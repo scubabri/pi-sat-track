@@ -3,11 +3,14 @@ let reconnectTimer = null;
 let countdownTimer = null;
 
 let timeMode = localStorage.getItem("satTrackerTimeMode") || "utc";
+let satSortMode = localStorage.getItem("satTrackerSort") || "aos";
 let lastPass = null;
 let currentSatKey = localStorage.getItem("satTrackerSat") || null;
 let currentSatLabel = null;
 let lastSatList = null;
 let lastStateSat = null;
+let currentEl = null;
+let pendingSatKey = null;
 
 function getObserverFromConfig() {
   const cfg = loadConfig();
@@ -18,6 +21,8 @@ function getObserverFromConfig() {
     lat: pos.lat,
     lon: pos.lon,
     elevM: cfg.elevation || 0,
+    callsign: cfg.callsign || "",
+    grid: cfg.grid || "",
   };
 }
 
@@ -36,6 +41,39 @@ function sendObserver() {
   }
 }
 
+function updateStationStatus() {
+  const cfg = loadConfig();
+  const callEl = document.getElementById("station-call");
+  const gridEl = document.getElementById("station-grid");
+  const latEl = document.getElementById("station-lat");
+  const lonEl = document.getElementById("station-lon");
+  const elevEl = document.getElementById("station-elev");
+
+  if (callEl) callEl.textContent = cfg.callsign || "-";
+  if (gridEl) gridEl.textContent = (cfg.grid || "").toUpperCase() || "-";
+
+  if (cfg.grid) {
+    const pos = maidenheadToLatLon(cfg.grid);
+    if (pos) {
+      if (latEl) latEl.textContent = pos.lat.toFixed(4) + "\u00B0";
+      if (lonEl) lonEl.textContent = pos.lon.toFixed(4) + "\u00B0";
+    } else {
+      if (latEl) latEl.textContent = "-";
+      if (lonEl) lonEl.textContent = "-";
+    }
+  } else {
+    if (latEl) latEl.textContent = "-";
+    if (lonEl) lonEl.textContent = "-";
+  }
+
+  if (elevEl) {
+    elevEl.textContent =
+      cfg.elevation != null && cfg.elevation !== ""
+        ? cfg.elevation + " m"
+        : "-";
+  }
+}
+
 function setSatButtonLabel(label) {
   currentSatLabel = label;
   const btn = document.getElementById("sat-name");
@@ -45,16 +83,89 @@ function setSatButtonLabel(label) {
   });
 }
 
+/**
+ * Stable AOS sort key — does NOT favor the selected sat.
+ * Lower value = earlier in list.
+ */
+function aosSortKey(s) {
+  // Above horizon first
+  if (s.above) return -1e12;
+  if (s.key === currentSatKey && currentEl != null && currentEl >= 0)
+    return -1e12;
+
+  // Soonest AOS (seconds)
+  if (
+    typeof s.secToAos === "number" &&
+    Number.isFinite(s.secToAos) &&
+    s.secToAos >= 0
+  ) {
+    return s.secToAos;
+  }
+
+  // Flagged soon but no exact time — after timed, before unknown
+  if (s.soon) return 15 * 60;
+
+  // No timing data — after everything with data (name breaks ties in sort)
+  return 1e12;
+}
+
+function sortHeardList(list) {
+  const arr = list.slice();
+
+  if (satSortMode === "alpha") {
+    arr.sort((a, b) =>
+      String(a.name || "").localeCompare(String(b.name || ""), undefined, {
+        sensitivity: "base",
+      }),
+    );
+    return arr;
+  }
+
+  arr.sort((a, b) => {
+    const ka = aosSortKey(a);
+    const kb = aosSortKey(b);
+    if (ka !== kb) return ka - kb;
+    return String(a.name || "").localeCompare(String(b.name || ""), undefined, {
+      sensitivity: "base",
+    });
+  });
+  return arr;
+}
+
+function toggleSatSort(e) {
+  if (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+  satSortMode = satSortMode === "aos" ? "alpha" : "aos";
+  localStorage.setItem("satTrackerSort", satSortMode);
+  console.log("Sat sort mode:", satSortMode);
+  if (lastSatList) renderSatMenu(lastSatList);
+}
+
+function applyLiveHorizon(sats) {
+  if (!sats || !currentSatKey) return sats;
+  return sats.map((s) => {
+    if (s.key !== currentSatKey) return s;
+    if (currentEl == null) return s;
+    const above = currentEl >= 0;
+    return Object.assign({}, s, {
+      above: above,
+      soon: above ? false : s.soon,
+      el: currentEl,
+    });
+  });
+}
+
 function renderSatMenu(payload) {
   const menu = document.getElementById("sat-menu");
   if (!menu) return;
 
   lastSatList = payload;
-  const sats = payload.satellites || [];
+  const sats = applyLiveHorizon(payload.satellites || []);
 
   menu.innerHTML = "";
 
-  // Browse full catalog — always first, distinct from chips
   const browse = document.createElement("a");
   browse.className = "sat-option sat-browse";
   browse.href = "/sats.html";
@@ -62,26 +173,41 @@ function renderSatMenu(payload) {
   browse.title = "Search all JE9PEL satellites";
   menu.appendChild(browse);
 
+  const headRow = document.createElement("div");
+  headRow.className = "sat-menu-head";
+
   const head = document.createElement("div");
   head.className = "sat-menu-section";
   head.textContent = "Heard on AMSAT";
-  menu.appendChild(head);
+  headRow.appendChild(head);
 
-  // ONLY AMSAT-heard (plus current). Do NOT dump JE9PEL "active".
+  const sortBtn = document.createElement("button");
+  sortBtn.type = "button";
+  sortBtn.className = "sat-sort-btn";
+  sortBtn.title =
+    satSortMode === "aos"
+      ? "Sorted by AOS — click for A–Z"
+      : "Sorted A–Z — click for AOS";
+  sortBtn.textContent = satSortMode === "aos" ? "AOS" : "A–Z";
+  sortBtn.addEventListener("click", toggleSatSort);
+  headRow.appendChild(sortBtn);
+  menu.appendChild(headRow);
+
   const heard = sats.filter((s) => s.heard);
-  const quick = [];
+  let quick = [];
   const seen = new Set();
 
   function add(s) {
-    if (!s || seen.has(s.key)) return;
+    if (!s || !s.key || seen.has(s.key)) return;
     seen.add(s.key);
     quick.push(s);
   }
 
-  if (currentSatKey) add(sats.find((s) => s.key === currentSatKey));
-  heard.filter((s) => s.above).forEach(add);
-  heard.filter((s) => s.soon && !s.above).forEach(add);
   heard.forEach(add);
+  // Include current even if not in heard
+  if (currentSatKey) add(sats.find((s) => s.key === currentSatKey));
+
+  quick = sortHeardList(quick);
 
   if (quick.length === 0) {
     const empty = document.createElement("div");
@@ -90,7 +216,7 @@ function renderSatMenu(payload) {
     menu.appendChild(empty);
   }
 
-  quick.slice(0, 30).forEach((s) => {
+  quick.slice(0, 40).forEach((s) => {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "sat-option";
@@ -103,10 +229,16 @@ function renderSatMenu(payload) {
     btn.classList.add("heard");
     btn.dataset.sat = s.key;
     btn.textContent = s.name;
+
     let tip = s.name + "  (NORAD " + s.norad + ")";
-    if (s.above) tip += " - above horizon";
-    else if (s.soon) tip += " - AOS < 15 min";
-    else tip += " - heard (AMSAT)";
+    if (s.above) tip += " — above horizon";
+    else if (s.soon) {
+      tip += " — AOS < 15 min";
+      if (typeof s.secToAos === "number")
+        tip += " (~" + Math.round(s.secToAos / 60) + "m)";
+    } else {
+      tip += " — heard (AMSAT)";
+    }
     btn.title = tip;
     btn.addEventListener("click", () => selectSatellite(s.key, s.name));
     menu.appendChild(btn);
@@ -114,7 +246,8 @@ function renderSatMenu(payload) {
 
   const statusCat = document.getElementById("status-catalog");
   if (statusCat) {
-    statusCat.textContent = sats.length + " - " + (payload.catalogNote || "?");
+    statusCat.textContent =
+      (payload.satellites || []).length + " - " + (payload.catalogNote || "?");
   }
 
   if (currentSatKey) {
@@ -127,17 +260,38 @@ function renderSatMenu(payload) {
   }
 }
 
+function refreshCurrentSatChip() {
+  if (!lastSatList) return;
+  const menu = document.getElementById("sat-menu");
+  if (menu && !menu.hidden) {
+    renderSatMenu(lastSatList);
+  } else {
+    document.querySelectorAll(".sat-option[data-sat]").forEach((el) => {
+      if (el.dataset.sat !== currentSatKey) return;
+      el.classList.remove("sat-up", "sat-soon", "sat-down");
+      if (currentEl != null && currentEl >= 0) el.classList.add("sat-up");
+      else el.classList.add("sat-down");
+    });
+  }
+}
+
 function selectSatellite(key, label) {
+  pendingSatKey = key;
   currentSatKey = key;
   setSatButtonLabel(label || key);
   localStorage.setItem("satTrackerSat", key);
   lastPass = null;
+  lastStateSat = null;
+  currentEl = null;
+
+  if (typeof clearProfileLock === "function") clearProfileLock();
+  if (typeof clearMapTracking === "function") clearMapTracking();
 
   const menu = document.getElementById("sat-menu");
   if (menu) menu.hidden = true;
 
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "sat", key }));
+    ws.send(JSON.stringify({ type: "sat", key: key }));
   }
 }
 
@@ -151,6 +305,11 @@ function connectTracker() {
   ws.onopen = () => {
     console.log("Tracker WebSocket connected");
     sendObserver();
+    updateStationStatus();
+    if (currentSatKey) {
+      pendingSatKey = currentSatKey;
+      ws.send(JSON.stringify({ type: "sat", key: currentSatKey }));
+    }
   };
 
   ws.onmessage = (ev) => {
@@ -159,9 +318,6 @@ function connectTracker() {
 
       if (msg.type === "sats") {
         renderSatMenu(msg);
-        if (currentSatKey) {
-          ws.send(JSON.stringify({ type: "sat", key: currentSatKey }));
-        }
         return;
       }
 
@@ -172,13 +328,32 @@ function connectTracker() {
 
       if (msg.type !== "state") return;
 
+      if (pendingSatKey && msg.sat && msg.sat !== pendingSatKey) {
+        return;
+      }
+      if (pendingSatKey && msg.sat === pendingSatKey) {
+        pendingSatKey = null;
+      }
+
       if (msg.sat) {
         if (msg.sat !== lastStateSat) {
           lastPass = null;
           lastStateSat = msg.sat;
+          currentEl = null;
+          if (typeof clearProfileLock === "function") clearProfileLock();
+          if (typeof clearMapTracking === "function") clearMapTracking();
         }
         currentSatKey = msg.sat;
         setSatButtonLabel(msg.display || msg.sat);
+      }
+
+      if (msg.look && typeof msg.look.el === "number") {
+        const prevAbove = currentEl != null && currentEl >= 0;
+        currentEl = msg.look.el;
+        const nowAbove = currentEl >= 0;
+        if (prevAbove !== nowAbove) {
+          refreshCurrentSatChip();
+        }
       }
 
       const ul = document.getElementById("freq-ul");
@@ -200,7 +375,9 @@ function connectTracker() {
         updateRadar(msg.look.az, msg.look.el, sky);
       }
 
+      if (typeof updateProfile === "function") updateProfile(msg);
       updateSidebar(msg);
+      updateSatelliteStatus(msg);
     } catch (e) {
       console.warn("Bad state message", e);
     }
@@ -215,6 +392,32 @@ function connectTracker() {
   ws.onerror = () => {
     ws.close();
   };
+}
+
+function updateSatelliteStatus(state) {
+  const nameEl = document.getElementById("sat-common");
+  const noradEl = document.getElementById("sat-norad");
+  const azEl = document.getElementById("sat-az");
+  const elEl = document.getElementById("sat-el");
+  const rangeEl = document.getElementById("sat-range");
+  const orbitEl = document.getElementById("sat-orbit");
+
+  if (nameEl) nameEl.textContent = state.display || state.sat || "-";
+  if (noradEl)
+    noradEl.textContent = state.norad != null ? String(state.norad) : "-";
+
+  if (state.look) {
+    if (azEl) azEl.textContent = state.look.az.toFixed(1) + "\u00B0";
+    if (elEl) elEl.textContent = state.look.el.toFixed(1) + "\u00B0";
+    if (rangeEl) {
+      const km = state.look.rangeKm;
+      rangeEl.textContent = km != null ? km.toFixed(1) + " km" : "-";
+    }
+  }
+
+  if (orbitEl) {
+    orbitEl.textContent = state.orbit != null ? String(state.orbit) : "-";
+  }
 }
 
 function formatPassTime(iso) {
@@ -269,6 +472,22 @@ function tickCountdown() {
   const dot = document.querySelector("#pass-status .status-dot");
   if (!countdownEl) return;
 
+  // Above geometric horizon → LOS
+  if (currentEl != null && currentEl >= 0) {
+    if (labelEl) labelEl.textContent = "LOS in";
+    if (dot) dot.className = "status-dot green";
+
+    if (lastPass && lastPass.los) {
+      const secToLos = (new Date(lastPass.los).getTime() - Date.now()) / 1000;
+      if (secToLos > 0) {
+        countdownEl.textContent = formatCountdown(secToLos);
+        return;
+      }
+    }
+    countdownEl.textContent = currentEl.toFixed(1) + "\u00B0";
+    return;
+  }
+
   if (!lastPass || !lastPass.aos || !lastPass.los) {
     if (labelEl) labelEl.textContent = "Next AOS in";
     countdownEl.textContent = "-";
@@ -286,14 +505,12 @@ function tickCountdown() {
     if (labelEl) labelEl.textContent = "Next AOS in";
     countdownEl.textContent = formatCountdown(secToAos);
     if (dot) {
-      dot.className =
-        "status-dot " +
-        (secToAos > 1800 ? "green" : secToAos > 300 ? "orange" : "red");
+      dot.className = "status-dot " + (secToAos > 900 ? "green" : "orange");
     }
   } else if (secToLos > 0) {
     if (labelEl) labelEl.textContent = "LOS in";
     countdownEl.textContent = formatCountdown(secToLos);
-    if (dot) dot.className = "status-dot red";
+    if (dot) dot.className = "status-dot green";
   } else {
     lastPass = null;
     if (labelEl) labelEl.textContent = "Next AOS in";
@@ -350,11 +567,14 @@ function updateSidebar(state) {
     }
 
     tickCountdown();
+  } else {
+    tickCountdown();
   }
 }
 
 function notifyObserverChanged() {
   sendObserver();
+  updateStationStatus();
 }
 
 function initTimeToggle() {
@@ -371,6 +591,7 @@ function initSatSelector() {
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     menu.hidden = !menu.hidden;
+    if (!menu.hidden && lastSatList) renderSatMenu(lastSatList);
   });
 
   document.addEventListener("click", (e) => {
@@ -381,7 +602,11 @@ function initSatSelector() {
 }
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", startCountdownTimer);
+  document.addEventListener("DOMContentLoaded", function () {
+    startCountdownTimer();
+    updateStationStatus();
+  });
 } else {
   startCountdownTimer();
+  updateStationStatus();
 }

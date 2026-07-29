@@ -26,9 +26,9 @@
         </button>
         <div id="sat-menu" class="sat-menu" hidden>
           <a class="sat-option sat-browse" href="/sats.html"
-            >Browse all satellites...</a
+            >Browse full catalog...</a
           >
-          <div class="sat-menu-section">Heard / active</div>
+          <div class="sat-menu-section">Heard on AMSAT</div>
         </div>
       </div>
 
@@ -36,6 +36,25 @@
         <div class="status-dot yellow"></div>
         <span id="pass-label">Next AOS in</span>
         <span id="countdown">-</span>
+      </div>
+
+      <div id="pass-summary">
+        <div class="pass-sum-item">
+          <span class="pass-sum-label">AOS</span>
+          <span class="pass-sum-value time-toggle" id="pass-aos">-</span>
+        </div>
+        <div class="pass-sum-item">
+          <span class="pass-sum-label">LOS</span>
+          <span class="pass-sum-value time-toggle" id="pass-los">-</span>
+        </div>
+        <div class="pass-sum-item">
+          <span class="pass-sum-label">Max</span>
+          <span class="pass-sum-value" id="pass-maxel">-</span>
+        </div>
+        <div class="pass-sum-item">
+          <span class="pass-sum-label">Dur</span>
+          <span class="pass-sum-value" id="pass-duration">-</span>
+        </div>
       </div>
 
       <div id="top-controls">
@@ -99,26 +118,6 @@
 
       <aside id="sidebar">
         <section class="panel-section">
-          <h3>Next Pass</h3>
-          <div class="pass-row">
-            <span class="label">AOS</span>
-            <span class="value time-toggle" id="pass-aos">-</span>
-          </div>
-          <div class="pass-row">
-            <span class="label">LOS</span>
-            <span class="value time-toggle" id="pass-los">-</span>
-          </div>
-          <div class="pass-row">
-            <span class="label">Max Elev</span>
-            <span class="value" id="pass-maxel">-</span>
-          </div>
-          <div class="pass-row">
-            <span class="label">Duration</span>
-            <span class="value" id="pass-duration">-</span>
-          </div>
-        </section>
-
-        <section class="panel-section">
           <h3>Frequencies</h3>
           <div class="freq-block">
             <div class="freq-label">Uplink (LSB)</div>
@@ -155,7 +154,22 @@
         </section>
 
         <section class="panel-section">
-          <h3>Status</h3>
+          <h3>Station Status</h3>
+          <div class="status-item">
+            <span class="label">Callsign</span><span id="station-call">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Grid</span><span id="station-grid">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Latitude</span><span id="station-lat">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Longitude</span><span id="station-lon">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Elevation</span><span id="station-elev">-</span>
+          </div>
           <div class="status-item">
             <span class="label">TCI</span><span>Disconnected</span>
           </div>
@@ -164,6 +178,28 @@
           </div>
           <div class="status-item">
             <span class="label">Rotor EL</span><span>-</span>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <h3>Satellite Status</h3>
+          <div class="status-item">
+            <span class="label">Name</span><span id="sat-common">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">NORAD</span><span id="sat-norad">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Azimuth</span><span id="sat-az">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Elevation</span><span id="sat-el">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Range</span><span id="sat-range">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Orbit</span><span id="sat-orbit">-</span>
           </div>
           <div class="status-item">
             <span class="label">TLE age</span><span id="status-tle">-</span>

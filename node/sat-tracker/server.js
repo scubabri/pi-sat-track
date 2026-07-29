@@ -14,12 +14,13 @@ const JE9PEL_CSV = "https://www.ne.jp/asahi/hamradio/je9pel/satslist.csv";
 const AMSAT_STATUS = "https://www.amsat.org/status/";
 
 const DEFAULT_SAT = "RS-44";
-const MIN_EL = 10.0;
+const MIN_EL = 0.0; // geometric horizon for AOS/LOS
 const TRAIL_MINUTES = 30;
 const TRAIL_STEP_SEC = 30;
 const PASS_HOURS = 12;
 const PASS_STEP_SEC = 30;
 const REFRESH_MS = 6 * 60 * 60 * 1000;
+const SATS_BROADCAST_MS = 30 * 1000;
 
 const mime = {
   ".html": "text/html",
@@ -35,10 +36,20 @@ const mime = {
 
 let CATALOG = {};
 let catalogNote = "not loaded";
-/** base name (norm) -> true if any AMSAT status row reported activity */
 let ACTIVE = new Set();
 let statusNote = "not loaded";
 const satrecCache = new Map();
+
+let currentSatKey = null;
+let satrec = null;
+let tleNote = "";
+let currentNorad = null;
+let currentOrbit = null;
+let observer = {
+  latitude: satellite.degreesToRadians(40.5),
+  longitude: satellite.degreesToRadians(-111.9),
+  height: 1.324,
+};
 
 function ensureCacheDir() {
   if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
@@ -50,7 +61,6 @@ function norm(s) {
     .replace(/[^A-Z0-9]/g, "");
 }
 
-/** Extract designator like AO-7, RS-44, SO-50, FO-29 from a free-form name */
 function designator(name) {
   const m = String(name || "").match(/\b([A-Z]{1,4})[\s-]?(\d{1,3}[A-Z]?)\b/i);
   if (!m) return null;
@@ -182,10 +192,6 @@ function parseJe9pelCsv(text) {
   return catalog;
 }
 
-/**
- * AMSAT status rows: AO-73_[U/v], ISS_[FM], CAS-2T_[TLM], ...
- * Any mode (active OR TLM/beacon) counts as heard for the base name.
- */
 function parseAmsatStatus(html) {
   const active = new Set();
   const re = /([A-Za-z0-9][A-Za-z0-9\-]{0,24})_\[([^\]]+)\]/g;
@@ -200,10 +206,6 @@ function parseAmsatStatus(html) {
   return active;
 }
 
-/**
- * Strict heard check — exact normalized name/key/designator only.
- * No substring includes() (that caused "Out of the Box", CatSat, etc.).
- */
 function isHeard(sat) {
   const candidates = new Set();
   candidates.add(norm(sat.display));
@@ -305,6 +307,7 @@ function getSatrecForNorad(norad) {
   return null;
 }
 
+/** Horizon flags + next AOS up to 12 hours for sort */
 function horizonFlags(norad) {
   const rec = getSatrecForNorad(norad);
   if (!rec) return { above: false, soon: false, el: null, secToAos: null };
@@ -318,7 +321,7 @@ function horizonFlags(norad) {
   const step = 30;
   let prev = el;
   let secToAos = null;
-  for (let s = step; s <= 15 * 60; s += step) {
+  for (let s = step; s <= 12 * 3600; s += step) {
     const look2 = lookAngles(rec, observer, new Date(now.getTime() + s * 1000));
     if (!look2) continue;
     if (prev != null && prev < 0 && look2.el >= 0) {
@@ -358,6 +361,8 @@ function listSatsPayload(filter) {
       isFm: freqs.isFm,
       above: false,
       soon: false,
+      el: null,
+      secToAos: null,
     };
 
     if (heard || s.status === "active") {
@@ -365,6 +370,7 @@ function listSatsPayload(filter) {
       row.above = h.above;
       row.soon = h.soon;
       row.el = h.el;
+      row.secToAos = h.secToAos;
     }
 
     rows.push(row);
@@ -372,7 +378,11 @@ function listSatsPayload(filter) {
   rows.sort((a, b) => {
     if (a.above !== b.above) return a.above ? -1 : 1;
     if (a.soon !== b.soon) return a.soon ? -1 : 1;
-    if (a.heard !== b.heard) return a.heard ? -1 : 1;
+    const aSec =
+      typeof a.secToAos === "number" ? a.secToAos : Number.POSITIVE_INFINITY;
+    const bSec =
+      typeof b.secToAos === "number" ? b.secToAos : Number.POSITIVE_INFINITY;
+    if (aSec !== bSec) return aSec - bSec;
     if ((a.status === "active") !== (b.status === "active")) {
       return a.status === "active" ? -1 : 1;
     }
@@ -384,6 +394,16 @@ function listSatsPayload(filter) {
     count: rows.length,
     satellites: rows,
   };
+}
+
+function parseOrbitFromL2(l2) {
+  try {
+    const revField = String(l2).substring(63, 68).trim();
+    const n = parseInt(revField, 10);
+    return Number.isFinite(n) ? n : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 async function fetchTLE(norad) {
@@ -426,7 +446,13 @@ async function fetchTLE(norad) {
         name,
       }),
     );
-    return { name, l1, l2, note: "Celestrak (just fetched)" };
+    return {
+      name,
+      l1,
+      l2,
+      note: "Celestrak (just fetched)",
+      orbit: parseOrbitFromL2(l2),
+    };
   } catch (err) {
     if (fs.existsSync(tlePath)) {
       const lines = fs
@@ -445,11 +471,14 @@ async function fetchTLE(norad) {
           else age = Math.floor(secs / 86400) + "d";
         } catch (_) {}
       }
+      const l1 = lines[0].startsWith("1 ") ? lines[0] : lines[1];
+      const l2 = lines[0].startsWith("1 ") ? lines[1] : lines[2];
       return {
-        name: lines[0],
-        l1: lines[1],
-        l2: lines[2],
+        name: lines[0].startsWith("1 ") ? "NORAD " + norad : lines[0],
+        l1,
+        l2,
         note: "TLE cache age " + age,
+        orbit: parseOrbitFromL2(l2),
       };
     }
     throw err;
@@ -592,20 +621,12 @@ function passSkyPath(satrec, observer, aosIso, losIso, stepSec) {
   return points;
 }
 
-let currentSatKey = null;
-let satrec = null;
-let tleNote = "";
-let observer = {
-  latitude: satellite.degreesToRadians(40.5),
-  longitude: satellite.degreesToRadians(-111.9),
-  height: 1.324,
-};
-
 async function loadSatellite(key) {
   const info = CATALOG[key];
   if (!info || !info.norad)
     throw new Error("Unknown or non-trackable sat: " + key);
   currentSatKey = key;
+  currentNorad = info.norad;
   console.log(
     "Catalog freqs for",
     key,
@@ -620,9 +641,18 @@ async function loadSatellite(key) {
   satrec = satellite.twoline2satrec(tle.l1, tle.l2);
   satrecCache.set(info.norad, satrec);
   tleNote = tle.note;
+  currentOrbit = tle.orbit != null ? tle.orbit : null;
   console.log(
-    "Loaded " + (info.display || key) + " (" + info.norad + ") - " + tleNote,
+    "Loaded " +
+      (info.display || key) +
+      " (" +
+      info.norad +
+      ") - " +
+      tleNote +
+      (currentOrbit != null ? " orbit " + currentOrbit : ""),
   );
+  // Refresh menu horizon data now that this TLE is cached
+  broadcastSats();
 }
 
 function pickDefaultKey() {
@@ -668,6 +698,8 @@ function computeState() {
     type: "state",
     sat: currentSatKey,
     display: info.display || info.name || currentSatKey,
+    norad: currentNorad || info.norad || null,
+    orbit: currentOrbit,
     uplink: freqs.uplink,
     downlink: freqs.downlink,
     ulLabel: freqs.ulLabel,
@@ -731,6 +763,17 @@ server.on("upgrade", (req, socket, head) => {
   }
 });
 
+function broadcast(obj) {
+  const data = JSON.stringify(obj);
+  for (const c of wss.clients) {
+    if (c.readyState === 1) c.send(data);
+  }
+}
+
+function broadcastSats() {
+  broadcast({ type: "sats", ...listSatsPayload("trackable") });
+}
+
 wss.on("connection", (ws) => {
   console.log("Client connected");
   ws.send(JSON.stringify({ type: "sats", ...listSatsPayload("trackable") }));
@@ -766,17 +809,14 @@ wss.on("connection", (ws) => {
   ws.on("close", () => console.log("Client disconnected"));
 });
 
-function broadcast(obj) {
-  const data = JSON.stringify(obj);
-  for (const c of wss.clients) {
-    if (c.readyState === 1) c.send(data);
-  }
-}
-
 setInterval(() => {
   const s = computeState();
   if (s) broadcast(s);
 }, 1000);
+
+setInterval(() => {
+  broadcastSats();
+}, SATS_BROADCAST_MS);
 
 setInterval(() => {
   refreshCatalog().catch(() => {});

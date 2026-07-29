@@ -1,31 +1,16 @@
-document.addEventListener("DOMContentLoaded", () => {
-  initMap();
-  initRadar();
-  initProfile();
-  initConfig();
-
+function initApp() {
+  if (typeof initMap === "function") initMap();
+  if (typeof initRadar === "function") initRadar();
+  if (typeof initProfile === "function") initProfile();
   if (typeof initTimeToggle === "function") initTimeToggle();
   if (typeof initSatSelector === "function") initSatSelector();
+  if (typeof initConfig === "function") initConfig();
+  if (typeof connectTracker === "function") connectTracker();
+  if (typeof updateStationStatus === "function") updateStationStatus();
+}
 
-  setTimeout(() => {
-    applySavedGrid();
-  }, 300);
-
-  if (typeof connectTracker === "function") {
-    connectTracker();
-  } else {
-    console.error("connectTracker is not defined – check js/tracker.js");
-  }
-
-  document.getElementById("btn-radio").addEventListener("click", function () {
-    this.classList.toggle("active");
-    document.getElementById("toggle-radio").checked =
-      this.classList.contains("active");
-  });
-
-  document.getElementById("btn-antenna").addEventListener("click", function () {
-    this.classList.toggle("active");
-    document.getElementById("toggle-antenna").checked =
-      this.classList.contains("active");
-  });
-});
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initApp);
+} else {
+  initApp();
+}
