@@ -617,3 +617,37 @@ body {
     display: none;
   }
 }
+/* Map center control sits above zoom in bottom-left */
+.map-center-control {
+  margin-bottom: 10px !important;
+}
+
+.map-center-btn {
+  width: 30px !important;
+  height: 30px !important;
+  line-height: 30px !important;
+  text-align: center !important;
+  font-size: 18px !important;
+  font-weight: bold !important;
+  color: #e6edf3 !important;
+  background: #161b22 !important;
+  display: block !important;
+  text-decoration: none !important;
+}
+
+.map-center-btn:hover {
+  background: #21262d !important;
+  color: #58a6ff !important;
+}
+
+/* Keep Leaflet zoom bar styled for dark theme */
+.leaflet-control-zoom a {
+  background: #161b22 !important;
+  color: #e6edf3 !important;
+  border-color: #30363d !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background: #21262d !important;
+  color: #58a6ff !important;
+}

@@ -7,14 +7,15 @@ const satellite = require("satellite.js");
 const PORT = 3000;
 const ROOT = __dirname;
 const CACHE_DIR = path.join(require("os").homedir(), ".rpitrack");
-const CATALOG_CACHE = path.join(CACHE_DIR, "je9pel_catalog.json");
+const CATALOG_CACHE = path.join(CACHE_DIR, "amsat_catalog.json");
 const STATUS_CACHE = path.join(CACHE_DIR, "amsat_status.json");
 
-const JE9PEL_CSV = "https://www.ne.jp/asahi/hamradio/je9pel/satslist.csv";
+const CATALOG_URL =
+  "https://raw.githubusercontent.com/palewire/amateur-satellite-database/main/data/amsat-all-frequencies.json";
 const AMSAT_STATUS = "https://www.amsat.org/status/";
 
 const DEFAULT_SAT = "RS-44";
-const MIN_EL = 0.0; // geometric horizon for AOS/LOS
+const MIN_EL = 0.0;
 const TRAIL_MINUTES = 30;
 const TRAIL_STEP_SEC = 30;
 const PASS_HOURS = 12;
@@ -75,7 +76,7 @@ function makeKey(name, norad) {
 }
 
 function centerFreqMHz(field) {
-  if (!field || !String(field).trim()) return null;
+  if (field == null || !String(field).trim()) return null;
   const s = String(field).trim();
   const primary = s.split(/[\/]/)[0].trim();
 
@@ -94,7 +95,7 @@ function centerFreqMHz(field) {
 
 function isFmMode(mode) {
   if (!mode) return false;
-  const m = mode.toUpperCase();
+  const m = String(mode).toUpperCase();
   if (/\bFM\b/.test(m)) return true;
   if (/CTCSS/.test(m)) return true;
   return false;
@@ -113,76 +114,86 @@ function formatFreqDisplay(sat) {
   };
 }
 
+function scoreRow(row) {
+  let s = 0;
+  if (row.uplink) s += 2;
+  if (row.downlink) s += 2;
+  if (row.uplink && String(row.uplink).includes("-")) s += 2;
+  if (row.downlink && String(row.downlink).includes("-")) s += 2;
+  const m = String(row.mode || "").toUpperCase();
+  if (/\bSSB\b|\bCW\b|\bA\b|\bB\b|\bLINEAR\b/.test(m)) s += 3;
+  if (/\bFM\b|CTCSS/.test(m)) s += 1;
+  if (row.status === "active" || row.status === "operational") s += 1;
+  return s;
+}
+
 async function fetchText(url) {
   const res = await fetch(url, {
     headers: { "User-Agent": "sat-tracker/0.1" },
-    signal: AbortSignal.timeout(25000),
+    signal: AbortSignal.timeout(30000),
   });
   if (!res.ok) throw new Error("HTTP " + res.status);
   return res.text();
 }
 
-function parseJe9pelCsv(text) {
+function parseAmsatJson(arr) {
   const byNorad = new Map();
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const parts = line.split(";");
-    if (parts.length < 2) continue;
 
-    const name = (parts[0] || "").trim();
-    const noradStr = (parts[1] || "").trim();
-    const norad = parseInt(noradStr, 10);
-    if (!name) continue;
-
-    const uplink = (parts[2] || "").trim();
-    const downlink = (parts[3] || "").trim();
-    const beacon = (parts[4] || "").trim();
-    const mode = (parts[5] || "").trim();
-    const callsign = (parts[6] || "").trim();
-    const status = (parts[7] || "").trim().toLowerCase();
+  for (const row of arr) {
+    if (!row || !row.name) continue;
+    const norad =
+      row.norad_id != null && String(row.norad_id).trim() !== ""
+        ? parseInt(String(row.norad_id), 10)
+        : null;
+    if (!Number.isFinite(norad)) continue;
 
     const entry = {
-      name,
-      norad: Number.isFinite(norad) ? norad : null,
-      uplink,
-      downlink,
-      beacon,
-      mode,
-      callsign,
-      status,
-      key: null,
+      name: String(row.name).trim(),
+      norad,
+      uplink: row.uplink != null ? String(row.uplink).trim() : "",
+      downlink: row.downlink != null ? String(row.downlink).trim() : "",
+      beacon: row.beacon != null ? String(row.beacon).trim() : "",
+      mode: row.mode != null ? String(row.mode).trim() : "",
+      callsign: row.callsign != null ? String(row.callsign).trim() : "",
+      status: String(row.status || "")
+        .trim()
+        .toLowerCase(),
+      satnogs_id: row.satnogs_id || null,
     };
 
-    if (entry.norad) {
-      const prev = byNorad.get(entry.norad);
-      if (!prev) {
-        byNorad.set(entry.norad, entry);
-      } else {
-        const prevHasBand =
-          prev.uplink && prev.downlink && prev.uplink.includes("-");
-        const newHasBand = uplink && downlink && uplink.includes("-");
-        if (newHasBand && !prevHasBand) {
-          prev.uplink = uplink;
-          prev.downlink = downlink;
-          prev.mode = mode || prev.mode;
-        } else {
-          if (mode && prev.mode && !prev.mode.includes(mode)) {
-            prev.mode = [prev.mode, mode].filter(Boolean).join(", ");
-          } else if (mode && !prev.mode) {
-            prev.mode = mode;
-          }
-          if (uplink && !prev.uplink) prev.uplink = uplink;
-          if (downlink && !prev.downlink) prev.downlink = downlink;
-        }
-        if (status === "active") prev.status = "active";
-        if (name.length < prev.name.length) prev.name = name;
+    const prev = byNorad.get(norad);
+    if (!prev) {
+      byNorad.set(norad, entry);
+      continue;
+    }
+
+    if (scoreRow(entry) > scoreRow(prev)) {
+      prev.uplink = entry.uplink || prev.uplink;
+      prev.downlink = entry.downlink || prev.downlink;
+      prev.beacon = entry.beacon || prev.beacon;
+      prev.mode = entry.mode || prev.mode;
+      if (entry.name.length <= prev.name.length) prev.name = entry.name;
+    } else {
+      if (!prev.uplink && entry.uplink) prev.uplink = entry.uplink;
+      if (!prev.downlink && entry.downlink) prev.downlink = entry.downlink;
+      if (!prev.beacon && entry.beacon) prev.beacon = entry.beacon;
+      if (entry.mode && prev.mode && !prev.mode.includes(entry.mode)) {
+        prev.mode = [prev.mode, entry.mode].filter(Boolean).join(", ");
+      } else if (entry.mode && !prev.mode) {
+        prev.mode = entry.mode;
       }
     }
+
+    const st = entry.status;
+    if (st === "active" || st === "operational") prev.status = "active";
+    else if (!prev.status || prev.status === "unknown") prev.status = st;
   }
 
   const catalog = {};
   for (const entry of byNorad.values()) {
+    if (entry.status === "operational") entry.status = "active";
+    if (entry.status === "non-operational") entry.status = "inactive";
+
     const key = makeKey(entry.name, entry.norad);
     entry.key = key;
     entry.display = entry.name;
@@ -223,11 +234,14 @@ function isHeard(sat) {
 async function refreshCatalog() {
   ensureCacheDir();
   try {
-    const text = await fetchText(JE9PEL_CSV);
-    const catalog = parseJe9pelCsv(text);
+    const text = await fetchText(CATALOG_URL);
+    const arr = JSON.parse(text);
+    if (!Array.isArray(arr)) throw new Error("catalog not an array");
+    const catalog = parseAmsatJson(arr);
     const payload = {
       fetched_at: new Date().toISOString(),
-      note: "JE9PEL CSV live",
+      note: "AMSAT frequencies JSON live",
+      source: CATALOG_URL,
       satellites: catalog,
     };
     fs.writeFileSync(CATALOG_CACHE, JSON.stringify(payload));
@@ -240,7 +254,8 @@ async function refreshCatalog() {
     if (fs.existsSync(CATALOG_CACHE)) {
       const payload = JSON.parse(fs.readFileSync(CATALOG_CACHE, "utf8"));
       CATALOG = payload.satellites || {};
-      catalogNote = "cache " + payload.fetched_at + " (" + e.message + ")";
+      catalogNote =
+        "cache " + (payload.fetched_at || "?") + " (" + e.message + ")";
       console.log(
         "Catalog from cache: " +
           Object.keys(CATALOG).length +
@@ -272,7 +287,8 @@ async function refreshStatus() {
     if (fs.existsSync(STATUS_CACHE)) {
       const payload = JSON.parse(fs.readFileSync(STATUS_CACHE, "utf8"));
       ACTIVE = new Set(payload.names || []);
-      statusNote = "cache " + payload.fetched_at + " (" + e.message + ")";
+      statusNote =
+        "cache " + (payload.fetched_at || "?") + " (" + e.message + ")";
       console.log("Status from cache: " + ACTIVE.size);
     } else {
       statusNote = "empty (" + e.message + ")";
@@ -307,7 +323,6 @@ function getSatrecForNorad(norad) {
   return null;
 }
 
-/** Horizon flags + next AOS up to 12 hours for sort */
 function horizonFlags(norad) {
   const rec = getSatrecForNorad(norad);
   if (!rec) return { above: false, soon: false, el: null, secToAos: null };
@@ -651,19 +666,46 @@ async function loadSatellite(key) {
       tleNote +
       (currentOrbit != null ? " orbit " + currentOrbit : ""),
   );
-  // Refresh menu horizon data now that this TLE is cached
   broadcastSats();
 }
 
 function pickDefaultKey() {
   if (CATALOG[DEFAULT_SAT]) return DEFAULT_SAT;
+
   for (const [k, s] of Object.entries(CATALOG)) {
-    if (norm(s.name).includes("RS44")) return k;
+    const n = norm(s.name || s.display || k);
+    if (n === "RS44" || n.includes("RS44")) return k;
   }
+
+  const heardActive = Object.values(CATALOG).filter(
+    (s) => s.trackable && isHeard(s) && s.norad,
+  );
+  if (heardActive.length) {
+    const preferred = [
+      "RS-44",
+      "AO-7",
+      "AO-91",
+      "SO-50",
+      "FO-29",
+      "ISS",
+      "AO-73",
+    ];
+    for (const p of preferred) {
+      const hit = heardActive.find(
+        (s) => s.key === p || norm(s.name) === norm(p),
+      );
+      if (hit) return hit.key;
+    }
+    return heardActive[0].key;
+  }
+
   const active = Object.values(CATALOG).find(
     (s) => s.status === "active" && s.norad,
   );
-  return active ? active.key : Object.keys(CATALOG)[0] || null;
+  if (active) return active.key;
+
+  const any = Object.values(CATALOG).find((s) => s.trackable && s.norad);
+  return any ? any.key : null;
 }
 
 function computeState() {
@@ -827,7 +869,18 @@ setInterval(() => {
   await refreshCatalog();
   await refreshStatus();
   const key = pickDefaultKey();
-  if (key) await loadSatellite(key);
+  if (key) {
+    try {
+      await loadSatellite(key);
+    } catch (err) {
+      console.warn("Default sat load failed (" + key + "):", err.message);
+      console.warn(
+        "Server will start without a loaded sat; pick one from the menu.",
+      );
+      satrec = null;
+      currentSatKey = null;
+    }
+  }
   server.listen(PORT, "0.0.0.0", () => {
     console.log("Sat Tracker  http://127.0.0.1:" + PORT);
   });

@@ -10,8 +10,37 @@ function initMap() {
     worldCopyJump: true,
     minZoom: 2,
     maxZoom: 8,
-    zoomControl: true,
+    zoomControl: false,
   }).setView([20, 0], 2);
+
+  // Zoom bottom-left
+  L.control.zoom({ position: "bottomleft" }).addTo(map);
+
+  // Center-on-station button (bottom-left, above zoom)
+  const CenterControl = L.Control.extend({
+    options: { position: "bottomleft" },
+    onAdd: function () {
+      const container = L.DomUtil.create(
+        "div",
+        "leaflet-bar leaflet-control map-center-control",
+      );
+      const btn = L.DomUtil.create("a", "map-center-btn", container);
+      btn.href = "#";
+      btn.title = "Center on station (keep zoom)";
+      btn.setAttribute("role", "button");
+      btn.setAttribute("aria-label", "Center on station");
+      btn.innerHTML = "&#8982;"; // target / crosshair
+
+      L.DomEvent.disableClickPropagation(container);
+      L.DomEvent.on(btn, "click", function (e) {
+        L.DomEvent.preventDefault(e);
+        centerOnStation();
+      });
+
+      return container;
+    },
+  });
+  map.addControl(new CenterControl());
 
   const gibs = L.tileLayer(
     "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_ShadedRelief_Bathymetry/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg",
@@ -39,7 +68,6 @@ function initMap() {
     }
   });
 
-  // Observer marker (+)
   observerMarker = L.marker([0, 0], {
     icon: L.divIcon({
       className: "observer-icon",
@@ -48,6 +76,20 @@ function initMap() {
       iconAnchor: [11, 11],
     }),
   });
+}
+
+/** Center map on configured gridsquare; keep current zoom */
+function centerOnStation() {
+  if (!map) return;
+  const cfg = typeof loadConfig === "function" ? loadConfig() : null;
+  const grid = cfg && cfg.grid ? cfg.grid : null;
+  if (grid) {
+    centerOnGrid(grid, true);
+    return;
+  }
+  if (observerMarker && map.hasLayer(observerMarker)) {
+    map.panTo(observerMarker.getLatLng());
+  }
 }
 
 function splitAtDateLine(latlngs) {
@@ -122,7 +164,6 @@ function centerOnGrid(grid, keepZoom) {
 function updateMapTracking(state) {
   if (!map || !state) return;
 
-  // Sat marker
   if (state.position) {
     const lat = state.position.lat;
     const lon = state.position.lon;
@@ -142,7 +183,6 @@ function updateMapTracking(state) {
     }
   }
 
-  // 30-min trail (past)
   if (state.trail && state.trail.length >= 2) {
     setPolylinesFromPath(
       state.trail,
@@ -157,7 +197,6 @@ function updateMapTracking(state) {
     clearPolylineArray(trailPolylines);
   }
 
-  // Forward ground track (~2 orbits)
   if (state.forward && state.forward.length >= 2) {
     setPolylinesFromPath(
       state.forward,
@@ -172,7 +211,4 @@ function updateMapTracking(state) {
   } else {
     clearPolylineArray(forwardPolylines);
   }
-
-  // Optional: next-pass ground tracks could be added here from state.passes
-  // Currently server sends sky (az/el) not ground path for passes
 }
