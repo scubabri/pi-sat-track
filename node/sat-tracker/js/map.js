@@ -1,9 +1,12 @@
 let map = null;
 let satMarker = null;
 let observerMarker = null;
+let footprintCircle = null;
 let trailPolylines = [];
 let forwardPolylines = [];
 let passPolylines = [];
+
+const EARTH_RADIUS_KM = 6371;
 
 function initMap() {
   map = L.map("map", {
@@ -13,10 +16,8 @@ function initMap() {
     zoomControl: false,
   }).setView([20, 0], 2);
 
-  // Zoom bottom-left
   L.control.zoom({ position: "bottomleft" }).addTo(map);
 
-  // Center-on-station button (bottom-left, above zoom)
   const CenterControl = L.Control.extend({
     options: { position: "bottomleft" },
     onAdd: function () {
@@ -29,7 +30,7 @@ function initMap() {
       btn.title = "Center on station (keep zoom)";
       btn.setAttribute("role", "button");
       btn.setAttribute("aria-label", "Center on station");
-      btn.innerHTML = "&#8982;"; // target / crosshair
+      btn.innerHTML = "&#8982;";
 
       L.DomEvent.disableClickPropagation(container);
       L.DomEvent.on(btn, "click", function (e) {
@@ -78,7 +79,15 @@ function initMap() {
   });
 }
 
-/** Center map on configured gridsquare; keep current zoom */
+/** Geometric horizon footprint radius (meters) from sat altitude */
+function footprintRadiusM(heightKm) {
+  if (!Number.isFinite(heightKm) || heightKm <= 0) return 0;
+  const ratio = EARTH_RADIUS_KM / (EARTH_RADIUS_KM + heightKm);
+  if (ratio >= 1) return 0;
+  const halfAngle = Math.acos(ratio); // radians
+  return EARTH_RADIUS_KM * halfAngle * 1000; // arc length on surface → meters
+}
+
 function centerOnStation() {
   if (!map) return;
   const cfg = typeof loadConfig === "function" ? loadConfig() : null;
@@ -131,6 +140,10 @@ function clearMapTracking() {
     map.removeLayer(satMarker);
     satMarker = null;
   }
+  if (footprintCircle && map) {
+    map.removeLayer(footprintCircle);
+    footprintCircle = null;
+  }
 }
 
 function setPolylinesFromPath(latlngs, style, targetArray) {
@@ -179,6 +192,27 @@ function updateMapTracking(state) {
       } else {
         satMarker.setLatLng([lat, lon]);
         if (!map.hasLayer(satMarker)) satMarker.addTo(map);
+      }
+
+      // Transparent footprint with thin border
+      const hKm = state.position.heightKm;
+      const rM = footprintRadiusM(hKm);
+      if (rM > 0) {
+        if (!footprintCircle) {
+          footprintCircle = L.circle([lat, lon], {
+            radius: rM,
+            color: "#58a6ff",
+            weight: 1,
+            opacity: 0.55,
+            fillColor: "#58a6ff",
+            fillOpacity: 0.06,
+            interactive: false,
+          }).addTo(map);
+        } else {
+          footprintCircle.setLatLng([lat, lon]);
+          footprintCircle.setRadius(rM);
+          if (!map.hasLayer(footprintCircle)) footprintCircle.addTo(map);
+        }
       }
     }
   }
