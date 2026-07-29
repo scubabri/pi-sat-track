@@ -22,6 +22,9 @@ const PASS_HOURS = 12;
 const PASS_STEP_SEC = 30;
 const REFRESH_MS = 6 * 60 * 60 * 1000;
 const SATS_BROADCAST_MS = 30 * 1000;
+const TICK_MS = 250; // fast: Doppler + look
+const STATE_MS = 1000; // slow: map / trails / passes
+const C_MS = 299792.458; // km/s
 
 const mime = {
   ".html": "text/html",
@@ -111,6 +114,8 @@ function formatFreqDisplay(sat) {
     ulLabel: fm ? "Uplink (FM)" : "Uplink (LSB)",
     dlLabel: fm ? "Downlink (FM)" : "Downlink (USB)",
     isFm: fm,
+    ulMHz: ul ? parseFloat(ul) : null,
+    dlMHz: dl ? parseFloat(dl) : null,
   };
 }
 
@@ -529,6 +534,22 @@ function lookAngles(satrec, observer, date) {
   };
 }
 
+/** Range rate (km/s). Positive = receding. */
+function rangeRateKmS(satrec, observer, date) {
+  const pv = satellite.propagate(satrec, date);
+  if (!pv.position || !pv.velocity) return null;
+  const gmst = gmstFromDate(date);
+  const posEcf = satellite.eciToEcf(pv.position, gmst);
+  const velEcf = satellite.eciToEcf(pv.velocity, gmst);
+  const obsEcf = satellite.geodeticToEcf(observer);
+  const dx = posEcf.x - obsEcf.x;
+  const dy = posEcf.y - obsEcf.y;
+  const dz = posEcf.z - obsEcf.z;
+  const range = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  if (range < 1e-6) return 0;
+  return (dx * velEcf.x + dy * velEcf.y + dz * velEcf.z) / range;
+}
+
 function groundPoint(satrec, date) {
   const pv = satellite.propagate(satrec, date);
   if (!pv.position) return null;
@@ -708,6 +729,63 @@ function pickDefaultKey() {
   return any ? any.key : null;
 }
 
+/** Fast payload: look + Doppler-corrected freqs (full Hz precision) */
+function computeTick() {
+  if (!satrec) return null;
+  const now = new Date();
+  const look = lookAngles(satrec, observer, now);
+  if (!look) return null;
+
+  const rr = rangeRateKmS(satrec, observer, now); // km/s, + = receding
+  const info = CATALOG[currentSatKey] || {};
+  const freqs = formatFreqDisplay(info);
+
+  let ulDopplerHz = null;
+  let dlDopplerHz = null;
+  let uplink = freqs.uplink;
+  let downlink = freqs.downlink;
+  let ulHz = freqs.ulMHz != null ? Math.round(freqs.ulMHz * 1e6) : null;
+  let dlHz = freqs.dlMHz != null ? Math.round(freqs.dlMHz * 1e6) : null;
+
+  if (rr != null && Number.isFinite(rr)) {
+    // Downlink: received lower when receding → f * (1 - rr/c)
+    // Uplink: transmit higher when receding so sat hears center → f * (1 + rr/c)
+    if (freqs.dlMHz != null) {
+      const f0 = freqs.dlMHz * 1e6;
+      const fRx = f0 * (1 - rr / C_MS);
+      dlDopplerHz = fRx - f0;
+      dlHz = Math.round(fRx);
+      downlink = (fRx / 1e6).toFixed(6);
+    }
+    if (freqs.ulMHz != null) {
+      const f0 = freqs.ulMHz * 1e6;
+      const fTx = f0 * (1 + rr / C_MS);
+      ulDopplerHz = fTx - f0;
+      ulHz = Math.round(fTx);
+      uplink = (fTx / 1e6).toFixed(6);
+    }
+  }
+
+  return {
+    type: "tick",
+    sat: currentSatKey,
+    time: now.toISOString(),
+    look: { az: look.az, el: look.el, rangeKm: look.rangeKm },
+    rangeRateKmS: rr,
+    uplink,
+    downlink,
+    ulHz,
+    dlHz,
+    ulLabel: freqs.ulLabel,
+    dlLabel: freqs.dlLabel,
+    ulDopplerHz,
+    dlDopplerHz,
+    ulBase: freqs.uplink,
+    dlBase: freqs.downlink,
+  };
+}
+
+/** Slow payload: full map geometry */
 function computeState() {
   if (!satrec) return null;
   const now = new Date();
@@ -735,6 +813,7 @@ function computeState() {
 
   const info = CATALOG[currentSatKey] || {};
   const freqs = formatFreqDisplay(info);
+  const tick = computeTick();
 
   return {
     type: "state",
@@ -742,8 +821,18 @@ function computeState() {
     display: info.display || info.name || currentSatKey,
     norad: currentNorad || info.norad || null,
     orbit: currentOrbit,
-    uplink: freqs.uplink,
-    downlink: freqs.downlink,
+    uplink: tick ? tick.uplink : freqs.uplink,
+    downlink: tick ? tick.downlink : freqs.downlink,
+    ulHz: tick
+      ? tick.ulHz
+      : freqs.ulMHz != null
+        ? Math.round(freqs.ulMHz * 1e6)
+        : null,
+    dlHz: tick
+      ? tick.dlHz
+      : freqs.dlMHz != null
+        ? Math.round(freqs.dlMHz * 1e6)
+        : null,
     ulLabel: freqs.ulLabel,
     dlLabel: freqs.dlLabel,
     mode: info.mode || "",
@@ -753,6 +842,9 @@ function computeState() {
     time: now.toISOString(),
     position: { lat: pos.lat, lon: pos.lon, heightKm: pos.heightKm },
     look: { az: look.az, el: look.el, rangeKm: look.rangeKm },
+    rangeRateKmS: tick ? tick.rangeRateKmS : null,
+    ulDopplerHz: tick ? tick.ulDopplerHz : null,
+    dlDopplerHz: tick ? tick.dlDopplerHz : null,
     trail,
     forward,
     passes,
@@ -822,6 +914,8 @@ wss.on("connection", (ws) => {
 
   const state = computeState();
   if (state) ws.send(JSON.stringify(state));
+  const tick = computeTick();
+  if (tick) ws.send(JSON.stringify(tick));
 
   ws.on("message", (raw) => {
     try {
@@ -838,6 +932,8 @@ wss.on("connection", (ws) => {
           .then(() => {
             const s = computeState();
             if (s) broadcast(s);
+            const t = computeTick();
+            if (t) broadcast(t);
           })
           .catch((err) => {
             ws.send(JSON.stringify({ type: "error", message: err.message }));
@@ -851,10 +947,17 @@ wss.on("connection", (ws) => {
   ws.on("close", () => console.log("Client disconnected"));
 });
 
+// Fast: Doppler + look (~4 Hz)
+setInterval(() => {
+  const t = computeTick();
+  if (t) broadcast(t);
+}, TICK_MS);
+
+// Slow: map geometry (1 Hz)
 setInterval(() => {
   const s = computeState();
   if (s) broadcast(s);
-}, 1000);
+}, STATE_MS);
 
 setInterval(() => {
   broadcastSats();
@@ -883,6 +986,9 @@ setInterval(() => {
   }
   server.listen(PORT, "0.0.0.0", () => {
     console.log("Sat Tracker  http://127.0.0.1:" + PORT);
+    console.log(
+      "Tick " + TICK_MS + "ms (Doppler), state " + STATE_MS + "ms (map)",
+    );
   });
 })().catch((err) => {
   console.error(err);

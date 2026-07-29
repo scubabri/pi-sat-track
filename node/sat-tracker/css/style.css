@@ -651,3 +651,12 @@ body {
   background: #21262d !important;
   color: #58a6ff !important;
 }
+.freq-value {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+.freq-doppler {
+  font-size: 11px;
+  color: #8b949e;
+  margin-top: 2px;
+}

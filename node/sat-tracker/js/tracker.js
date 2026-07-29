@@ -12,6 +12,49 @@ let lastStateSat = null;
 let currentEl = null;
 let pendingSatKey = null;
 
+/** Same as pi_sat_track.py fmt_freq — MMM.KKK.HHH */
+function fmtFreq(hz) {
+  if (hz == null || !Number.isFinite(hz)) return "-";
+  hz = Math.round(hz);
+  const mhz = Math.floor(hz / 1e6);
+  const khz = Math.floor((hz % 1e6) / 1e3);
+  const hzz = Math.abs(hz % 1000);
+  return (
+    mhz +
+    "." +
+    String(khz).padStart(3, "0") +
+    "." +
+    String(hzz).padStart(3, "0")
+  );
+}
+
+/** Parse "145.991" or "145.991.250" or Hz number → Hz */
+function parseToHz(val) {
+  if (val == null || val === "-" || val === "") return null;
+  if (typeof val === "number" && Number.isFinite(val)) {
+    return val > 1e4 ? val : val * 1e6;
+  }
+  const s = String(val).trim();
+  const parts = s.split(".");
+  if (parts.length === 3) {
+    const mhz = parseInt(parts[0], 10);
+    const khz = parseInt(parts[1], 10);
+    const hz = parseInt(parts[2], 10);
+    if (![mhz, khz, hz].every(Number.isFinite)) return null;
+    return mhz * 1e6 + khz * 1e3 + hz;
+  }
+  const f = parseFloat(s);
+  if (!Number.isFinite(f)) return null;
+  return f * 1e6;
+}
+
+function fmtDopplerMHz(hzOffset) {
+  if (hzOffset == null || !Number.isFinite(hzOffset)) return "";
+  const mhz = hzOffset / 1e6;
+  const sign = mhz >= 0 ? "+" : "";
+  return sign + mhz.toFixed(6) + " MHz";
+}
+
 function getObserverFromConfig() {
   const cfg = loadConfig();
   if (!cfg.grid) return null;
@@ -83,17 +126,11 @@ function setSatButtonLabel(label) {
   });
 }
 
-/**
- * Stable AOS sort key — does NOT favor the selected sat.
- * Lower value = earlier in list.
- */
 function aosSortKey(s) {
-  // Above horizon first
   if (s.above) return -1e12;
   if (s.key === currentSatKey && currentEl != null && currentEl >= 0)
     return -1e12;
 
-  // Soonest AOS (seconds)
   if (
     typeof s.secToAos === "number" &&
     Number.isFinite(s.secToAos) &&
@@ -102,10 +139,8 @@ function aosSortKey(s) {
     return s.secToAos;
   }
 
-  // Flagged soon but no exact time — after timed, before unknown
   if (s.soon) return 15 * 60;
 
-  // No timing data — after everything with data (name breaks ties in sort)
   return 1e12;
 }
 
@@ -170,7 +205,7 @@ function renderSatMenu(payload) {
   browse.className = "sat-option sat-browse";
   browse.href = "/sats.html";
   browse.textContent = "Browse full catalog...";
-  browse.title = "Search all JE9PEL satellites";
+  browse.title = "Search all AMSAT satellites";
   menu.appendChild(browse);
 
   const headRow = document.createElement("div");
@@ -204,7 +239,6 @@ function renderSatMenu(payload) {
   }
 
   heard.forEach(add);
-  // Include current even if not in heard
   if (currentSatKey) add(sats.find((s) => s.key === currentSatKey));
 
   quick = sortHeardList(quick);
@@ -295,6 +329,71 @@ function selectSatellite(key, label) {
   }
 }
 
+function applyFreqAndLook(msg) {
+  if (msg.look && typeof msg.look.el === "number") {
+    const prevAbove = currentEl != null && currentEl >= 0;
+    currentEl = msg.look.el;
+    const nowAbove = currentEl >= 0;
+    if (prevAbove !== nowAbove) {
+      refreshCurrentSatChip();
+    }
+  }
+
+  const ulEl = document.getElementById("freq-ul");
+  const dlEl = document.getElementById("freq-dl");
+  const ulDopEl = document.getElementById("freq-ul-doppler");
+  const dlDopEl = document.getElementById("freq-dl-doppler");
+
+  // Prefer full-precision Hz from server
+  let ulHz =
+    msg.ulHz != null && Number.isFinite(msg.ulHz)
+      ? msg.ulHz
+      : parseToHz(msg.uplink);
+  let dlHz =
+    msg.dlHz != null && Number.isFinite(msg.dlHz)
+      ? msg.dlHz
+      : parseToHz(msg.downlink);
+
+  if (ulEl) ulEl.textContent = fmtFreq(ulHz);
+  if (dlEl) dlEl.textContent = fmtFreq(dlHz);
+
+  let ulDop = msg.ulDopplerHz;
+  let dlDop = msg.dlDopplerHz;
+  if (ulDop == null && msg.ulBase != null && ulHz != null) {
+    const base = parseToHz(msg.ulBase);
+    if (base != null) ulDop = ulHz - base;
+  }
+  if (dlDop == null && msg.dlBase != null && dlHz != null) {
+    const base = parseToHz(msg.dlBase);
+    if (base != null) dlDop = dlHz - base;
+  }
+
+  if (ulDopEl)
+    ulDopEl.textContent =
+      ulDop != null ? "Doppler " + fmtDopplerMHz(ulDop) : "";
+  if (dlDopEl)
+    dlDopEl.textContent =
+      dlDop != null ? "Doppler " + fmtDopplerMHz(dlDop) : "";
+
+  if (ulEl && ulDop != null) ulEl.title = "Doppler " + fmtDopplerMHz(ulDop);
+  if (dlEl && dlDop != null) dlEl.title = "Doppler " + fmtDopplerMHz(dlDop);
+
+  const labels = document.querySelectorAll(".freq-block .freq-label");
+  if (labels[0] && msg.ulLabel) labels[0].textContent = msg.ulLabel;
+  if (labels[1] && msg.dlLabel) labels[1].textContent = msg.dlLabel;
+
+  if (msg.look) {
+    const azEl = document.getElementById("sat-az");
+    const elEl = document.getElementById("sat-el");
+    const rangeEl = document.getElementById("sat-range");
+    if (azEl) azEl.textContent = msg.look.az.toFixed(1) + "\u00B0";
+    if (elEl) elEl.textContent = msg.look.el.toFixed(1) + "\u00B0";
+    if (rangeEl && msg.look.rangeKm != null) {
+      rangeEl.textContent = msg.look.rangeKm.toFixed(1) + " km";
+    }
+  }
+}
+
 function connectTracker() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const url = proto + "://" + location.host + "/ws";
@@ -326,6 +425,12 @@ function connectTracker() {
         return;
       }
 
+      if (msg.type === "tick") {
+        if (pendingSatKey && msg.sat && msg.sat !== pendingSatKey) return;
+        applyFreqAndLook(msg);
+        return;
+      }
+
       if (msg.type !== "state") return;
 
       if (pendingSatKey && msg.sat && msg.sat !== pendingSatKey) {
@@ -347,32 +452,18 @@ function connectTracker() {
         setSatButtonLabel(msg.display || msg.sat);
       }
 
-      if (msg.look && typeof msg.look.el === "number") {
-        const prevAbove = currentEl != null && currentEl >= 0;
-        currentEl = msg.look.el;
-        const nowAbove = currentEl >= 0;
-        if (prevAbove !== nowAbove) {
-          refreshCurrentSatChip();
-        }
-      }
+      applyFreqAndLook(msg);
 
-      const ul = document.getElementById("freq-ul");
-      const dl = document.getElementById("freq-dl");
-      if (ul) ul.textContent = msg.uplink || "-";
-      if (dl) dl.textContent = msg.downlink || "-";
-
-      const labels = document.querySelectorAll(".freq-block .freq-label");
-      if (labels[0] && msg.ulLabel) labels[0].textContent = msg.ulLabel;
-      if (labels[1] && msg.dlLabel) labels[1].textContent = msg.dlLabel;
-
-      updateMapTracking(msg);
+      if (typeof updateMapTracking === "function") updateMapTracking(msg);
 
       if (msg.look) {
         const sky =
           msg.passes && msg.passes[0] && msg.passes[0].sky
             ? msg.passes[0].sky
             : null;
-        updateRadar(msg.look.az, msg.look.el, sky);
+        if (typeof updateRadar === "function") {
+          updateRadar(msg.look.az, msg.look.el, sky);
+        }
       }
 
       if (typeof updateProfile === "function") updateProfile(msg);
@@ -397,9 +488,6 @@ function connectTracker() {
 function updateSatelliteStatus(state) {
   const nameEl = document.getElementById("sat-common");
   const noradEl = document.getElementById("sat-norad");
-  const azEl = document.getElementById("sat-az");
-  const elEl = document.getElementById("sat-el");
-  const rangeEl = document.getElementById("sat-range");
   const orbitEl = document.getElementById("sat-orbit");
 
   if (nameEl) nameEl.textContent = state.display || state.sat || "-";
@@ -407,6 +495,9 @@ function updateSatelliteStatus(state) {
     noradEl.textContent = state.norad != null ? String(state.norad) : "-";
 
   if (state.look) {
+    const azEl = document.getElementById("sat-az");
+    const elEl = document.getElementById("sat-el");
+    const rangeEl = document.getElementById("sat-range");
     if (azEl) azEl.textContent = state.look.az.toFixed(1) + "\u00B0";
     if (elEl) elEl.textContent = state.look.el.toFixed(1) + "\u00B0";
     if (rangeEl) {
@@ -472,7 +563,6 @@ function tickCountdown() {
   const dot = document.querySelector("#pass-status .status-dot");
   if (!countdownEl) return;
 
-  // Above geometric horizon → LOS
   if (currentEl != null && currentEl >= 0) {
     if (labelEl) labelEl.textContent = "LOS in";
     if (dot) dot.className = "status-dot green";
