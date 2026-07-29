@@ -120,6 +120,12 @@
         <section class="panel-section">
           <h3>Frequencies</h3>
           <div class="freq-block">
+            <div class="freq-label">Mode</div>
+            <select id="mode-select" class="mode-select" title="Transponder / mode">
+              <option value="0">—</option>
+            </select>
+          </div>
+          <div class="freq-block">
             <div class="freq-label">Uplink (LSB)</div>
             <div class="freq-value uplink" id="freq-ul">-</div>
             <div class="freq-doppler" id="freq-ul-doppler"></div>
@@ -134,6 +140,16 @@
             <input type="text" id="fine-step" value="100" readonly />
             <span class="unit">Hz</span>
             <button class="btn" id="btn-fine-plus">+</button>
+          </div>
+          <div class="passband" id="passband">
+            <div class="passband-row">
+              <span class="passband-label">UL passband</span>
+              <span class="passband-value" id="passband-ul">-</span>
+            </div>
+            <div class="passband-row">
+              <span class="passband-label">DL passband</span>
+              <span class="passband-value" id="passband-dl">-</span>
+            </div>
           </div>
         </section>
 

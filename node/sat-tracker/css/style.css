@@ -660,3 +660,85 @@ body {
   color: #8b949e;
   margin-top: 2px;
 }
+.mode-select {
+  width: 100%;
+  background: #161b22;
+  color: #e6edf3;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.mode-select:focus {
+  outline: none;
+  border-color: #58a6ff;
+}
+
+.freq-value {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  font-size: 1.25rem;
+}
+
+.freq-doppler {
+  font-size: 11px;
+  color: #8b949e;
+  margin-top: 2px;
+  min-height: 1em;
+}
+.mode-select {
+  width: 100%;
+  background: #161b22;
+  color: #e6edf3;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.mode-select:focus {
+  outline: none;
+  border-color: #58a6ff;
+}
+
+.freq-value {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  font-size: 1.25rem;
+}
+
+.freq-doppler {
+  font-size: 11px;
+  color: #8b949e;
+  margin-top: 2px;
+  min-height: 1em;
+}
+
+.passband {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #30363d;
+  font-size: 12px;
+}
+
+.passband-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  color: #8b949e;
+}
+
+.passband-label {
+  flex-shrink: 0;
+}
+
+.passband-value {
+  text-align: right;
+  color: #c9d1d9;
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
