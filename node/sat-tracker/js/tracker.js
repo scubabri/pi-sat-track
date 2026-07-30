@@ -203,6 +203,28 @@ function applyLiveHorizon(sats) {
   });
 }
 
+function satHorizonClass(s) {
+  if (s.above) return "sat-up";
+  if (
+    typeof s.secToAos === "number" &&
+    Number.isFinite(s.secToAos) &&
+    s.secToAos >= 0 &&
+    s.secToAos <= 5 * 60
+  ) {
+    return "sat-imminent";
+  }
+  if (
+    s.soon ||
+    (typeof s.secToAos === "number" &&
+      Number.isFinite(s.secToAos) &&
+      s.secToAos >= 0 &&
+      s.secToAos <= 15 * 60)
+  ) {
+    return "sat-soon";
+  }
+  return "sat-down";
+}
+
 function renderSatMenu(payload) {
   const menu = document.getElementById("sat-menu");
   if (!menu) return;
@@ -266,18 +288,23 @@ function renderSatMenu(payload) {
     btn.type = "button";
     btn.className = "sat-option";
     if (s.key === currentSatKey) btn.classList.add("active");
-
-    if (s.above) btn.classList.add("sat-up");
-    else if (s.soon) btn.classList.add("sat-soon");
-    else btn.classList.add("sat-down");
-
+    btn.classList.add(satHorizonClass(s));
     btn.classList.add("heard");
     btn.dataset.sat = s.key;
     btn.textContent = s.name;
 
     let tip = s.name + "  (NORAD " + s.norad + ")";
     if (s.above) tip += " — above horizon";
-    else if (s.soon) {
+    else if (
+      typeof s.secToAos === "number" &&
+      s.secToAos >= 0 &&
+      s.secToAos <= 5 * 60
+    ) {
+      tip += " — AOS < 5 min (~" + Math.round(s.secToAos / 60) + "m)";
+    } else if (
+      s.soon ||
+      (typeof s.secToAos === "number" && s.secToAos <= 15 * 60)
+    ) {
       tip += " — AOS < 15 min";
       if (typeof s.secToAos === "number")
         tip += " (~" + Math.round(s.secToAos / 60) + "m)";
@@ -313,7 +340,7 @@ function refreshCurrentSatChip() {
   } else {
     document.querySelectorAll(".sat-option[data-sat]").forEach((el) => {
       if (el.dataset.sat !== currentSatKey) return;
-      el.classList.remove("sat-up", "sat-soon", "sat-down");
+      el.classList.remove("sat-up", "sat-soon", "sat-imminent", "sat-down");
       if (currentEl != null && currentEl >= 0) el.classList.add("sat-up");
       else el.classList.add("sat-down");
     });
@@ -832,10 +859,9 @@ function tickCountdown() {
     if (labelEl) labelEl.textContent = "Next AOS in";
     countdownEl.textContent = formatCountdown(secToAos);
     if (dot) {
-      // Not green while waiting — green is reserved for in-pass
       if (secToAos <= 5 * 60) dot.className = "status-dot red";
-      else if (secToAos <= 15 * 60) dot.className = "status-dot orange";
-      else dot.className = "status-dot yellow";
+      else if (secToAos <= 15 * 60) dot.className = "status-dot yellow";
+      else dot.className = "status-dot";
     }
   } else if (secToLos > 0) {
     if (labelEl) labelEl.textContent = "LOS in";
