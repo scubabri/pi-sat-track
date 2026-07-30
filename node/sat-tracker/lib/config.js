@@ -12,7 +12,7 @@ const CATALOG_URL =
   "https://raw.githubusercontent.com/palewire/amateur-satellite-database/main/data/amsat-all-frequencies.json";
 const AMSAT_STATUS = "https://www.amsat.org/status/";
 
-const TCI_HOST = process.env.TCI_HOST || "172.17.18.178";
+const TCI_HOST = process.env.TCI_HOST || "172.17.18.117";
 const TCI_PORT = parseInt(process.env.TCI_PORT || "50001", 10);
 const TCI_URI = "ws://" + TCI_HOST + ":" + TCI_PORT;
 
