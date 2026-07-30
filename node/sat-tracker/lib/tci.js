@@ -1,9 +1,10 @@
-const WebSocket = require("ws"); // constructor (do not destructure — older ws versions break)
+const WebSocket = require("ws");
 const net = require("net");
 const { TCI_URI, TCI_HOST, TCI_PORT, C_MS } = require("./config");
 const {
   formatFreqDisplayFromMode,
   isInverting,
+  isFmMode,
   getCatalog,
 } = require("./catalog");
 const { rangeRateKmS } = require("./orbit");
@@ -16,6 +17,8 @@ let manualDlOffset = 0;
 let ulFineOffset = 0;
 let lastCmdDl = 0;
 let lastCmdUl = 0;
+let lastModDl = "";
+let lastModUl = "";
 let digitStep = 100;
 let reconnectTimer = null;
 
@@ -46,6 +49,8 @@ function statusPayload() {
     step: digitStep,
     lastCmdDl,
     lastCmdUl,
+    lastModDl,
+    lastModUl,
   };
 }
 
@@ -64,7 +69,6 @@ function tciSend(cmd) {
   }
 }
 
-/** Quick TCP probe so we can log "nothing listening" vs WS handshake failure */
 function probePort(host, port, timeoutMs) {
   return new Promise((resolve) => {
     const socket = new net.Socket();
@@ -104,8 +108,49 @@ function disconnect() {
   }
   tciConnected = false;
   radioOn = false;
+  lastModDl = "";
+  lastModUl = "";
   broadcastStatus();
   console.log("TCI disconnected");
+}
+
+/**
+ * Map catalog mode → ExpertSDR / AetherSDR TCI modulation name.
+ * Channels: 0 = downlink (RX), 1 = uplink (TX/other VFO)
+ * Linear inverting sats: UL LSB, DL USB (standard practice)
+ * FM sats: NFM both ways
+ */
+function modesForActive(active) {
+  const modeStr = (active && active.mode) || "";
+  if (isFmMode(modeStr)) {
+    return { ul: "NFM", dl: "NFM" };
+  }
+  // Explicit hints in mode string
+  const m = modeStr.toUpperCase();
+  if (/\bFM\b|NFM|CTCSS/.test(m)) return { ul: "NFM", dl: "NFM" };
+  if (/\bCW\b/.test(m) && !/\bSSB\b/.test(m)) return { ul: "CW", dl: "CW" };
+
+  // Default linear: UL LSB, DL USB
+  return { ul: "LSB", dl: "USB" };
+}
+
+function pushModulation(active, force) {
+  if (!tciConnected) return;
+  const mods = modesForActive(active);
+
+  // modulation:rx,MODE;  — Expert Electronics TCI
+  if (force || mods.dl !== lastModDl) {
+    if (tciSend(`modulation:0,${mods.dl};`)) {
+      lastModDl = mods.dl;
+      console.log("TCI mod DL (rx0) ->", mods.dl);
+    }
+  }
+  if (force || mods.ul !== lastModUl) {
+    if (tciSend(`modulation:1,${mods.ul};`)) {
+      lastModUl = mods.ul;
+      console.log("TCI mod UL (rx1) ->", mods.ul);
+    }
+  }
 }
 
 async function connect() {
@@ -136,7 +181,6 @@ async function connect() {
     );
     connecting = false;
     tciConnected = false;
-    // keep radioOn true so UI shows intent; retry
     scheduleReconnect();
     broadcastStatus();
     return;
@@ -164,15 +208,21 @@ async function connect() {
     ulFineOffset = 0;
     lastCmdDl = 0;
     lastCmdUl = 0;
+    lastModDl = "";
+    lastModUl = "";
     clearReconnect();
     console.log("TCI connected to", TCI_URI);
     broadcastStatus();
+
+    // Set modes immediately on connect
+    const { currentSatKey, currentModeIndex } = getCtx();
+    const info = getCatalog()[currentSatKey] || {};
+    const active = getActiveModeObj(info, currentModeIndex);
+    pushModulation(active, true);
   });
 
   tciWs.on("message", (raw) => {
     const msg = raw.toString().trim();
-    // Uncomment for protocol debug:
-    // if (msg.length < 200) console.log('TCI <<', msg);
 
     if (!msg.startsWith("vfo:")) return;
     try {
@@ -181,7 +231,6 @@ async function connect() {
       const rx = parseInt(parts[0], 10);
       const ch = parseInt(parts[1], 10);
       const freq = parseInt(parts[2], 10);
-      // rx=0 channel=0 = downlink VFO (Python convention)
       if (rx === 0 && ch === 0 && Number.isFinite(freq) && lastCmdDl > 0) {
         if (Math.abs(freq - lastCmdDl) > 80) {
           const { satrec, observer, currentSatKey, currentModeIndex } =
@@ -211,6 +260,8 @@ async function connect() {
     connecting = false;
     tciConnected = false;
     tciWs = null;
+    lastModDl = "";
+    lastModUl = "";
     broadcastStatus();
     if (radioOn) scheduleReconnect();
   });
@@ -290,6 +341,8 @@ function resetOffsets() {
   ulFineOffset = 0;
   lastCmdDl = 0;
   lastCmdUl = 0;
+  lastModDl = "";
+  lastModUl = "";
 }
 
 function pushFrequencies() {
@@ -302,6 +355,9 @@ function pushFrequencies() {
   const active = getActiveModeObj(info, currentModeIndex);
   const freqs = formatFreqDisplayFromMode(active);
   if (freqs.ulMHz == null && freqs.dlMHz == null) return;
+
+  // Keep modulation in sync (sat or mode dropdown change)
+  pushModulation(active, false);
 
   const rr = rangeRateKmS(satrec, observer, new Date());
   if (rr == null || !Number.isFinite(rr)) return;
@@ -341,6 +397,8 @@ function getRadioState() {
     ulFineOffset,
     lastCmdDl,
     lastCmdUl,
+    lastModDl,
+    lastModUl,
     step: digitStep,
   };
 }
