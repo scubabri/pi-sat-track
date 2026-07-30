@@ -1,6 +1,6 @@
 const WebSocket = require("ws");
 const net = require("net");
-const { TCI_URI, TCI_HOST, TCI_PORT, C_MS } = require("./config");
+const config = require("./config");
 const {
   formatFreqDisplayFromMode,
   isInverting,
@@ -41,9 +41,9 @@ function statusPayload() {
     radioOn,
     connected: tciConnected,
     connecting,
-    host: TCI_HOST,
-    port: TCI_PORT,
-    uri: TCI_URI,
+    host: config.TCI_HOST,
+    port: config.TCI_PORT,
+    uri: config.TCI_URI,
     manualDlOffset,
     ulFineOffset,
     step: digitStep,
@@ -117,7 +117,7 @@ function disconnect() {
 /**
  * Map catalog mode → ExpertSDR / AetherSDR TCI modulation name.
  * Channels: 0 = downlink (RX), 1 = uplink (TX/other VFO)
- * Linear inverting sats: UL LSB, DL USB (standard practice)
+ * Linear inverting sats: UL LSB, DL USB
  * FM sats: NFM both ways
  */
 function modesForActive(active) {
@@ -125,12 +125,9 @@ function modesForActive(active) {
   if (isFmMode(modeStr)) {
     return { ul: "NFM", dl: "NFM" };
   }
-  // Explicit hints in mode string
   const m = modeStr.toUpperCase();
   if (/\bFM\b|NFM|CTCSS/.test(m)) return { ul: "NFM", dl: "NFM" };
   if (/\bCW\b/.test(m) && !/\bSSB\b/.test(m)) return { ul: "CW", dl: "CW" };
-
-  // Default linear: UL LSB, DL USB
   return { ul: "LSB", dl: "USB" };
 }
 
@@ -138,7 +135,6 @@ function pushModulation(active, force) {
   if (!tciConnected) return;
   const mods = modesForActive(active);
 
-  // modulation:rx,MODE;  — Expert Electronics TCI
   if (force || mods.dl !== lastModDl) {
     if (tciSend(`modulation:0,${mods.dl};`)) {
       lastModDl = mods.dl;
@@ -171,12 +167,16 @@ async function connect() {
   radioOn = true;
   broadcastStatus();
 
-  console.log("TCI: probing", TCI_HOST + ":" + TCI_PORT + " ...");
-  const probe = await probePort(TCI_HOST, TCI_PORT, 1500);
+  const host = config.TCI_HOST;
+  const port = config.TCI_PORT;
+  const uri = config.TCI_URI;
+
+  console.log("TCI: probing", host + ":" + port + " ...");
+  const probe = await probePort(host, port, 1500);
   if (!probe.ok) {
     console.warn(
       "TCI: nothing accepting TCP on",
-      TCI_HOST + ":" + TCI_PORT,
+      host + ":" + port,
       "(" + probe.err + "). Is AetherSDR running with TCI enabled?",
     );
     connecting = false;
@@ -185,10 +185,10 @@ async function connect() {
     broadcastStatus();
     return;
   }
-  console.log("TCI: TCP port open, opening WebSocket", TCI_URI);
+  console.log("TCI: TCP port open, opening WebSocket", uri);
 
   try {
-    tciWs = new WebSocket(TCI_URI, {
+    tciWs = new WebSocket(uri, {
       handshakeTimeout: 5000,
     });
   } catch (e) {
@@ -211,10 +211,9 @@ async function connect() {
     lastModDl = "";
     lastModUl = "";
     clearReconnect();
-    console.log("TCI connected to", TCI_URI);
+    console.log("TCI connected to", uri);
     broadcastStatus();
 
-    // Set modes immediately on connect
     const { currentSatKey, currentModeIndex } = getCtx();
     const info = getCatalog()[currentSatKey] || {};
     const active = getActiveModeObj(info, currentModeIndex);
@@ -242,7 +241,7 @@ async function connect() {
             const rr = rangeRateKmS(satrec, observer, new Date());
             if (rr != null) {
               const f0 = freqs.dlMHz * 1e6;
-              const df = 1 - rr / C_MS;
+              const df = 1 - rr / config.C_MS;
               manualDlOffset = freq - f0 * df;
             }
           }
@@ -320,6 +319,19 @@ function setRadio(on) {
   broadcastStatus();
 }
 
+/** Host/port changed from Station Configuration — reconnect if radio is on */
+function applyEndpointChange() {
+  console.log("TCI endpoint changed →", config.TCI_URI);
+  if (radioOn) {
+    const wasOn = true;
+    disconnect();
+    radioOn = wasOn;
+    connect();
+  } else {
+    broadcastStatus();
+  }
+}
+
 function adjustFine(delta) {
   if (typeof delta === "number") ulFineOffset += delta;
   broadcastStatus();
@@ -356,13 +368,12 @@ function pushFrequencies() {
   const freqs = formatFreqDisplayFromMode(active);
   if (freqs.ulMHz == null && freqs.dlMHz == null) return;
 
-  // Keep modulation in sync (sat or mode dropdown change)
   pushModulation(active, false);
 
   const rr = rangeRateKmS(satrec, observer, new Date());
   if (rr == null || !Number.isFinite(rr)) return;
 
-  const df = 1 - rr / C_MS;
+  const df = 1 - rr / config.C_MS;
   const inverting = isInverting(active && active.mode);
 
   let desiredDl = null;
@@ -414,4 +425,5 @@ module.exports = {
   getRadioState,
   statusPayload,
   broadcastStatus,
+  applyEndpointChange,
 };

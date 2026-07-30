@@ -628,6 +628,7 @@ function connectTracker() {
   ws.onopen = () => {
     console.log("Tracker WebSocket connected");
     sendObserver();
+    if (typeof pushSavedEndpoints === "function") pushSavedEndpoints();
     updateStationStatus();
     if (currentSatKey) {
       pendingSatKey = currentSatKey;

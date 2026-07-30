@@ -12,14 +12,16 @@ const CATALOG_URL =
   "https://raw.githubusercontent.com/palewire/amateur-satellite-database/main/data/amsat-all-frequencies.json";
 const AMSAT_STATUS = "https://www.amsat.org/status/";
 
-const TCI_HOST = process.env.TCI_HOST || "172.17.18.117";
-const TCI_PORT = parseInt(process.env.TCI_PORT || "50001", 10);
-const TCI_URI = "ws://" + TCI_HOST + ":" + TCI_PORT;
+// Mutable endpoints (defaults; overridden by client Station Configuration)
+let TCI_HOST = process.env.TCI_HOST || "127.0.0.1";
+let TCI_PORT = parseInt(process.env.TCI_PORT || "50001", 10);
 
-const ROTOR_AZ_HOST = process.env.ROTOR_AZ_HOST || "127.0.0.1";
-const ROTOR_AZ_PORT = parseInt(process.env.ROTOR_AZ_PORT || "4535", 10);
-const ROTOR_EL_HOST = process.env.ROTOR_EL_HOST || "127.0.0.1";
-const ROTOR_EL_PORT = parseInt(process.env.ROTOR_EL_PORT || "4536", 10);
+let ROTOR_AZ_HOST = process.env.ROTOR_AZ_HOST || "127.0.0.1";
+let ROTOR_AZ_PORT = parseInt(process.env.ROTOR_AZ_PORT || "4535", 10);
+let ROTOR_EL_HOST =
+  process.env.ROTOR_EL_HOST || process.env.ROTOR_AZ_HOST || "127.0.0.1";
+let ROTOR_EL_PORT = parseInt(process.env.ROTOR_EL_PORT || "4536", 10);
+
 const ROTOR_MIN_EL = parseFloat(process.env.ROTOR_MIN_EL || "10");
 const ROTOR_PARK_EL = parseFloat(process.env.ROTOR_PARK_EL || "0");
 const ROTOR_MOVE_INTERVAL_MS = parseInt(
@@ -51,6 +53,72 @@ const MIME = {
   ".json": "application/json",
 };
 
+function tciUri() {
+  return "ws://" + TCI_HOST + ":" + TCI_PORT;
+}
+
+function getEndpoints() {
+  return {
+    tciHost: TCI_HOST,
+    tciPort: TCI_PORT,
+    rotorHost: ROTOR_AZ_HOST,
+    rotorAzPort: ROTOR_AZ_PORT,
+    rotorElPort: ROTOR_EL_PORT,
+  };
+}
+
+/**
+ * Apply endpoint overrides from the UI.
+ * Returns { tciChanged, rotorChanged }.
+ */
+function applyEndpoints(ep) {
+  let tciChanged = false;
+  let rotorChanged = false;
+  if (!ep || typeof ep !== "object") return { tciChanged, rotorChanged };
+
+  if (typeof ep.tciHost === "string" && ep.tciHost.trim()) {
+    const h = ep.tciHost.trim();
+    if (h !== TCI_HOST) {
+      TCI_HOST = h;
+      tciChanged = true;
+    }
+  }
+  if (ep.tciPort != null && Number.isFinite(Number(ep.tciPort))) {
+    const p = parseInt(ep.tciPort, 10);
+    if (p > 0 && p < 65536 && p !== TCI_PORT) {
+      TCI_PORT = p;
+      tciChanged = true;
+    }
+  }
+
+  // One host for both rotctld instances (AZ + EL ports)
+  if (typeof ep.rotorHost === "string" && ep.rotorHost.trim()) {
+    const h = ep.rotorHost.trim();
+    if (h !== ROTOR_AZ_HOST || h !== ROTOR_EL_HOST) {
+      ROTOR_AZ_HOST = h;
+      ROTOR_EL_HOST = h;
+      rotorChanged = true;
+    }
+  }
+  if (ep.rotorAzPort != null && Number.isFinite(Number(ep.rotorAzPort))) {
+    const p = parseInt(ep.rotorAzPort, 10);
+    if (p > 0 && p < 65536 && p !== ROTOR_AZ_PORT) {
+      ROTOR_AZ_PORT = p;
+      rotorChanged = true;
+    }
+  }
+  if (ep.rotorElPort != null && Number.isFinite(Number(ep.rotorElPort))) {
+    const p = parseInt(ep.rotorElPort, 10);
+    if (p > 0 && p < 65536 && p !== ROTOR_EL_PORT) {
+      ROTOR_EL_PORT = p;
+      rotorChanged = true;
+    }
+  }
+
+  return { tciChanged, rotorChanged };
+}
+
+// Export live getters so modules always see current values
 module.exports = {
   ROOT,
   CACHE_DIR,
@@ -59,13 +127,27 @@ module.exports = {
   PORT,
   CATALOG_URL,
   AMSAT_STATUS,
-  TCI_HOST,
-  TCI_PORT,
-  TCI_URI,
-  ROTOR_AZ_HOST,
-  ROTOR_AZ_PORT,
-  ROTOR_EL_HOST,
-  ROTOR_EL_PORT,
+  get TCI_HOST() {
+    return TCI_HOST;
+  },
+  get TCI_PORT() {
+    return TCI_PORT;
+  },
+  get TCI_URI() {
+    return tciUri();
+  },
+  get ROTOR_AZ_HOST() {
+    return ROTOR_AZ_HOST;
+  },
+  get ROTOR_AZ_PORT() {
+    return ROTOR_AZ_PORT;
+  },
+  get ROTOR_EL_HOST() {
+    return ROTOR_EL_HOST;
+  },
+  get ROTOR_EL_PORT() {
+    return ROTOR_EL_PORT;
+  },
   ROTOR_MIN_EL,
   ROTOR_PARK_EL,
   ROTOR_MOVE_INTERVAL_MS,
@@ -81,4 +163,7 @@ module.exports = {
   STATE_MS,
   C_MS,
   MIME,
+  getEndpoints,
+  applyEndpoints,
+  tciUri,
 };

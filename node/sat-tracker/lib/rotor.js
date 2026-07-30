@@ -8,8 +8,8 @@ let azConnected = false;
 let elConnected = false;
 let azBuf = "";
 let elBuf = "";
-let lastAz = null; // last reported / commanded az for UI
-let lastEl = null;
+let lastAz = null; // hardware only
+let lastEl = null; // hardware only
 let lastCmdAz = null;
 let lastCmdEl = null;
 let lastMoveAt = 0;
@@ -68,98 +68,98 @@ function stopPoll() {
 
 function startPoll() {
   stopPoll();
-  // Live position while moving — ~4 Hz is fine for gauges
   pollTimer = setInterval(() => {
     if (!antennaOn) return;
     pollPositions();
   }, 250);
 }
 
-function parsePosReply(buf, kind) {
-  // rotctld "p" reply is typically:
-  //   <azimuth>\n
-  //   <elevation>\n
-  //   RPRT 0\n
-  // Single-axis AZ: az meaningful, el often 0
-  // Single-axis EL: el often in first field or second
+/**
+ * Extract numbers from a rotctld reply buffer.
+ * Model 405 single-axis: the axis value is ALWAYS the first number
+ * (matches rt21_rotctld.py status / pi_sat_track.py).
+ */
+function extractFirstNumber(buf) {
+  const lines = buf.split(/\r?\n/);
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t || /^RPRT/i.test(t)) continue;
+    const n = parseFloat(t);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+function replyComplete(buf) {
+  // Complete when we have RPRT, or at least 2 lines of content
+  if (/RPRT\s+-?\d+/i.test(buf)) return true;
+  const lines = buf.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  return lines.length >= 2;
+}
+
+function isAckOnly(buf) {
+  // set_pos replies are just "RPRT 0"
   const lines = buf
     .split(/\r?\n/)
     .map((s) => s.trim())
-    .filter((s) => s.length && !/^RPRT/i.test(s));
-
-  const nums = [];
-  for (const line of lines) {
-    const n = parseFloat(line);
-    if (Number.isFinite(n)) nums.push(n);
-  }
-  if (!nums.length) return null;
-
-  if (kind === "az") {
-    return { az: nums[0], el: nums.length > 1 ? nums[1] : null };
-  }
-  // EL instance: prefer the non-zero / larger-magnitude elev-like value
-  if (nums.length === 1) return { az: null, el: nums[0] };
-  const a = nums[0];
-  const b = nums[1];
-  // If first looks like elev (0..90) and second is 0, use first
-  if (Math.abs(a) <= 95 && Math.abs(b) < 1) return { az: null, el: a };
-  if (Math.abs(b) <= 95) return { az: null, el: b };
-  return { az: null, el: a };
+    .filter(Boolean);
+  return lines.length > 0 && lines.every((l) => /^RPRT\s+-?\d+/i.test(l));
 }
 
-function onPosUpdate(kind, pos) {
+function onPosUpdate(kind, value) {
+  if (value == null || !Number.isFinite(value)) return;
   let changed = false;
-  if (kind === "az" && pos.az != null && Number.isFinite(pos.az)) {
-    const a = ((pos.az % 360) + 360) % 360;
+  if (kind === "az") {
+    const a = ((value % 360) + 360) % 360;
     if (lastAz == null || Math.abs(a - lastAz) >= 0.05) {
       lastAz = a;
       changed = true;
     }
-  }
-  if (kind === "el" && pos.el != null && Number.isFinite(pos.el)) {
-    const e = pos.el;
-    if (lastEl == null || Math.abs(e - lastEl) >= 0.05) {
-      lastEl = e;
+  } else {
+    if (lastEl == null || Math.abs(value - lastEl) >= 0.05) {
+      lastEl = value;
       changed = true;
     }
   }
-  if (changed) broadcastStatus();
+  if (changed) {
+    console.log(
+      "Rotor pos",
+      kind.toUpperCase(),
+      kind === "az" ? lastAz.toFixed(1) : lastEl.toFixed(1),
+    );
+    broadcastStatus();
+  }
+}
+
+function handleData(kind, chunk) {
+  const isAz = kind === "az";
+  if (isAz) {
+    azBuf += chunk;
+    if (azBuf.length > 8192) azBuf = azBuf.slice(-2048);
+    if (!replyComplete(azBuf)) return;
+    const buf = azBuf;
+    azBuf = "";
+    if (isAckOnly(buf)) return;
+    const n = extractFirstNumber(buf);
+    if (n != null) onPosUpdate("az", n);
+  } else {
+    elBuf += chunk;
+    if (elBuf.length > 8192) elBuf = elBuf.slice(-2048);
+    if (!replyComplete(elBuf)) return;
+    const buf = elBuf;
+    elBuf = "";
+    if (isAckOnly(buf)) return;
+    const n = extractFirstNumber(buf);
+    if (n != null) onPosUpdate("el", n);
+  }
 }
 
 function attachSocket(kind, sock) {
-  const isAz = kind === "az";
   sock.setEncoding("utf8");
-
-  sock.on("data", (chunk) => {
-    if (isAz) {
-      azBuf += chunk;
-      if (azBuf.length > 8192) azBuf = azBuf.slice(-2048);
-      // Process complete replies ending with RPRT or two numeric lines
-      if (
-        /RPRT\s+-?\d+/i.test(azBuf) ||
-        (azBuf.match(/\n/g) || []).length >= 2
-      ) {
-        const pos = parsePosReply(azBuf, "az");
-        azBuf = "";
-        if (pos) onPosUpdate("az", pos);
-      }
-    } else {
-      elBuf += chunk;
-      if (elBuf.length > 8192) elBuf = elBuf.slice(-2048);
-      if (
-        /RPRT\s+-?\d+/i.test(elBuf) ||
-        (elBuf.match(/\n/g) || []).length >= 2
-      ) {
-        const pos = parsePosReply(elBuf, "el");
-        elBuf = "";
-        if (pos) onPosUpdate("el", pos);
-      }
-    }
-  });
-
+  sock.on("data", (chunk) => handleData(kind, chunk));
   sock.on("close", () => {
     console.log("Rotor", kind.toUpperCase(), "closed");
-    if (isAz) {
+    if (kind === "az") {
       azConnected = false;
       azSock = null;
       azBuf = "";
@@ -171,7 +171,6 @@ function attachSocket(kind, sock) {
     broadcastStatus();
     if (antennaOn) scheduleReconnect();
   });
-
   sock.on("error", (err) => {
     console.warn("Rotor", kind.toUpperCase(), "error:", err.message);
   });
@@ -275,37 +274,57 @@ function setAntenna(on) {
   broadcastStatus();
 }
 
+function applyEndpointChange() {
+  console.log(
+    "Rotor endpoints →",
+    config.ROTOR_AZ_HOST + ":" + config.ROTOR_AZ_PORT,
+    config.ROTOR_EL_HOST + ":" + config.ROTOR_EL_PORT,
+  );
+  if (antennaOn) {
+    disconnect();
+    antennaOn = true;
+    connect();
+  } else {
+    broadcastStatus();
+  }
+}
+
 /**
- * Dual single-axis rotctld:
- *   AZ: P <az> 0
- *   EL: P 0 <el>
+ * Dual model-405 (same as Python):
+ *   AZ: P <az> 0.0
+ *   EL: P <el> 0.0
+ * Never write lastAz/lastEl here — only hardware poll does.
  */
+let lastMoveAzAt = 0;
+let lastMoveElAt = 0;
+
 function commandPosition(az, el) {
   if (!antennaOn) return;
-
   const now = Date.now();
-  if (now - lastMoveAt < config.ROTOR_MOVE_INTERVAL_MS) return;
-  lastMoveAt = now;
+  const interval = config.ROTOR_MOVE_INTERVAL_MS;
 
   if (az != null && Number.isFinite(az) && azConnected) {
-    let a = ((az % 360) + 360) % 360;
-    if (lastCmdAz == null || Math.abs(a - lastCmdAz) >= 0.3) {
-      if (send("az", "P " + a.toFixed(1) + " 0")) {
-        lastCmdAz = a;
-        // Optimistic until poll catches up
-        lastAz = a;
-        broadcastStatus();
+    if (now - lastMoveAzAt >= interval) {
+      let a = ((az % 360) + 360) % 360;
+      if (lastCmdAz == null || Math.abs(a - lastCmdAz) >= 0.3) {
+        if (send("az", "P " + a.toFixed(1) + " 0.0")) {
+          lastCmdAz = a;
+          lastMoveAzAt = now;
+          console.log("Rotor CMD AZ", a.toFixed(1));
+        }
       }
     }
   }
 
   if (el != null && Number.isFinite(el) && elConnected) {
-    let e = Math.max(-5, Math.min(90, el));
-    if (lastCmdEl == null || Math.abs(e - lastCmdEl) >= 0.3) {
-      if (send("el", "P 0 " + e.toFixed(1))) {
-        lastCmdEl = e;
-        lastEl = e;
-        broadcastStatus();
+    if (now - lastMoveElAt >= interval) {
+      let e = Math.max(-5, Math.min(90, el));
+      if (lastCmdEl == null || Math.abs(e - lastCmdEl) >= 0.3) {
+        if (send("el", "P " + e.toFixed(1) + " 0.0")) {
+          lastCmdEl = e;
+          lastMoveElAt = now;
+          console.log("Rotor CMD EL", e.toFixed(1));
+        }
       }
     }
   }
@@ -330,14 +349,8 @@ function updateTracking(look, aosAz) {
 }
 
 function pollPositions() {
-  if (azConnected) {
-    azBuf = "";
-    send("az", "p");
-  }
-  if (elConnected) {
-    elBuf = "";
-    send("el", "p");
-  }
+  if (azConnected) send("az", "p");
+  if (elConnected) send("el", "p");
 }
 
 function getRotorState() {
@@ -361,6 +374,7 @@ module.exports = {
   getRotorState,
   statusPayload,
   broadcastStatus,
+  applyEndpointChange,
   connect,
   disconnect,
 };

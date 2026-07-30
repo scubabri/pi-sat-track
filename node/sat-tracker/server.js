@@ -22,6 +22,7 @@ const catalog = require("./lib/catalog");
 const state = require("./lib/state");
 const tci = require("./lib/tci");
 const rotor = require("./lib/rotor");
+const config = require("./lib/config");
 
 function broadcast(obj) {
   const data = JSON.stringify(obj);
@@ -139,6 +140,28 @@ wss.on("connection", (ws) => {
 
       if (msg.type === "center") {
         tci.center();
+      }
+      if (msg.type === "endpoints") {
+        const prev = catalog; // silence unused if any
+        const { tciChanged, rotorChanged } =
+          require("./lib/config").applyEndpoints({
+            tciHost: msg.tciHost,
+            tciPort: msg.tciPort,
+            rotorHost: msg.rotorHost,
+            rotorAzPort: msg.rotorAzPort,
+            rotorElPort: msg.rotorElPort,
+          });
+        console.log(
+          "Endpoints updated",
+          require("./lib/config").getEndpoints(),
+        );
+        if (tciChanged) tci.applyEndpointChange();
+        if (rotorChanged) rotor.applyEndpointChange();
+        // Echo current endpoints to all clients
+        broadcast({
+          type: "endpoints",
+          ...require("./lib/config").getEndpoints(),
+        });
       }
     } catch (e) {
       console.warn("Bad message", e.message);
