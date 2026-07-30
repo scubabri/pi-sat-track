@@ -15,6 +15,7 @@ let lastModesKey = "";
 
 let radioOn = false;
 let tciConnected = false;
+let antennaOn = false;
 let fineStep = 100;
 let ulFineOffset = 0;
 let manualDlOffset = 0;
@@ -406,17 +407,47 @@ function updateRadioUi(on, connected) {
     else topBtn.textContent = "Radio";
   }
 
-  document.querySelectorAll("#sidebar .status-item").forEach((row) => {
-    const lab = row.querySelector(".label");
-    if (lab && lab.textContent.trim() === "TCI") {
-      const val = row.querySelector("span:not(.label)");
-      if (val) {
-        if (radioOn && tciConnected) val.textContent = "Connected";
-        else if (radioOn) val.textContent = "Connecting…";
-        else val.textContent = "Disconnected";
-      }
-    }
-  });
+  const tciEl = document.getElementById("status-tci");
+  if (tciEl) {
+    if (radioOn && tciConnected) tciEl.textContent = "Connected";
+    else if (radioOn) tciEl.textContent = "Connecting…";
+    else tciEl.textContent = "Disconnected";
+  }
+}
+
+function updateAntennaUi(on, azConnected, elConnected) {
+  antennaOn = !!on;
+
+  const toggle = document.getElementById("toggle-antenna");
+  if (toggle) toggle.checked = antennaOn;
+
+  const topBtn = document.getElementById("btn-antenna");
+  if (topBtn) {
+    topBtn.classList.toggle("active", antennaOn);
+    if (antennaOn && azConnected && elConnected)
+      topBtn.textContent = "Antenna ON";
+    else if (antennaOn) topBtn.textContent = "Antenna…";
+    else topBtn.textContent = "Antenna";
+  }
+}
+
+function applyRotorStatus(msg) {
+  updateAntennaUi(msg.antennaOn, msg.azConnected, msg.elConnected);
+
+  const azEl = document.getElementById("rotor-az");
+  const elEl = document.getElementById("rotor-el");
+  if (azEl) {
+    azEl.textContent =
+      msg.az != null && Number.isFinite(msg.az)
+        ? Number(msg.az).toFixed(1) + "\u00B0"
+        : "-";
+  }
+  if (elEl) {
+    elEl.textContent =
+      msg.el != null && Number.isFinite(msg.el)
+        ? Number(msg.el).toFixed(1) + "\u00B0"
+        : "-";
+  }
 }
 
 function applyTciStatus(msg) {
@@ -525,6 +556,19 @@ function applyFreqAndLook(msg) {
   if (typeof msg.radioOn === "boolean") {
     updateRadioUi(msg.radioOn, msg.tciConnected);
   }
+
+  if (typeof msg.antennaOn === "boolean") {
+    updateAntennaUi(msg.antennaOn, msg.rotorAzConnected, msg.rotorElConnected);
+  }
+
+  if (msg.rotorAz != null || msg.rotorEl != null) {
+    const azEl = document.getElementById("rotor-az");
+    const elEl = document.getElementById("rotor-el");
+    if (azEl && msg.rotorAz != null)
+      azEl.textContent = Number(msg.rotorAz).toFixed(1) + "\u00B0";
+    if (elEl && msg.rotorEl != null)
+      elEl.textContent = Number(msg.rotorEl).toFixed(1) + "\u00B0";
+  }
 }
 
 function sendRadio(on) {
@@ -536,8 +580,16 @@ function sendRadio(on) {
   }
 }
 
+function sendAntenna(on) {
+  console.log("Client sendAntenna", on);
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "antenna", on: !!on }));
+  } else {
+    console.warn("WebSocket not open — cannot toggle antenna");
+  }
+}
+
 function sendFine(delta) {
-  // Optimistic UI so the offset moves immediately
   ulFineOffset += delta;
   updateFineOffsetDisplay();
 
@@ -587,6 +639,11 @@ function connectTracker() {
 
       if (msg.type === "tci") {
         applyTciStatus(msg);
+        return;
+      }
+
+      if (msg.type === "rotor") {
+        applyRotorStatus(msg);
         return;
       }
 
@@ -888,6 +945,22 @@ function initRadioControls() {
     topBtn.addEventListener("click", () => {
       console.log("btn-radio click, currently", radioOn);
       sendRadio(!radioOn);
+    });
+  }
+
+  const antToggle = document.getElementById("toggle-antenna");
+  if (antToggle) {
+    antToggle.addEventListener("change", () => {
+      console.log("toggle-antenna change", antToggle.checked);
+      sendAntenna(antToggle.checked);
+    });
+  }
+
+  const antBtn = document.getElementById("btn-antenna");
+  if (antBtn) {
+    antBtn.addEventListener("click", () => {
+      console.log("btn-antenna click, currently", antennaOn);
+      sendAntenna(!antennaOn);
     });
   }
 

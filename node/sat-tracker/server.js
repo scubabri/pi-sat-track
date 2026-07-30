@@ -8,6 +8,10 @@ const {
   PORT,
   MIME,
   TCI_URI,
+  ROTOR_AZ_HOST,
+  ROTOR_AZ_PORT,
+  ROTOR_EL_HOST,
+  ROTOR_EL_PORT,
   REFRESH_MS,
   SATS_BROADCAST_MS,
   TICK_MS,
@@ -17,6 +21,7 @@ const {
 const catalog = require("./lib/catalog");
 const state = require("./lib/state");
 const tci = require("./lib/tci");
+const rotor = require("./lib/rotor");
 
 function broadcast(obj) {
   const data = JSON.stringify(obj);
@@ -81,6 +86,7 @@ wss.on("connection", (ws) => {
   console.log("Client connected");
   ws.send(JSON.stringify({ type: "sats", ...state.satsPayload("trackable") }));
   tci.broadcastStatus();
+  rotor.broadcastStatus();
 
   const s = state.computeState();
   if (s) ws.send(JSON.stringify(s));
@@ -122,6 +128,10 @@ wss.on("connection", (ws) => {
         tci.setRadio(!!msg.on);
       }
 
+      if (msg.type === "antenna") {
+        rotor.setAntenna(!!msg.on);
+      }
+
       if (msg.type === "fine") {
         if (typeof msg.delta === "number") tci.adjustFine(msg.delta);
         if (typeof msg.step === "number") tci.setStep(msg.step);
@@ -150,6 +160,8 @@ setInterval(() => {
 
 setInterval(broadcastSats, SATS_BROADCAST_MS);
 
+setInterval(() => rotor.pollPositions(), 5000);
+
 setInterval(() => {
   catalog.refreshCatalog().catch(() => {});
   catalog.refreshStatus().catch(() => {});
@@ -169,6 +181,8 @@ setInterval(() => {
   server.listen(PORT, "0.0.0.0", () => {
     console.log("Sat Tracker  http://127.0.0.1:" + PORT);
     console.log("TCI target   " + TCI_URI);
+    console.log("Rotor AZ     " + ROTOR_AZ_HOST + ":" + ROTOR_AZ_PORT);
+    console.log("Rotor EL     " + ROTOR_EL_HOST + ":" + ROTOR_EL_PORT);
     console.log(
       "Tick " + TICK_MS + "ms (Doppler), state " + STATE_MS + "ms (map)",
     );

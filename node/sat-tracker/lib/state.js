@@ -21,6 +21,7 @@ const {
   passSkyPath,
 } = require("./orbit");
 const tci = require("./tci");
+const rotor = require("./rotor");
 
 let currentSatKey = null;
 let currentModeIndex = 0;
@@ -35,11 +36,15 @@ let observer = {
 };
 
 let broadcastFn = () => {};
+let lastAosAz = null;
 
 function init(opts) {
   if (opts.broadcast) broadcastFn = opts.broadcast;
   tci.init({
     getContext: () => ({ satrec, observer, currentSatKey, currentModeIndex }),
+    broadcast: broadcastFn,
+  });
+  rotor.init({
     broadcast: broadcastFn,
   });
 }
@@ -89,6 +94,7 @@ async function loadSatellite(key) {
   currentSatKey = key;
   currentModeIndex = 0;
   currentNorad = info.norad;
+  lastAosAz = null;
   tci.resetOffsets();
   const modes = info.modes || [];
   console.log(
@@ -187,6 +193,11 @@ function computeTick() {
 
   tci.pushFrequencies();
 
+  // Drive rotors (uses last known AOS az from computeState)
+  rotor.updateTracking(look, lastAosAz);
+
+  const r = rotor.getRotorState();
+
   return {
     type: "tick",
     sat: currentSatKey,
@@ -214,6 +225,11 @@ function computeTick() {
     tciConnected: radio.tciConnected,
     manualDlOffset: radio.manualDlOffset,
     ulFineOffset: radio.ulFineOffset,
+    antennaOn: r.antennaOn,
+    rotorAz: r.az,
+    rotorEl: r.el,
+    rotorAzConnected: r.azConnected,
+    rotorElConnected: r.elConnected,
   };
 }
 
@@ -235,9 +251,14 @@ function computeState() {
     sky: passSkyPath(satrec, observer, p.aos, p.los),
   }));
 
+  if (passes.length && passes[0].aosAz != null) {
+    lastAosAz = passes[0].aosAz;
+  }
+
   const info = getCatalog()[currentSatKey] || {};
   const tick = computeTick();
   const radio = tci.getRadioState();
+  const r = rotor.getRotorState();
 
   return {
     type: "state",
@@ -272,6 +293,11 @@ function computeState() {
     tciConnected: radio.tciConnected,
     manualDlOffset: radio.manualDlOffset,
     ulFineOffset: radio.ulFineOffset,
+    antennaOn: r.antennaOn,
+    rotorAz: r.az,
+    rotorEl: r.el,
+    rotorAzConnected: r.azConnected,
+    rotorElConnected: r.elConnected,
   };
 }
 
