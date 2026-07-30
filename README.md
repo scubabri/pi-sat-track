@@ -1,73 +1,49 @@
-# Pi Sat Track
+# Pi Sat Track (Node Web UI)
 
-Raspberry Pi–based linear amateur satellite tracker with Doppler correction for AetherSDR (Flex Radio via TCI) and azimuth/elevation control for a Green Heron RT-21 rotator.
+Browser-based linear amateur satellite tracker for Raspberry Pi. Provides live pass prediction, Doppler-corrected frequencies over TCI to AetherSDR, and azimuth/elevation control of a Green Heron RT-21 rotator via dual `rotctld` instances.
 
-Runs on the Pi, talks to AetherSDR on a Mac over the LAN, and drives dual `rotctld` instances for AZ/EL.
+The UI is a Leaflet map (Blue Marble base) with radar view, rotor gauges, pass profile, and a station configuration panel (callsign, gridsquare, elevation, TCI/rotctld endpoints).
 
 ## Features
 
-- **Linear satellites:** RS-44, AO-07 (Mode B), FO-29, JO-97
-- **Live frequencies** from [AMSAT Live Linear Satellites](https://www.amsat.org/live-linear-satellites/), with local cache fallback
-- **TLE updates** from Celestrak, cached per NORAD ID under `~/.rpitrack/`
-- **Doppler correction** over TCI WebSocket to AetherSDR (inverting and non-inverting)
-- **Manual downlink tune** mirrored to uplink (1:1 Hz, inverted for linear transponders)
-- **Uplink fine tune** via keyboard (typed step size + `+` / `-`)
-- **Rotor control** via Hamlib `rotctld` (model 405 – Green Heron RT-21)
-- **Elevation floor** at 10°: park at calculated AOS azimuth when below horizon
-- **Pass prediction:** AOS/LOS at 10°, max elevation, countdown (UTC + local)
-- **curses UI** with colour cues for pass urgency and passband edges
+- **Satellite catalog** from AMSAT frequency data + status, with local cache under `~/.rpitrack/`
+- **TLE-based propagation** via `satellite.js`
+- **Live Doppler** uplink/downlink (inverting and non-inverting modes)
+- **Manual uplink fine-tune** (step size +/−)
+- **Radio (TCI)** and **Antenna (rotctld)** toggles — both start off
+- **Elevation floor** and park behaviour for the rotator
+- **Pass prediction**: AOS / LOS, max elevation, duration, countdown
+- **Station config** in the browser: callsign, Maidenhead gridsquare, elevation (m), TCI host/port, rotctld host + AZ/EL ports
+- **WebSocket** live updates to all connected clients
 
 ## Hardware / software stack
 
 | Component | Role |
 |-----------|------|
-| Raspberry Pi 5 (or similar) | Runs tracker + `rotctld` |
+| Raspberry Pi (or any Linux host) | Runs Node server + optional nginx + `rotctld` |
 | Green Heron RT-21 AZ/EL | USB serial rotor controller |
-| Flex Radio + AetherSDR (Mac) | TCI on TCP port 50001 |
-| Hamlib | `rotctld` / `rotctl` for RT-21 |
+| Flex Radio + AetherSDR (Mac or other) | TCI WebSocket (default port 50001) |
+| Hamlib | `rotctld` for RT-21 (model 405) |
 
 Typical layout:
 
 ```
-Mac (AetherSDR TCI :50001)
-        ▲
-        │ WebSocket
-        │
-Pi ── tracker (pi_sat_track.py)
-        │
-        ├── rotctld :4535  → AZ  (/dev/ttyUSBx)
-        └── rotctld :4536  → EL  (/dev/ttyUSBy)
+Browser  ←→  nginx :80  ←→  Node :3000  (on Pi)
+                              │
+                              ├── TCI WebSocket → AetherSDR (Mac)
+                              ├── rotctld :4535 → AZ
+                              └── rotctld :4536 → EL
 ```
 
 ## Requirements
 
-### System packages (Pi)
+### On the Pi
 
-```bash
-sudo apt update
-sudo apt install -y python3 python3-pip hamlib-utils
-```
+- Raspberry Pi OS (or similar Debian-based)
+- Network access to the machine running AetherSDR
+- Two `rotctld` instances for the RT-21 (or equivalent), listening on the ports you configure
 
-### Python packages
-
-```bash
-sudo pip3 install --break-system-packages skyfield websockets
-```
-
-Or with a venv if you prefer:
-
-```bash
-python3 -m venv ~/sat-tracker
-source ~/sat-tracker/bin/activate
-pip install skyfield websockets
-```
-
-### Runtime services on the Pi
-
-- Two `rotctld` instances for the RT-21 (AZ and EL), e.g. via `rt21_rotctld.py` / systemd
-- Serial devices with correct permissions (user in `dialout` group)
-
-Example rotctld launch (adjust devices):
+Example `rotctld` launch (adjust serial devices and baud):
 
 ```bash
 rotctld -m 405 -r /dev/ttyUSB1 -s 4800 -T 0.0.0.0 -t 4535   # azimuth
@@ -81,174 +57,177 @@ echo "p" | nc 127.0.0.1 4535
 echo "p" | nc 127.0.0.1 4536
 ```
 
-### Mac
+User must be in the `dialout` group for serial access.
 
-- AetherSDR running with TCI enabled
+### AetherSDR / TCI
+
+- TCI enabled
 - Listening on all interfaces (`*.50001`), not only localhost
-- macOS firewall allowing inbound TCP 50001 from the Pi
+- Firewall allows inbound TCP 50001 from the Pi
 
 ## Installation
 
-```bash
-# Copy script into place
-sudo cp pi_sat_track.py /usr/local/bin/
-sudo chmod +x /usr/local/bin/pi_sat_track.py
+Clone the repository and run the installer from the app directory (or repo root — the script detects both):
 
-# Cache directory is created automatically on first run
-# ~/.rpitrack/
+```bash
+git clone https://github.com/scubabri/pi-sat-track.git
+cd pi-sat-track/node/sat-tracker
+
+chmod +x install-pi.sh
+./install-pi.sh
+```
+
+The script will:
+
+1. Install system packages (curl, git, build tools, nginx if requested)
+2. Install Node.js 22.x LTS (NodeSource) if needed
+3. Run `npm install` in the app directory
+4. Create `~/.rpitrack` for caches
+5. Configure nginx as a reverse proxy from port 80 → `127.0.0.1:3000` (WebSocket headers included)
+6. Install and enable a systemd **user** service `sat-tracker`
+
+Run as a normal user (not root). The script uses `sudo` only where needed for apt/nginx.
+
+### Installer flags
+
+| Flag | Effect |
+|------|--------|
+| `--no-nginx` | Skip nginx install and site config |
+| `--no-service` | Skip systemd user service |
+| `--update` | Re-run `npm install` only |
+| `--upgrade` | `git pull` + `npm install` + restart service |
+
+Day-to-day updates after the first install:
+
+```bash
+cd /path/to/pi-sat-track/node/sat-tracker
+./install-pi.sh --upgrade
+```
+
+### Manual start (no service)
+
+```bash
+cd node/sat-tracker
+npm install
+node server.js
+# or: npm start
+```
+
+Server listens on `0.0.0.0:3000`.
+
+### Service management
+
+```bash
+systemctl --user status sat-tracker
+systemctl --user restart sat-tracker
+journalctl --user -u sat-tracker -f
+```
+
+If the service does not start after logout, enable lingering:
+
+```bash
+sudo loginctl enable-linger $USER
 ```
 
 ## Configuration
 
-Edit the network block near the top of `pi_sat_track.py`:
+All station and endpoint settings are done in the browser.
 
-```python
-# Mac running AetherSDR (TCI)
-MAC_IP = "172.17.18.50"          # your Mac's LAN IP
-TCI_URI = f"ws://{MAC_IP}:50001"
+1. Open the UI: `http://<pi-ip>/` (nginx) or `http://<pi-ip>:3000/`
+2. Click the gear icon (Configuration)
+3. Set:
 
-# Rotor on this Pi
-PI_IP = "127.0.0.1"
-AZ_PORT, EL_PORT = 4535, 4536
-```
+| Field | Purpose |
+|-------|---------|
+| Callsign | Display only |
+| Gridsquare | Maidenhead; converted to lat/lon for the observer |
+| Elevation (m) | Station height above sea level |
+| TCI host / port | AetherSDR machine (default `127.0.0.1:50001`) |
+| rotctld host | Host running both AZ and EL daemons (default `127.0.0.1`) |
+| AZ port / EL port | Default `4535` / `4536` |
 
-Also set your station location:
+4. **Save** — endpoints are applied live; map can be recentered with **Center Map**.
 
-```python
-LAT, LON, ELEV_M = 40.5, -111.9, 1324   # degrees, degrees, metres
-```
+Environment variables can still set defaults before the UI overrides them:
 
-Optional constants:
+| Variable | Default |
+|----------|---------|
+| `TCI_HOST` | `127.0.0.1` |
+| `TCI_PORT` | `50001` |
+| `ROTOR_AZ_HOST` | `127.0.0.1` |
+| `ROTOR_AZ_PORT` | `4535` |
+| `ROTOR_EL_HOST` | same as AZ host |
+| `ROTOR_EL_PORT` | `4536` |
+| `ROTOR_MIN_EL` | `10` |
+| `ROTOR_PARK_EL` | `0` |
+| `ROTOR_MOVE_INTERVAL_MS` | `1000` |
 
-| Constant | Default | Meaning |
-|----------|---------|---------|
-| `MIN_EL` | `10.0` | AOS/LOS and park elevation (degrees) |
-| `ROTOR_UPDATE_INTERVAL` | `30.0` | Seconds between rotor commands |
-| `EDGE_MARGIN` | `5e3` | Hz near passband edge → yellow |
+## Operation
 
-## Usage
+1. Open the UI in a browser.
+2. Select a satellite from the dropdown (or browse the full catalog via **Browse full catalog...**).
+3. Configure station location and endpoints if not already done.
+4. Enable **Radio** when you want Doppler commands sent to AetherSDR.
+5. Enable **Antenna** when you want the rotator driven.
+6. Use the fine-tune +/− buttons and step size (Hz) for uplink offset; double-click the step field to reset.
+7. **Center** (via fine-tune controls / config) clears uplink fine offset.
 
-```bash
-pi_sat_track.py RS-44
-pi_sat_track.py AO-07
-pi_sat_track.py FO-29
-pi_sat_track.py JO-97
-```
+Geometry, pass prediction, and the map update continuously whether radio/antenna are on or off.
 
-Satellite argument is required (no default).
+### UI overview
 
-### Keyboard controls
-
-| Key | Action |
-|-----|--------|
-| **R** | Connect / disconnect radio (TCI to AetherSDR) |
-| **A** | Enable / disable antenna (rotctld) |
-| **0–9** | Type UL fine-step size in Hz |
-| **+** / **-** | Apply ±step to uplink (step persists until you type a new number) |
-| **Backspace** | Edit step digits |
-| **C** | Centre – clear DL offset and UL fine tune |
-| **q** | Quit |
-
-Starts with **radio and antenna off**. Geometry and pass prediction always run. Press **R** and **A** when you are ready to drive the radio and rotors.
-
-### UI colour cues
-
-**Pass status**
-
-| Colour | Meaning |
-|--------|---------|
-| Green | More than 30 minutes to AOS |
-| Yellow | 5–30 minutes to AOS (or just after LOS) |
-| Red | Under 5 minutes to AOS, or currently in pass |
-
-**Frequencies**
-
-| Colour | Meaning |
-|--------|---------|
-| Green | Inside passband, clear of edges |
-| Yellow | Within 5 kHz of passband edge |
-| Red | Outside published passband |
+- **Top bar**: satellite selector, pass countdown / AOS–LOS–max–duration, Radio / Antenna buttons, config gear
+- **Map**: Blue Marble + ground track trail, observer marker
+- **Radar**: polar az/el view of the satellite
+- **Rotor gauges**: current AZ and EL reported by `rotctld`
+- **Pass profile**: elevation vs time for the current/next pass
+- **Sidebar**: mode select, uplink/downlink frequencies + Doppler, passband limits, toggles, station and satellite status
 
 ## Cache
 
-All network data is cached under `~/.rpitrack/`:
+Network data is cached under `~/.rpitrack/`:
 
 ```
 ~/.rpitrack/
-  amsat_freqs.json       # AMSAT linear frequencies + timestamp
-  tle_44909.txt          # TLE lines
-  tle_44909.meta.json    # fetch time
-  tle_7530.txt
+  amsat_catalog.json
+  amsat_status.json
+  tle_<norad>.txt
+  tle_<norad>.meta.json
   ...
 ```
 
-- On startup the tracker tries a live fetch (AMSAT + Celestrak).
-- On failure it uses the cache and shows age (e.g. `TLE cache age 3h`).
-- If there is no cache either, built-in AMSAT defaults are used for frequencies.
-
-## Supported satellites (defaults)
-
-Frequencies follow the AMSAT live linear table (centres derived from published ranges):
-
-| CLI name | NORAD | Uplink | Downlink | Notes |
-|----------|-------|--------|----------|-------|
-| RS-44 | 44909 | 145.935–145.995 LSB | 435.610–435.670 USB | V/u inverting |
-| AO-07 | 7530 | 432.125–432.175 LSB | 145.925–145.975 USB | Mode B U/v inverting |
-| FO-29 | 24278 | 145.900–146.000 LSB | 435.800–435.900 USB | V/u inverting |
-| JO-97 | 43803 | 435.100–435.120 LSB | 145.855–145.875 USB | JY1SAT U/v inverting |
-
-## Rotor behaviour
-
-- Commands are **absolute** az/el every 30 seconds (not relative steps).
-- While satellite elevation is 10° or higher: track az/el.
-- While elevation is below 10°: hold elevation at 10° and azimuth at the next calculated **AOS azimuth** (10° rising).
-
-## TCI / VFO mapping
-
-Assumes AetherSDR slices:
-
-- **RX0** – downlink
-- **RX1** – uplink
-
-Commands are of the form `vfo:0,0,<hz>;` and `vfo:1,0,<hz>;`.
+Catalog and status refresh periodically (default every 6 hours). On fetch failure the last good cache is used.
 
 ## Troubleshooting
 
-**No `amsat_freqs.json`**
+**UI not reachable on port 80**
 
-- Confirm Pi can reach AMSAT:
-  `curl -sL -A "sat_tracker/1.0" https://www.amsat.org/live-linear-satellites/ | head`
-- Parser expects numeric entities such as `&#8211;` to be decoded (included in current script).
+- `systemctl status nginx`
+- `curl -I http://127.0.0.1:3000/` — Node must be running
+- Check nginx site: `/etc/nginx/sites-enabled/sat-tracker`
 
-**Wrong satellite orbit / TLE name**
+**Service not running**
 
-- Celestrak responses are cached **per NORAD** as `tle_<norad>.txt` so they do not collide on a shared `gp.php` cache name.
+```bash
+systemctl --user status sat-tracker
+journalctl --user -u sat-tracker -n 50
+```
 
 **Radio does not connect**
 
-- Check Mac IP and that AetherSDR shows `*.50001` listening.
-- From the Pi: `nc -vz <mac-ip> 50001`
-- Allow port 50001 through the Mac firewall if needed.
+- Confirm TCI host/port in the config panel
+- From the Pi: `nc -vz <tci-host> 50001`
+- AetherSDR must listen on all interfaces; allow the port through the Mac firewall
 
 **Rotor does not move**
 
-- `rt21_rotctld.py status` or `ss -tlnp | grep -E '4535|4536'`
-- Test: `echo "p" | nc 127.0.0.1 4535`
+- Confirm both `rotctld` processes and the host/ports in the config panel
+- `echo "p" | nc <rotor-host> 4535`
+- Check serial device order and permissions (`dialout` group)
 
-**Serial device order (AZ vs EL)**
+**Wrong location / map not centered**
 
-- Swap `/dev/ttyUSB0` and `/dev/ttyUSB1` in the rotctld start script if axes are reversed.
-
-## Future work
-
-A Node.js port with a browser UI is planned:
-
-- `satellite.js` for TLEs
-- Node `ws` client for TCI
-- `net` sockets for rotctld
-- Web UI on port 3000, optionally behind nginx on port 80
-
-The Python curses tracker remains the reference implementation until that lands.
+- Set a valid Maidenhead gridsquare and elevation, then **Save** and **Center Map**
 
 ## License
 
@@ -256,7 +235,10 @@ Use and modify freely for amateur radio purposes. No warranty.
 
 ## Credits
 
-- Frequencies: [AMSAT Live Linear Satellites](https://www.amsat.org/live-linear-satellites/)
+- Frequencies / status: [AMSAT](https://www.amsat.org/)
+- Catalog source: [amateur-satellite-database](https://github.com/palewire/amateur-satellite-database)
 - TLEs: [Celestrak](https://celestrak.org/)
+- Propagation: [satellite.js](https://github.com/shashwatak/satellite-js)
+- Map: [Leaflet](https://leafletjs.com/)
 - Rotor protocol: Hamlib / Green Heron RT-21
 - Radio control: ExpertSDR / AetherSDR TCI
