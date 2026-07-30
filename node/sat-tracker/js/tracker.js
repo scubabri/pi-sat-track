@@ -799,6 +799,7 @@ function tickCountdown() {
   const dot = document.querySelector("#pass-status .status-dot");
   if (!countdownEl) return;
 
+  // Above horizon → in pass (green only here)
   if (currentEl != null && currentEl >= 0) {
     if (labelEl) labelEl.textContent = "LOS in";
     if (dot) dot.className = "status-dot green";
@@ -831,7 +832,10 @@ function tickCountdown() {
     if (labelEl) labelEl.textContent = "Next AOS in";
     countdownEl.textContent = formatCountdown(secToAos);
     if (dot) {
-      dot.className = "status-dot " + (secToAos > 900 ? "green" : "orange");
+      // Not green while waiting — green is reserved for in-pass
+      if (secToAos <= 5 * 60) dot.className = "status-dot red";
+      else if (secToAos <= 15 * 60) dot.className = "status-dot orange";
+      else dot.className = "status-dot yellow";
     }
   } else if (secToLos > 0) {
     if (labelEl) labelEl.textContent = "LOS in";
