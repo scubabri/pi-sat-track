@@ -1,13 +1,5 @@
 const net = require("net");
-const {
-  ROTOR_AZ_HOST,
-  ROTOR_AZ_PORT,
-  ROTOR_EL_HOST,
-  ROTOR_EL_PORT,
-  ROTOR_MIN_EL,
-  ROTOR_PARK_EL,
-  ROTOR_MOVE_INTERVAL_MS,
-} = require("./config");
+const config = require("./config");
 
 let antennaOn = false;
 let azSock = null;
@@ -27,7 +19,7 @@ let nextAosAz = null;
 let broadcastFn = () => {};
 
 function init(opts) {
-  if (opts.broadcast) broadcastFn = opts.broadcast;
+  if (opts && opts.broadcast) broadcastFn = opts.broadcast;
 }
 
 function statusPayload() {
@@ -40,9 +32,9 @@ function statusPayload() {
     el: lastCmdEl != null ? lastCmdEl : lastEl,
     lastCmdAz,
     lastCmdEl,
-    minEl: ROTOR_MIN_EL,
-    hostAz: ROTOR_AZ_HOST + ":" + ROTOR_AZ_PORT,
-    hostEl: ROTOR_EL_HOST + ":" + ROTOR_EL_PORT,
+    minEl: config.ROTOR_MIN_EL,
+    hostAz: config.ROTOR_AZ_HOST + ":" + config.ROTOR_AZ_PORT,
+    hostEl: config.ROTOR_EL_HOST + ":" + config.ROTOR_EL_PORT,
   };
 }
 
@@ -123,8 +115,8 @@ function send(kind, cmd) {
 
 function connectOne(kind) {
   return new Promise((resolve) => {
-    const host = kind === "az" ? ROTOR_AZ_HOST : ROTOR_EL_HOST;
-    const port = kind === "az" ? ROTOR_AZ_PORT : ROTOR_EL_PORT;
+    const host = kind === "az" ? config.ROTOR_AZ_HOST : config.ROTOR_EL_HOST;
+    const port = kind === "az" ? config.ROTOR_AZ_PORT : config.ROTOR_EL_PORT;
     const sock = net.connect({ host, port });
 
     const timer = setTimeout(() => {
@@ -204,16 +196,11 @@ function setAntenna(on) {
   broadcastStatus();
 }
 
-/**
- * Dual single-axis rotctld:
- *   AZ instance: P <az> 0
- *   EL instance: P 0 <el>
- */
 function commandPosition(az, el) {
   if (!antennaOn) return;
 
   const now = Date.now();
-  if (now - lastMoveAt < ROTOR_MOVE_INTERVAL_MS) return;
+  if (now - lastMoveAt < config.ROTOR_MOVE_INTERVAL_MS) return;
   lastMoveAt = now;
 
   if (az != null && Number.isFinite(az) && azConnected) {
@@ -235,10 +222,6 @@ function commandPosition(az, el) {
   }
 }
 
-/**
- * look: { az, el } current satellite look angles
- * aosAz: azimuth of next/current pass AOS (park target when below floor)
- */
 function updateTracking(look, aosAz) {
   if (aosAz != null && Number.isFinite(aosAz)) nextAosAz = aosAz;
 
@@ -248,12 +231,12 @@ function updateTracking(look, aosAz) {
     return;
   }
 
-  if (look.el >= ROTOR_MIN_EL) {
+  if (look.el >= config.ROTOR_MIN_EL) {
     commandPosition(look.az, look.el);
   } else {
     const parkAz =
       nextAosAz != null && Number.isFinite(nextAosAz) ? nextAosAz : look.az;
-    commandPosition(parkAz, ROTOR_PARK_EL);
+    commandPosition(parkAz, config.ROTOR_PARK_EL);
   }
 }
 
@@ -271,7 +254,7 @@ function getRotorState() {
     el: lastCmdEl != null ? lastCmdEl : lastEl,
     lastCmdAz,
     lastCmdEl,
-    minEl: ROTOR_MIN_EL,
+    minEl: config.ROTOR_MIN_EL,
   };
 }
 

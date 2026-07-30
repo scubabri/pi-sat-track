@@ -1,5 +1,67 @@
-const net = require("net");
-const {
+const path = require("path");
+const os = require("os");
+
+const ROOT = path.join(__dirname, "..");
+const CACHE_DIR = path.join(os.homedir(), ".rpitrack");
+const CATALOG_CACHE = path.join(CACHE_DIR, "amsat_catalog.json");
+const STATUS_CACHE = path.join(CACHE_DIR, "amsat_status.json");
+
+const PORT = 3000;
+
+const CATALOG_URL =
+  "https://raw.githubusercontent.com/palewire/amateur-satellite-database/main/data/amsat-all-frequencies.json";
+const AMSAT_STATUS = "https://www.amsat.org/status/";
+
+const TCI_HOST = process.env.TCI_HOST || "127.0.0.1";
+const TCI_PORT = parseInt(process.env.TCI_PORT || "50001", 10);
+const TCI_URI = "ws://" + TCI_HOST + ":" + TCI_PORT;
+
+const ROTOR_AZ_HOST = process.env.ROTOR_AZ_HOST || "127.0.0.1";
+const ROTOR_AZ_PORT = parseInt(process.env.ROTOR_AZ_PORT || "4535", 10);
+const ROTOR_EL_HOST = process.env.ROTOR_EL_HOST || "127.0.0.1";
+const ROTOR_EL_PORT = parseInt(process.env.ROTOR_EL_PORT || "4536", 10);
+const ROTOR_MIN_EL = parseFloat(process.env.ROTOR_MIN_EL || "10");
+const ROTOR_PARK_EL = parseFloat(process.env.ROTOR_PARK_EL || "0");
+const ROTOR_MOVE_INTERVAL_MS = parseInt(
+  process.env.ROTOR_MOVE_INTERVAL_MS || "1000",
+  10,
+);
+
+const DEFAULT_SAT = "RS-44";
+const MIN_EL = 0.0;
+const TRAIL_MINUTES = 30;
+const TRAIL_STEP_SEC = 30;
+const PASS_HOURS = 12;
+const PASS_STEP_SEC = 30;
+const REFRESH_MS = 6 * 60 * 60 * 1000;
+const SATS_BROADCAST_MS = 30 * 1000;
+const TICK_MS = 250;
+const STATE_MS = 1000;
+const C_MS = 299792.458;
+
+const MIME = {
+  ".html": "text/html",
+  ".js": "application/javascript",
+  ".css": "text/css",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".json": "application/json",
+};
+
+module.exports = {
+  ROOT,
+  CACHE_DIR,
+  CATALOG_CACHE,
+  STATUS_CACHE,
+  PORT,
+  CATALOG_URL,
+  AMSAT_STATUS,
+  TCI_HOST,
+  TCI_PORT,
+  TCI_URI,
   ROTOR_AZ_HOST,
   ROTOR_AZ_PORT,
   ROTOR_EL_HOST,
@@ -7,282 +69,16 @@ const {
   ROTOR_MIN_EL,
   ROTOR_PARK_EL,
   ROTOR_MOVE_INTERVAL_MS,
-} = require("./config");
-
-let antennaOn = false;
-let azSock = null;
-let elSock = null;
-let azConnected = false;
-let elConnected = false;
-let azBuf = "";
-let elBuf = "";
-let lastAz = null;
-let lastEl = null;
-let lastCmdAz = null;
-let lastCmdEl = null;
-let lastMoveAt = 0;
-let reconnectTimer = null;
-let nextAosAz = null;
-
-let broadcastFn = () => {};
-
-function init(opts) {
-  if (opts.broadcast) broadcastFn = opts.broadcast;
-}
-
-function statusPayload() {
-  return {
-    type: "rotor",
-    antennaOn,
-    azConnected,
-    elConnected,
-    az: lastCmdAz != null ? lastCmdAz : lastAz,
-    el: lastCmdEl != null ? lastCmdEl : lastEl,
-    lastCmdAz,
-    lastCmdEl,
-    minEl: ROTOR_MIN_EL,
-    hostAz: ROTOR_AZ_HOST + ":" + ROTOR_AZ_PORT,
-    hostEl: ROTOR_EL_HOST + ":" + ROTOR_EL_PORT,
-  };
-}
-
-function broadcastStatus() {
-  broadcastFn(statusPayload());
-}
-
-function clearReconnect() {
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
-}
-
-function scheduleReconnect() {
-  clearReconnect();
-  if (!antennaOn) return;
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    if (antennaOn) connect();
-  }, 3000);
-}
-
-function attachSocket(kind, sock) {
-  const isAz = kind === "az";
-  sock.setEncoding("utf8");
-
-  sock.on("data", (chunk) => {
-    if (isAz) {
-      azBuf += chunk;
-      if (azBuf.length > 4096) azBuf = azBuf.slice(-1024);
-      const m = azBuf.match(/([0-9.+-]+)\s*\n\s*([0-9.+-]+)/);
-      if (m) lastAz = parseFloat(m[1]);
-    } else {
-      elBuf += chunk;
-      if (elBuf.length > 4096) elBuf = elBuf.slice(-1024);
-      const m = elBuf.match(/([0-9.+-]+)\s*\n\s*([0-9.+-]+)/);
-      if (m) {
-        const a = parseFloat(m[1]);
-        const b = parseFloat(m[2]);
-        lastEl = Math.abs(b) > Math.abs(a) ? b : a;
-      }
-    }
-  });
-
-  sock.on("close", () => {
-    console.log("Rotor", kind.toUpperCase(), "closed");
-    if (isAz) {
-      azConnected = false;
-      azSock = null;
-      azBuf = "";
-    } else {
-      elConnected = false;
-      elSock = null;
-      elBuf = "";
-    }
-    broadcastStatus();
-    if (antennaOn) scheduleReconnect();
-  });
-
-  sock.on("error", (err) => {
-    console.warn("Rotor", kind.toUpperCase(), "error:", err.message);
-  });
-}
-
-function send(kind, cmd) {
-  const sock = kind === "az" ? azSock : elSock;
-  const ok = kind === "az" ? azConnected : elConnected;
-  if (!sock || !ok) return false;
-  try {
-    sock.write(cmd.endsWith("\n") ? cmd : cmd + "\n");
-    return true;
-  } catch (e) {
-    console.warn("Rotor", kind, "send failed:", e.message);
-    return false;
-  }
-}
-
-function connectOne(kind) {
-  return new Promise((resolve) => {
-    const host = kind === "az" ? ROTOR_AZ_HOST : ROTOR_EL_HOST;
-    const port = kind === "az" ? ROTOR_AZ_PORT : ROTOR_EL_PORT;
-    const sock = net.connect({ host, port });
-
-    const timer = setTimeout(() => {
-      sock.destroy();
-      resolve(false);
-    }, 2500);
-
-    sock.once("connect", () => {
-      clearTimeout(timer);
-      attachSocket(kind, sock);
-      if (kind === "az") {
-        azSock = sock;
-        azConnected = true;
-      } else {
-        elSock = sock;
-        elConnected = true;
-      }
-      console.log("Rotor", kind.toUpperCase(), "connected", host + ":" + port);
-      send(kind, "p");
-      resolve(true);
-    });
-
-    sock.once("error", (err) => {
-      clearTimeout(timer);
-      console.warn("Rotor", kind.toUpperCase(), "connect failed:", err.message);
-      resolve(false);
-    });
-  });
-}
-
-async function connect() {
-  if (!antennaOn) return;
-  clearReconnect();
-
-  if (!azConnected) await connectOne("az");
-  if (!elConnected) await connectOne("el");
-
-  broadcastStatus();
-
-  if (antennaOn && (!azConnected || !elConnected)) {
-    scheduleReconnect();
-  }
-}
-
-function disconnect() {
-  clearReconnect();
-  antennaOn = false;
-
-  if (azSock) {
-    try {
-      azSock.destroy();
-    } catch (_) {}
-    azSock = null;
-  }
-  if (elSock) {
-    try {
-      elSock.destroy();
-    } catch (_) {}
-    elSock = null;
-  }
-  azConnected = false;
-  elConnected = false;
-  azBuf = "";
-  elBuf = "";
-  broadcastStatus();
-  console.log("Rotor disconnected");
-}
-
-function setAntenna(on) {
-  console.log("Rotor setAntenna(" + on + ")");
-  if (on) {
-    antennaOn = true;
-    connect();
-  } else {
-    disconnect();
-  }
-  broadcastStatus();
-}
-
-/**
- * Dual single-axis rotctld:
- *   AZ instance: P <az> 0
- *   EL instance: P 0 <el>
- */
-function commandPosition(az, el) {
-  if (!antennaOn) return;
-
-  const now = Date.now();
-  if (now - lastMoveAt < ROTOR_MOVE_INTERVAL_MS) return;
-  lastMoveAt = now;
-
-  if (az != null && Number.isFinite(az) && azConnected) {
-    let a = ((az % 360) + 360) % 360;
-    if (lastCmdAz == null || Math.abs(a - lastCmdAz) >= 0.3) {
-      if (send("az", "P " + a.toFixed(1) + " 0")) {
-        lastCmdAz = a;
-      }
-    }
-  }
-
-  if (el != null && Number.isFinite(el) && elConnected) {
-    let e = Math.max(-5, Math.min(90, el));
-    if (lastCmdEl == null || Math.abs(e - lastCmdEl) >= 0.3) {
-      if (send("el", "P 0 " + e.toFixed(1))) {
-        lastCmdEl = e;
-      }
-    }
-  }
-}
-
-/**
- * look: { az, el } current satellite look angles
- * aosAz: azimuth of next/current pass AOS (park target when below floor)
- */
-function updateTracking(look, aosAz) {
-  if (aosAz != null && Number.isFinite(aosAz)) nextAosAz = aosAz;
-
-  if (!antennaOn) return;
-  if (!azConnected && !elConnected) return;
-  if (!look || typeof look.el !== "number" || typeof look.az !== "number") {
-    return;
-  }
-
-  if (look.el >= ROTOR_MIN_EL) {
-    commandPosition(look.az, look.el);
-  } else {
-    const parkAz =
-      nextAosAz != null && Number.isFinite(nextAosAz) ? nextAosAz : look.az;
-    commandPosition(parkAz, ROTOR_PARK_EL);
-  }
-}
-
-function pollPositions() {
-  if (azConnected) send("az", "p");
-  if (elConnected) send("el", "p");
-}
-
-function getRotorState() {
-  return {
-    antennaOn,
-    azConnected,
-    elConnected,
-    az: lastCmdAz != null ? lastCmdAz : lastAz,
-    el: lastCmdEl != null ? lastCmdEl : lastEl,
-    lastCmdAz,
-    lastCmdEl,
-    minEl: ROTOR_MIN_EL,
-  };
-}
-
-module.exports = {
-  init,
-  setAntenna,
-  updateTracking,
-  pollPositions,
-  getRotorState,
-  statusPayload,
-  broadcastStatus,
-  connect,
-  disconnect,
+  DEFAULT_SAT,
+  MIN_EL,
+  TRAIL_MINUTES,
+  TRAIL_STEP_SEC,
+  PASS_HOURS,
+  PASS_STEP_SEC,
+  REFRESH_MS,
+  SATS_BROADCAST_MS,
+  TICK_MS,
+  STATE_MS,
+  C_MS,
+  MIME,
 };
