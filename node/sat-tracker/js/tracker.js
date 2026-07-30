@@ -448,6 +448,10 @@ function applyRotorStatus(msg) {
         ? Number(msg.el).toFixed(1) + "\u00B0"
         : "-";
   }
+
+  if (typeof updateRotorGauges === "function") {
+    updateRotorGauges(msg.az, msg.el);
+  }
 }
 
 function applyTciStatus(msg) {
@@ -568,6 +572,9 @@ function applyFreqAndLook(msg) {
       azEl.textContent = Number(msg.rotorAz).toFixed(1) + "\u00B0";
     if (elEl && msg.rotorEl != null)
       elEl.textContent = Number(msg.rotorEl).toFixed(1) + "\u00B0";
+    if (typeof updateRotorGauges === "function") {
+      updateRotorGauges(msg.rotorAz, msg.rotorEl);
+    }
   }
 }
 

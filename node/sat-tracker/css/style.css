@@ -397,19 +397,49 @@ body {
   background: #0a1628;
 }
 
+/* Sat radar + rotor gauges stacked on left edge */
 #radar {
   position: absolute;
   top: 12px;
   left: 12px;
   z-index: 500;
   pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
 }
 
-#radar-canvas {
+#radar-canvas,
+#rotor-az-canvas,
+#rotor-el-canvas {
   display: block;
+  width: 220px;
+  height: 220px;
   border-radius: 50%;
   background: rgba(13, 17, 23, 0.75);
   border: 1px solid var(--border);
+}
+
+.rotor-gauge-wrap {
+  position: relative;
+  width: 220px;
+}
+
+.rotor-gauge-label {
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  color: var(--text-dim);
+  background: rgba(13, 17, 23, 0.85);
+  padding: 1px 8px;
+  border-radius: 4px;
+  pointer-events: none;
 }
 
 #pass-profile {
@@ -513,7 +543,6 @@ body {
   min-height: 1em;
 }
 
-/* Fine-tune: dark +/- matching theme, offset same font as step */
 .fine-tune {
   display: flex;
   align-items: center;

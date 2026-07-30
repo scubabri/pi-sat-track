@@ -1,6 +1,7 @@
 function initApp() {
   if (typeof initMap === "function") initMap();
   if (typeof initRadar === "function") initRadar();
+  if (typeof initRotorGauges === "function") initRotorGauges();
   if (typeof initProfile === "function") initProfile();
   if (typeof initTimeToggle === "function") initTimeToggle();
   if (typeof initSatSelector === "function") initSatSelector();
