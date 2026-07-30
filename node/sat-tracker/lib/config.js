@@ -25,7 +25,7 @@ let ROTOR_EL_PORT = parseInt(process.env.ROTOR_EL_PORT || "4536", 10);
 const ROTOR_MIN_EL = parseFloat(process.env.ROTOR_MIN_EL || "10");
 const ROTOR_PARK_EL = parseFloat(process.env.ROTOR_PARK_EL || "0");
 const ROTOR_MOVE_INTERVAL_MS = parseInt(
-  process.env.ROTOR_MOVE_INTERVAL_MS || "1000",
+  process.env.ROTOR_MOVE_INTERVAL_MS || "30000",
   10,
 );
 
