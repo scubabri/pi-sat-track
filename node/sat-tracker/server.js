@@ -160,8 +160,6 @@ setInterval(() => {
 
 setInterval(broadcastSats, SATS_BROADCAST_MS);
 
-setInterval(() => rotor.pollPositions(), 5000);
-
 setInterval(() => {
   catalog.refreshCatalog().catch(() => {});
   catalog.refreshStatus().catch(() => {});
