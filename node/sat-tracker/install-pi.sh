@@ -12,7 +12,8 @@
 # Flags:
 #   --no-nginx     Skip nginx install/config
 #   --no-service   Skip systemd user service
-#   --update       Re-run npm install only (no apt/nginx)
+#   --update       Re-run npm install only (no apt/nginx/git)
+#   --upgrade      git pull + npm install + restart service
 
 set -euo pipefail
 
@@ -23,14 +24,16 @@ NGINX_SITE="sat-tracker"
 INSTALL_NGINX=1
 INSTALL_SERVICE=1
 UPDATE_ONLY=0
+UPGRADE=0
 
 for arg in "$@"; do
   case "$arg" in
     --no-nginx)   INSTALL_NGINX=0 ;;
     --no-service) INSTALL_SERVICE=0 ;;
     --update)     UPDATE_ONLY=1 ;;
+    --upgrade)    UPGRADE=1; UPDATE_ONLY=1; INSTALL_NGINX=0; INSTALL_SERVICE=0 ;;
     -h|--help)
-      sed -n '2,20p' "$0"
+      sed -n '2,22p' "$0"
       exit 0
       ;;
   esac
@@ -51,12 +54,12 @@ else
   exit 1
 fi
 
-REPO_DIR="$(cd "${APP_DIR}/../.." 2>/dev/null && pwd || true)"
-# If app is at repo/node/sat-tracker, repo is two levels up; if unknown, use APP_DIR
-if [[ ! -d "${REPO_DIR}/.git" && -d "${APP_DIR}/.git" ]]; then
-  REPO_DIR="${APP_DIR}"
-elif [[ ! -d "${REPO_DIR}/.git" ]]; then
-  REPO_DIR="${APP_DIR}"
+# Find git root (may be APP_DIR or a parent)
+GIT_ROOT="${APP_DIR}"
+if git -C "${APP_DIR}" rev-parse --show-toplevel >/dev/null 2>&1; then
+  GIT_ROOT="$(git -C "${APP_DIR}" rev-parse --show-toplevel)"
+elif git -C "${SCRIPT_DIR}" rev-parse --show-toplevel >/dev/null 2>&1; then
+  GIT_ROOT="$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel)"
 fi
 
 if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
@@ -81,11 +84,47 @@ need_sudo() {
   fi
 }
 
+# Ensure user systemd bus is available (SSH / no graphical session)
+ensure_user_systemd() {
+  if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
+    export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+  fi
+  if [[ ! -d "${XDG_RUNTIME_DIR}" ]]; then
+    echo "WARN: ${XDG_RUNTIME_DIR} missing — is lingering enabled?"
+    echo "      sudo loginctl enable-linger ${APP_USER}"
+  fi
+}
+
 echo "============================================================"
 echo " Pi Sat Track – Node web UI installer"
 echo " User: ${APP_USER}"
 echo " App:  ${APP_DIR}"
+if [[ $UPGRADE -eq 1 ]]; then
+  echo " Mode: --upgrade (git pull + npm + restart)"
+fi
 echo "============================================================"
+
+# ---------- upgrade: git pull ----------
+if [[ $UPGRADE -eq 1 ]]; then
+  if [[ ! -d "${GIT_ROOT}/.git" ]]; then
+    echo "ERROR: not a git repo (${GIT_ROOT})"
+    echo "Clone once with: git clone https://github.com/scubabri/pi-sat-track.git"
+    exit 1
+  fi
+  echo "==> git pull in ${GIT_ROOT}"
+  git -C "${GIT_ROOT}" fetch origin
+  # Prefer main, fall back to master
+  BRANCH="$(git -C "${GIT_ROOT}" rev-parse --abbrev-ref HEAD)"
+  if git -C "${GIT_ROOT}" show-ref --verify --quiet "refs/remotes/origin/${BRANCH}"; then
+    git -C "${GIT_ROOT}" pull --ff-only origin "${BRANCH}"
+  elif git -C "${GIT_ROOT}" show-ref --verify --quiet refs/remotes/origin/main; then
+    git -C "${GIT_ROOT}" checkout main
+    git -C "${GIT_ROOT}" pull --ff-only origin main
+  else
+    git -C "${GIT_ROOT}" pull --ff-only
+  fi
+  echo "    HEAD: $(git -C "${GIT_ROOT}" rev-parse --short HEAD)"
+fi
 
 # ---------- system packages ----------
 if [[ $UPDATE_ONLY -eq 0 ]]; then
@@ -132,7 +171,7 @@ npm install --omit=dev
 
 mkdir -p "${APP_HOME}/.rpitrack"
 
-# ---------- nginx (optional) ----------
+# ---------- nginx (optional, full install only) ----------
 if [[ $INSTALL_NGINX -eq 1 && $UPDATE_ONLY -eq 0 ]]; then
   echo "==> Configuring nginx reverse proxy → 127.0.0.1:${PROXY_PORT}"
 
@@ -178,8 +217,10 @@ EOF
   echo "    nginx listening on :80 → Node :${PROXY_PORT}"
 fi
 
-# ---------- systemd user service (optional) ----------
-if [[ $INSTALL_SERVICE -eq 1 ]]; then
+# ---------- systemd user service ----------
+# Full install: write unit + enable
+# --upgrade: restart if unit exists
+if [[ $INSTALL_SERVICE -eq 1 && $UPDATE_ONLY -eq 0 ]]; then
   UNIT_DIR="${APP_HOME}/.config/systemd/user"
   mkdir -p "${UNIT_DIR}"
 
@@ -206,6 +247,7 @@ EOF
     need_sudo loginctl enable-linger "${APP_USER}" || true
   fi
 
+  ensure_user_systemd
   systemctl --user daemon-reload
   systemctl --user enable sat-tracker.service
   systemctl --user restart sat-tracker.service
@@ -214,48 +256,43 @@ EOF
   echo "    logs: journalctl --user -u sat-tracker -f"
 fi
 
+if [[ $UPGRADE -eq 1 ]]; then
+  ensure_user_systemd
+  if systemctl --user list-unit-files sat-tracker.service >/dev/null 2>&1; then
+    echo "==> Restarting sat-tracker service"
+    systemctl --user daemon-reload
+    systemctl --user restart sat-tracker.service
+    systemctl --user --no-pager --full status sat-tracker.service || true
+  else
+    echo "WARN: sat-tracker.service not installed — start manually:"
+    echo "      cd ${APP_DIR} && node server.js"
+  fi
+fi
+
 # ---------- summary ----------
 PI_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 cat <<EOF
 
 ============================================================
-  Install complete
+  Done
 ============================================================
 
   App      ${APP_DIR}
-  Node     $(node -v) / npm $(npm -v)
+  Node     $(node -v 2>/dev/null || echo '?') / npm $(npm -v 2>/dev/null || echo '?')
   Cache    ${APP_HOME}/.rpitrack
-
-  Start manually:
-    cd ${APP_DIR}
-    npm start
 
   URL:
     http://127.0.0.1:${PROXY_PORT}/
-EOF
+    http://${PI_IP:-<pi-ip>}/
 
-if [[ $INSTALL_NGINX -eq 1 ]]; then
-  echo "    http://${PI_IP:-<pi-ip>}/   (via nginx)"
-fi
-
-if [[ $INSTALL_SERVICE -eq 1 ]]; then
-  cat <<EOF
+  Day-to-day update:
+    cd ${APP_DIR}
+    ./install-pi.sh --upgrade
 
   Service:
     systemctl --user status sat-tracker
     systemctl --user restart sat-tracker
     journalctl --user -u sat-tracker -f
-EOF
-fi
-
-cat <<EOF
-
-  Update later:
-    cd ${APP_DIR}
-    git pull   # from wherever your git root is
-    ./install-pi.sh --update
-
-  TCI: set host in lib/config.js to your Mac LAN IP, then restart the service.
 
 ============================================================
 EOF
