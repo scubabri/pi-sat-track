@@ -2,15 +2,12 @@
 # install-pi.sh
 # Raspberry Pi setup for the Node sat-tracker web UI.
 #
-# Assumes you already cloned the repo, e.g.:
-#   git clone https://github.com/scubabri/pi-sat-track.git
-#   cd pi-sat-track
-#   ./install-pi.sh
+# Run from either:
+#   ~/pi-sat-track/                  (repo root)
+#   ~/pi-sat-track/node/sat-tracker/ (app dir — where package.json lives)
 #
-# - System packages (Node.js, nginx, build tools) via sudo when needed
-# - npm install of node/sat-tracker as the normal user
-# - Optional nginx reverse proxy (port 80 → Node :3000) with WebSocket support
-# - Optional systemd user service
+#   chmod +x install-pi.sh
+#   ./install-pi.sh
 #
 # Flags:
 #   --no-nginx     Skip nginx install/config
@@ -33,18 +30,35 @@ for arg in "$@"; do
     --no-service) INSTALL_SERVICE=0 ;;
     --update)     UPDATE_ONLY=1 ;;
     -h|--help)
-      sed -n '2,25p' "$0"
+      sed -n '2,20p' "$0"
       exit 0
       ;;
   esac
 done
 
-# Resolve repo root from this script's location
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="${SCRIPT_DIR}"
-APP_DIR="${REPO_DIR}/node/sat-tracker"
 
-# Who owns the app (never root for npm)
+# Detect app dir: script may live in repo root or in node/sat-tracker
+if [[ -f "${SCRIPT_DIR}/package.json" ]]; then
+  APP_DIR="${SCRIPT_DIR}"
+elif [[ -f "${SCRIPT_DIR}/node/sat-tracker/package.json" ]]; then
+  APP_DIR="${SCRIPT_DIR}/node/sat-tracker"
+else
+  echo "ERROR: package.json not found relative to ${SCRIPT_DIR}"
+  echo "Expected either:"
+  echo "  ${SCRIPT_DIR}/package.json"
+  echo "  ${SCRIPT_DIR}/node/sat-tracker/package.json"
+  exit 1
+fi
+
+REPO_DIR="$(cd "${APP_DIR}/../.." 2>/dev/null && pwd || true)"
+# If app is at repo/node/sat-tracker, repo is two levels up; if unknown, use APP_DIR
+if [[ ! -d "${REPO_DIR}/.git" && -d "${APP_DIR}/.git" ]]; then
+  REPO_DIR="${APP_DIR}"
+elif [[ ! -d "${REPO_DIR}/.git" ]]; then
+  REPO_DIR="${APP_DIR}"
+fi
+
 if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
   APP_USER="${SUDO_USER}"
   APP_HOME=$(getent passwd "${APP_USER}" | cut -d: -f6)
@@ -55,16 +69,7 @@ fi
 
 if [[ "${APP_USER}" == "root" ]]; then
   echo "Do not run as root."
-  echo "Clone and run as a normal user; the script will sudo only for apt/nginx."
-  exit 1
-fi
-
-if [[ ! -f "${APP_DIR}/package.json" ]]; then
-  echo "ERROR: ${APP_DIR}/package.json not found."
-  echo "Run this script from the repo root after cloning:"
-  echo "  git clone https://github.com/scubabri/pi-sat-track.git"
-  echo "  cd pi-sat-track"
-  echo "  ./install-pi.sh"
+  echo "Run as a normal user; the script will sudo only for apt/nginx."
   exit 1
 fi
 
@@ -79,7 +84,6 @@ need_sudo() {
 echo "============================================================"
 echo " Pi Sat Track – Node web UI installer"
 echo " User: ${APP_USER}"
-echo " Repo: ${REPO_DIR}"
 echo " App:  ${APP_DIR}"
 echo "============================================================"
 
@@ -143,7 +147,6 @@ server {
         proxy_pass         http://127.0.0.1:${PROXY_PORT};
         proxy_http_version 1.1;
 
-        # WebSocket (/ws)
         proxy_set_header   Upgrade \$http_upgrade;
         proxy_set_header   Connection "upgrade";
 
@@ -219,7 +222,6 @@ cat <<EOF
   Install complete
 ============================================================
 
-  Repo     ${REPO_DIR}
   App      ${APP_DIR}
   Node     $(node -v) / npm $(npm -v)
   Cache    ${APP_HOME}/.rpitrack
@@ -227,7 +229,6 @@ cat <<EOF
   Start manually:
     cd ${APP_DIR}
     npm start
-    # or: node server.js
 
   URL:
     http://127.0.0.1:${PROXY_PORT}/
@@ -250,13 +251,11 @@ fi
 cat <<EOF
 
   Update later:
-    cd ${REPO_DIR}
-    git pull
+    cd ${APP_DIR}
+    git pull   # from wherever your git root is
     ./install-pi.sh --update
 
-  TCI note:
-    AetherSDR on the Mac must listen on the LAN (not only 127.0.0.1).
-    Point lib/config.js TCI_URI at ws://<mac-ip>:50001
+  TCI: set host in lib/config.js to your Mac LAN IP, then restart the service.
 
 ============================================================
 EOF
