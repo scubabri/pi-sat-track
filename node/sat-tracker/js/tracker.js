@@ -16,6 +16,8 @@ let lastModesKey = "";
 let radioOn = false;
 let tciConnected = false;
 let fineStep = 100;
+let ulFineOffset = 0;
+let manualDlOffset = 0;
 
 function fmtFreq(hz) {
   if (hz == null || !Number.isFinite(hz)) return "-";
@@ -56,6 +58,12 @@ function fmtDopplerMHz(hzOffset) {
   const mhz = hzOffset / 1e6;
   const sign = mhz >= 0 ? "+" : "";
   return sign + mhz.toFixed(6) + " MHz";
+}
+
+function fmtOffsetHz(hz) {
+  if (hz == null || !Number.isFinite(hz) || hz === 0) return "0 Hz";
+  const sign = hz > 0 ? "+" : "";
+  return sign + Math.round(hz) + " Hz";
 }
 
 function getObserverFromConfig() {
@@ -320,6 +328,9 @@ function selectSatellite(key, label) {
   lastStateSat = null;
   currentEl = null;
   lastModesKey = "";
+  ulFineOffset = 0;
+  manualDlOffset = 0;
+  updateFineOffsetDisplay();
 
   if (typeof clearProfileLock === "function") clearProfileLock();
   if (typeof clearMapTracking === "function") clearMapTracking();
@@ -370,6 +381,16 @@ function updateModeSelect(modes, modeIndex) {
   }
 }
 
+function updateFineOffsetDisplay() {
+  const el = document.getElementById("fine-offset");
+  if (!el) return;
+  el.textContent = fmtOffsetHz(ulFineOffset);
+  el.classList.toggle("nonzero", Math.abs(ulFineOffset) >= 1);
+  el.title =
+    "UL fine offset applied to uplink frequency" +
+    (manualDlOffset ? " · DL manual " + fmtOffsetHz(manualDlOffset) : "");
+}
+
 function updateRadioUi(on, connected) {
   radioOn = !!on;
   tciConnected = !!connected;
@@ -400,6 +421,14 @@ function updateRadioUi(on, connected) {
 
 function applyTciStatus(msg) {
   updateRadioUi(msg.radioOn, msg.connected);
+  if (typeof msg.ulFineOffset === "number") {
+    ulFineOffset = msg.ulFineOffset;
+    updateFineOffsetDisplay();
+  }
+  if (typeof msg.manualDlOffset === "number") {
+    manualDlOffset = msg.manualDlOffset;
+    updateFineOffsetDisplay();
+  }
   if (typeof msg.step === "number") {
     fineStep = msg.step;
     const stepEl = document.getElementById("fine-step");
@@ -419,6 +448,15 @@ function applyFreqAndLook(msg) {
 
   if (msg.modes) {
     updateModeSelect(msg.modes, msg.modeIndex);
+  }
+
+  if (typeof msg.ulFineOffset === "number") {
+    ulFineOffset = msg.ulFineOffset;
+    updateFineOffsetDisplay();
+  }
+  if (typeof msg.manualDlOffset === "number") {
+    manualDlOffset = msg.manualDlOffset;
+    updateFineOffsetDisplay();
   }
 
   const ulEl = document.getElementById("freq-ul");
@@ -499,12 +537,23 @@ function sendRadio(on) {
 }
 
 function sendFine(delta) {
+  // Optimistic UI so the offset moves immediately
+  ulFineOffset += delta;
+  updateFineOffsetDisplay();
+
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "fine", delta: delta, step: fineStep }));
+  } else {
+    console.warn(
+      "WebSocket not open — fine offset is local only until reconnect",
+    );
   }
 }
 
 function sendCenter() {
+  ulFineOffset = 0;
+  manualDlOffset = 0;
+  updateFineOffsetDisplay();
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "center" }));
   }
@@ -862,11 +911,17 @@ function initRadioControls() {
   }
 
   if (stepEl) {
+    stepEl.addEventListener("change", () => {
+      const step = parseInt(stepEl.value, 10);
+      if (Number.isFinite(step) && step > 0) fineStep = step;
+    });
     stepEl.addEventListener("dblclick", () => {
       sendCenter();
     });
     stepEl.title = "UL fine step (Hz). Double-click to center/reset offsets.";
   }
+
+  updateFineOffsetDisplay();
 }
 
 if (document.readyState === "loading") {

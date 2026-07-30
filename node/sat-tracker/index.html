@@ -121,7 +121,11 @@
           <h3>Frequencies</h3>
           <div class="freq-block">
             <div class="freq-label">Mode</div>
-            <select id="mode-select" class="mode-select" title="Transponder / mode">
+            <select
+              id="mode-select"
+              class="mode-select"
+              title="Transponder / mode"
+            >
               <option value="0">—</option>
             </select>
           </div>
@@ -136,10 +140,34 @@
             <div class="freq-doppler" id="freq-dl-doppler"></div>
           </div>
           <div class="fine-tune">
-            <button class="btn" id="btn-fine-minus">-</button>
-            <input type="text" id="fine-step" value="100" readonly />
+            <button
+              type="button"
+              id="btn-fine-minus"
+              class="btn-icon"
+              title="UL fine −"
+            >
+              −
+            </button>
+            <button
+              type="button"
+              id="btn-fine-plus"
+              class="btn-icon"
+              title="UL fine +"
+            >
+              +
+            </button>
+            <input
+              type="number"
+              id="fine-step"
+              value="100"
+              min="1"
+              step="1"
+              title="UL fine step (Hz). Double-click to reset."
+            />
             <span class="unit">Hz</span>
-            <button class="btn" id="btn-fine-plus">+</button>
+            <span id="fine-offset" class="fine-offset" title="UL fine offset"
+              >0 Hz</span
+            >
           </div>
           <div class="passband" id="passband">
             <div class="passband-row">
