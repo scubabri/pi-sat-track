@@ -3,17 +3,20 @@
  * Dual connections: uplink (TX slice) + downlink (RX slice).
  *
  * Links open lazily: only when that side has a frequency to push.
- * Downlink-only sats never open the UL CAT port.
  *
- * Protocol:
- *   FA;              → read VFO A frequency
- *   FA00014250000;   → set VFO A (11-digit Hz)
- *
- * Set commands usually produce no reply.
+ * VFO follow: polls FA; on the DL port. If the operator tunes away from
+ * the last commanded DL freq (>80 Hz), manualDlOffset is updated so UL
+ * (and subsequent DL holds) track — same model as TCI vfo: messages.
  */
 
 const net = require("net");
 const config = require("../config");
+const {
+  formatFreqDisplayFromMode,
+  isInverting,
+  getCatalog,
+} = require("../catalog");
+const { rangeRateKmS } = require("../orbit");
 
 function makeLink(name) {
   return {
@@ -25,7 +28,7 @@ function makeLink(name) {
     buf: "",
     lastFreqHz: null,
     reconnectTimer: null,
-    wanted: false, // true while this side should stay connected
+    wanted: false,
   };
 }
 
@@ -33,12 +36,24 @@ const ul = makeLink("ul");
 const dl = makeLink("dl");
 
 let radioOn = false;
+let manualDlOffset = 0;
 let ulFineOffset = 0;
 let digitStep = 100;
 let broadcastFn = () => {};
+let vfoPollTimer = null;
+const VFO_POLL_MS = 400;
+const VFO_THRESH_HZ = 80;
+
+let getCtx = () => ({
+  satrec: null,
+  observer: null,
+  currentSatKey: null,
+  currentModeIndex: 0,
+});
 
 function init(opts) {
   if (opts && opts.broadcast) broadcastFn = opts.broadcast;
+  if (opts && opts.getContext) getCtx = opts.getContext;
 }
 
 function anyConnected() {
@@ -61,6 +76,7 @@ function statusPayload() {
     dlPort: config.FLEX_DL_PORT,
     lastUlHz: ul.lastFreqHz,
     lastDlHz: dl.lastFreqHz,
+    manualDlOffset,
     ulFineOffset,
     step: digitStep,
   };
@@ -68,7 +84,6 @@ function statusPayload() {
 
 function broadcastStatus() {
   broadcastFn(statusPayload());
-  // tci-shaped status so existing UI Radio indicator works
   broadcastFn({
     type: "tci",
     radioOn,
@@ -76,7 +91,7 @@ function broadcastStatus() {
     connecting: ul.connecting || dl.connecting,
     host: config.FLEX_UL_HOST,
     port: config.FLEX_UL_PORT,
-    manualDlOffset: 0,
+    manualDlOffset,
     ulFineOffset,
     step: digitStep,
     lastCmdDl: dl.lastFreqHz,
@@ -86,6 +101,15 @@ function broadcastStatus() {
 
 function freqToFa(freqHz) {
   return "FA" + String(Math.round(freqHz)).padStart(11, "0") + ";";
+}
+
+function parseFa(reply) {
+  if (!reply) return null;
+  const s = String(reply).trim();
+  if (!s.startsWith("FA") || !s.endsWith(";")) return null;
+  const digits = s.slice(2, -1);
+  if (!/^\d+$/.test(digits)) return null;
+  return parseInt(digits, 10);
 }
 
 function linkHostPort(link) {
@@ -220,6 +244,7 @@ function openLink(link) {
       clearReconnect(link);
       console.log("Flex", link.name.toUpperCase(), "connected", host + ":" + port);
       broadcastStatus();
+      if (link.name === "dl") startVfoPoll();
       done(true);
     });
     s.once("timeout", () => {
@@ -237,6 +262,7 @@ function openLink(link) {
       link.socket = null;
       link.buf = "";
       link.busy = false;
+      if (link.name === "dl") stopVfoPoll();
       broadcastStatus();
       if (radioOn && link.wanted) scheduleReconnect(link);
     });
@@ -257,6 +283,7 @@ function closeLink(link) {
   clearReconnect(link);
   link.wanted = false;
   link.connecting = false;
+  if (link.name === "dl") stopVfoPoll();
   if (link.socket) {
     try {
       link.socket.removeAllListeners();
@@ -272,6 +299,7 @@ function closeLink(link) {
 
 function close() {
   radioOn = false;
+  stopVfoPoll();
   closeLink(ul);
   closeLink(dl);
   broadcastStatus();
@@ -282,8 +310,8 @@ function setRadio(on) {
   console.log("Flex setRadio(" + on + ")");
   if (on) {
     radioOn = true;
+    manualDlOffset = 0;
     ulFineOffset = 0;
-    // Do not open ports here — pushFrequencies opens each side on demand
     broadcastStatus();
   } else {
     close();
@@ -304,10 +332,6 @@ async function setLinkFrequency(link, freqHz) {
   }
 }
 
-/**
- * Ensure a side is open (if wanted) then set frequency.
- * If freq is null/invalid, close that side.
- */
 async function pushSide(link, freqHz) {
   const hasFreq = freqHz != null && Number.isFinite(freqHz);
 
@@ -333,13 +357,93 @@ async function pushSide(link, freqHz) {
 }
 
 /**
- * Push Doppler-corrected frequencies.
- * Only opens the UL port when ulHz is present; same for DL.
+ * Push Doppler-corrected frequencies (absolute Hz).
+ * Only opens sides that have a frequency.
  */
 async function pushFrequencies(ulHz, dlHz) {
   if (!radioOn) return;
   await pushSide(ul, ulHz);
   await pushSide(dl, dlHz);
+}
+
+function getActiveModeObj(info, modeIndex) {
+  if (!info) return null;
+  const modes = info.modes || [];
+  if (!modes.length) {
+    return {
+      mode: info.mode || "",
+      uplink: info.uplink || "",
+      downlink: info.downlink || "",
+      beacon: info.beacon || "",
+    };
+  }
+  const idx = Math.max(0, Math.min(modeIndex || 0, modes.length - 1));
+  return modes[idx];
+}
+
+/**
+ * Read DL FA; — if operator tuned away from last commanded DL, update
+ * manualDlOffset so UL follows (same as TCI vfo: path).
+ */
+async function pollDlVfo() {
+  if (!radioOn || !dl.connected || !dl.wanted || dl.busy) return;
+  if (dl.lastFreqHz == null || dl.lastFreqHz <= 0) return;
+
+  let reply;
+  try {
+    reply = await sendCmd(dl, "FA;", true);
+  } catch (_) {
+    return;
+  }
+
+  const freq = parseFa(reply);
+  if (freq == null) return;
+
+  if (Math.abs(freq - dl.lastFreqHz) <= VFO_THRESH_HZ) return;
+
+  const { satrec, observer, currentSatKey, currentModeIndex } = getCtx();
+  if (!satrec) return;
+
+  const info = getCatalog()[currentSatKey] || {};
+  const active = getActiveModeObj(info, currentModeIndex);
+  const freqs = formatFreqDisplayFromMode(active);
+  if (freqs.dlMHz == null) return;
+
+  const rr = rangeRateKmS(satrec, observer, new Date());
+  if (rr == null || !Number.isFinite(rr)) return;
+
+  const f0 = freqs.dlMHz * 1e6;
+  const df = 1 - rr / config.C_MS;
+  const prev = manualDlOffset;
+  manualDlOffset = freq - f0 * df;
+
+  // Accept operator tune as new baseline so we don't fight it next push
+  dl.lastFreqHz = freq;
+
+  if (Math.abs(manualDlOffset - prev) >= 1) {
+    console.log(
+      "Flex VFO DL",
+      (freq / 1e6).toFixed(6),
+      "MHz → manualDlOffset",
+      Math.round(manualDlOffset),
+      "Hz",
+    );
+    broadcastStatus();
+  }
+}
+
+function startVfoPoll() {
+  if (vfoPollTimer) return;
+  vfoPollTimer = setInterval(() => {
+    pollDlVfo().catch(() => {});
+  }, VFO_POLL_MS);
+}
+
+function stopVfoPoll() {
+  if (vfoPollTimer) {
+    clearInterval(vfoPollTimer);
+    vfoPollTimer = null;
+  }
 }
 
 function adjustFine(delta) {
@@ -353,11 +457,13 @@ function setStep(step) {
 }
 
 function center() {
+  manualDlOffset = 0;
   ulFineOffset = 0;
   broadcastStatus();
 }
 
 function resetOffsets() {
+  manualDlOffset = 0;
   ulFineOffset = 0;
   ul.lastFreqHz = null;
   dl.lastFreqHz = null;
@@ -371,7 +477,7 @@ function getRadioState() {
     ulConnected: ul.connected,
     dlConnected: dl.connected,
     connecting: ul.connecting || dl.connecting,
-    manualDlOffset: 0,
+    manualDlOffset,
     ulFineOffset,
     lastCmdDl: dl.lastFreqHz,
     lastCmdUl: ul.lastFreqHz,
@@ -392,7 +498,6 @@ function applyEndpointChange() {
   closeLink(ul);
   closeLink(dl);
   radioOn = wasOn;
-  // Restore wanted flags; next pushFrequencies will reopen as needed
   if (wasOn) {
     ul.wanted = ulWanted;
     dl.wanted = dlWanted;
@@ -404,10 +509,7 @@ function applyEndpointChange() {
 
 module.exports = {
   init,
-  open: async () => {
-    // kept for API compatibility — no-op eager open
-    return true;
-  },
+  open: async () => true,
   close,
   setRadio,
   pushFrequencies,

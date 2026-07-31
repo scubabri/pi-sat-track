@@ -43,11 +43,15 @@ let lastAosAz = null;
 
 function init(opts) {
   if (opts.broadcast) broadcastFn = opts.broadcast;
+  const ctx = () => ({ satrec, observer, currentSatKey, currentModeIndex });
   tci.init({
-    getContext: () => ({ satrec, observer, currentSatKey, currentModeIndex }),
+    getContext: ctx,
     broadcast: broadcastFn,
   });
-  flex.init({ broadcast: broadcastFn });
+  flex.init({
+    getContext: ctx,
+    broadcast: broadcastFn,
+  });
   rotor.init({
     broadcast: broadcastFn,
   });
