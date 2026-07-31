@@ -34,7 +34,6 @@
 
     const btnAcc = document.getElementById("btn-ctcss-access");
     const btnAct = document.getElementById("btn-ctcss-activation");
-    const btnOff = document.getElementById("btn-ctcss-off");
     if (btnAcc) {
       btnAcc.hidden = ctcssAccessHz == null;
       btnAcc.textContent =
@@ -42,6 +41,10 @@
         (ctcssAccessHz != null ? ctcssAccessHz.toFixed(1) : "") +
         " Hz";
       btnAcc.classList.toggle("active", ctcssMode === "access");
+      btnAcc.title =
+        ctcssMode === "access"
+          ? "Access tone ON — click to turn off"
+          : "Enable access CTCSS";
     }
     if (btnAct) {
       btnAct.hidden = ctcssActivationHz == null;
@@ -50,9 +53,10 @@
         (ctcssActivationHz != null ? ctcssActivationHz.toFixed(1) : "") +
         " Hz";
       btnAct.classList.toggle("active", ctcssMode === "activation");
-    }
-    if (btnOff) {
-      btnOff.classList.toggle("active", ctcssMode === "off");
+      btnAct.title =
+        ctcssMode === "activation"
+          ? "Activation tone ON — click to turn off"
+          : "Enable activation CTCSS (timer arm)";
     }
   }
 
@@ -81,6 +85,7 @@
     }
   }
 
+  /** Toggle: active → off; inactive → that mode (exclusive). */
   function sendCtcss(which) {
     let next = which;
     if (which === ctcssMode) next = "off";
@@ -132,6 +137,7 @@
     const bind = (id, side, sign) => {
       const el = document.getElementById(id);
       if (!el) return;
+      el.classList.add("btn-fine");
       el.addEventListener("click", () => {
         const stepEl = document.getElementById("fine-step");
         const step = parseInt(stepEl && stepEl.value, 10) || fineStep;
@@ -154,14 +160,19 @@
     }
 
     const centerBtn = document.getElementById("btn-fine-center");
-    if (centerBtn) centerBtn.addEventListener("click", sendCenter);
+    if (centerBtn) {
+      centerBtn.classList.add("btn-fine-center");
+      centerBtn.addEventListener("click", sendCenter);
+    }
 
     const acc = document.getElementById("btn-ctcss-access");
     const act = document.getElementById("btn-ctcss-activation");
-    const off = document.getElementById("btn-ctcss-off");
     if (acc) acc.addEventListener("click", () => sendCtcss("access"));
     if (act) act.addEventListener("click", () => sendCtcss("activation"));
-    if (off) off.addEventListener("click", () => sendCtcss("off"));
+
+    // Remove leftover Off button if present
+    const off = document.getElementById("btn-ctcss-off");
+    if (off && off.parentNode) off.parentNode.removeChild(off);
 
     updateDisplays();
     setInterval(patchWs, 500);
