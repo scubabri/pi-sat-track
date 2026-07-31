@@ -1,5 +1,30 @@
 const CONFIG_KEY = "satTrackerConfig";
 
+/** Mirrors lib/serial-catalog.js — keep in sync when adding models. */
+const SERIAL_CATALOG = {
+  icom: {
+    label: "Icom",
+    models: [
+      {
+        id: "ic-705",
+        label: "IC-705",
+        supported: true,
+        defaultDevice: "/dev/ttyACM0",
+        defaultBaud: 19200,
+        hint: "CI-V over USB. Cross-band split: VFO A = DL, VFO B = UL.",
+      },
+    ],
+  },
+  kenwood: {
+    label: "Kenwood",
+    models: [],
+  },
+  yaesu: {
+    label: "Yaesu",
+    models: [],
+  },
+};
+
 function loadConfig() {
   try {
     const cfg = JSON.parse(localStorage.getItem(CONFIG_KEY)) || {};
@@ -19,6 +44,8 @@ function defaultsEndpoints() {
     radioTransport: "tcp",
     radioType: "smartsdr",
     radioProtocol: "cat",
+    serialMake: "icom",
+    serialModel: "ic-705",
     tciHost: "127.0.0.1",
     tciPort: 50001,
     flexUlHost: "172.17.18.229",
@@ -43,13 +70,11 @@ function setVal(id, v) {
   if (el) el.value = v != null ? v : "";
 }
 
-/** Parse "host:port" or "host" → { host, port }. port may be null. */
 function parseEndpoint(str, defaultHost, defaultPort) {
   const s = (str || "").trim();
   if (!s) {
     return { host: defaultHost, port: defaultPort };
   }
-  // IPv6 in brackets: [fe80::1]:60001
   const m6 = s.match(/^\[([^\]]+)\]:(\d+)$/);
   if (m6) {
     const p = parseInt(m6[2], 10);
@@ -58,7 +83,6 @@ function parseEndpoint(str, defaultHost, defaultPort) {
       port: p > 0 && p < 65536 ? p : defaultPort,
     };
   }
-  // host:port (last colon — works for IPv4 and hostnames)
   const idx = s.lastIndexOf(":");
   if (idx > 0) {
     const host = s.slice(0, idx).trim();
@@ -67,13 +91,107 @@ function parseEndpoint(str, defaultHost, defaultPort) {
       return { host, port: p };
     }
   }
-  // host only
   return { host: s || defaultHost, port: defaultPort };
 }
 
 function formatEndpoint(host, port) {
   if (!host) return "";
   return host + ":" + (port != null ? port : "");
+}
+
+function findSerialModel(makeId, modelId) {
+  const make = SERIAL_CATALOG[String(makeId || "").toLowerCase()];
+  if (!make) return null;
+  const id = String(modelId || "").toLowerCase();
+  return make.models.find((m) => m.id === id) || null;
+}
+
+function populateSerialMakes(selected) {
+  const el = document.getElementById("cfg-serial-make");
+  if (!el) return;
+  el.innerHTML = "";
+  Object.keys(SERIAL_CATALOG).forEach((id) => {
+    const opt = document.createElement("option");
+    opt.value = id;
+    opt.textContent = SERIAL_CATALOG[id].label;
+    el.appendChild(opt);
+  });
+  if (selected && SERIAL_CATALOG[selected]) el.value = selected;
+  else el.value = "icom";
+}
+
+function populateSerialModels(makeId, selected) {
+  const el = document.getElementById("cfg-serial-model");
+  const hint = document.getElementById("cfg-serial-hint");
+  if (!el) return;
+
+  el.innerHTML = "";
+  const make = SERIAL_CATALOG[String(makeId || "").toLowerCase()];
+  const models = (make && make.models) || [];
+
+  if (!models.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "(no models yet)";
+    el.appendChild(opt);
+    el.disabled = true;
+    if (hint) {
+      hint.textContent =
+        "No " +
+        ((make && make.label) || makeId) +
+        " models wired yet. Only Icom IC-705 is supported.";
+    }
+    return;
+  }
+
+  el.disabled = false;
+  models.forEach((m) => {
+    const opt = document.createElement("option");
+    opt.value = m.id;
+    opt.textContent = m.supported ? m.label : m.label + " (soon)";
+    if (!m.supported) opt.disabled = true;
+    el.appendChild(opt);
+  });
+
+  const pick =
+    selected && models.some((m) => m.id === selected && m.supported)
+      ? selected
+      : (models.find((m) => m.supported) || models[0]).id;
+  el.value = pick;
+
+  const info = findSerialModel(makeId, pick);
+  if (hint) {
+    hint.textContent = info && info.hint ? info.hint : "";
+  }
+
+  // Apply model defaults for device/baud if fields still at generic defaults
+  if (info) {
+    const dev = document.getElementById("cfg-serial-device");
+    const baud = document.getElementById("cfg-serial-baud");
+    if (dev && (!dev.value || dev.value === "/dev/ttyUSB0")) {
+      dev.value = info.defaultDevice || "/dev/ttyACM0";
+    }
+    if (baud && (!baud.value || baud.value === "9600")) {
+      baud.value = String(info.defaultBaud || 19200);
+    }
+  }
+}
+
+function onSerialMakeChange() {
+  const make = val("cfg-serial-make") || "icom";
+  populateSerialModels(make, null);
+}
+
+function onSerialModelChange() {
+  const make = val("cfg-serial-make") || "icom";
+  const model = val("cfg-serial-model");
+  const info = findSerialModel(make, model);
+  const hint = document.getElementById("cfg-serial-hint");
+  if (hint) hint.textContent = info && info.hint ? info.hint : "";
+  if (info) {
+    if (info.defaultDevice) setVal("cfg-serial-device", info.defaultDevice);
+    if (info.defaultBaud) setVal("cfg-serial-baud", info.defaultBaud);
+  }
 }
 
 function readFormConfig() {
@@ -109,6 +227,9 @@ function readFormConfig() {
     radioType,
     radioProtocol,
 
+    serialMake: val("cfg-serial-make") || "icom",
+    serialModel: val("cfg-serial-model") || "ic-705",
+
     tciHost: tci.host,
     tciPort: tci.port,
 
@@ -138,13 +259,15 @@ function fillForm(cfg) {
   setVal("cfg-radio-type", d.radioType);
   setVal("cfg-radio-protocol", d.radioProtocol);
 
-  // Show saved values; leave empty only if never set (placeholders then show format)
   setVal("cfg-tci-endpoint", formatEndpoint(d.tciHost, d.tciPort));
   setVal("cfg-flex-ul-endpoint", formatEndpoint(d.flexUlHost, d.flexUlPort));
   setVal("cfg-flex-dl-endpoint", formatEndpoint(d.flexDlHost, d.flexDlPort));
 
   setVal("cfg-serial-device", d.serialDevice);
   setVal("cfg-serial-baud", d.serialBaud);
+
+  populateSerialMakes(d.serialMake || "icom");
+  populateSerialModels(d.serialMake || "icom", d.serialModel || "ic-705");
 
   updateRadioFormVisibility();
 }
@@ -218,6 +341,8 @@ function sendEndpointsToServer(cfg) {
       radioTransport: cfg.radioTransport,
       radioType: cfg.radioType,
       radioProtocol: cfg.radioProtocol,
+      serialMake: cfg.serialMake,
+      serialModel: cfg.serialModel,
       tciHost: cfg.tciHost,
       tciPort: cfg.tciPort,
       flexUlHost: cfg.flexUlHost,
@@ -258,6 +383,11 @@ function initConfig() {
       if (el) el.addEventListener("change", updateRadioFormVisibility);
     },
   );
+
+  const makeEl = document.getElementById("cfg-serial-make");
+  const modelEl = document.getElementById("cfg-serial-model");
+  if (makeEl) makeEl.addEventListener("change", onSerialMakeChange);
+  if (modelEl) modelEl.addEventListener("change", onSerialModelChange);
 
   document.getElementById("btn-save-config").addEventListener("click", () => {
     const newCfg = readFormConfig();

@@ -5,6 +5,7 @@
  *   1. Create lib/radios/<name>.js (see INTERFACE.md)
  *   2. register(require("./name")) below
  *   3. Implement meta.match(config) — first match wins
+ *   4. For serial: add model to lib/serial-catalog.js
  *
  * state.js / server.js only use radios.active() — no per-radio if/else.
  */
@@ -161,11 +162,11 @@ const icom = require("./icom");
 if (!icom.meta) {
   icom.meta = {
     id: "icom",
-    label: "Icom CI-V (serial)",
+    label: "Icom CI-V (IC-705)",
     match(cfg) {
-      return typeof cfg.useSerialCat === "function"
-        ? cfg.useSerialCat()
-        : cfg.RADIO_TRANSPORT === "serial";
+      // Prefer explicit IC-705 selection; fall back to any serial if unset
+      if (typeof cfg.useIcomSerial === "function") return cfg.useIcomSerial();
+      return cfg.RADIO_TRANSPORT === "serial";
     },
   };
 }
@@ -173,7 +174,8 @@ register(icom);
 
 register(require("./tci"));
 
-// register(require("./your-new-radio"));
+// register(require("./kenwood"));
+// register(require("./yaesu"));
 
 module.exports = {
   register,
