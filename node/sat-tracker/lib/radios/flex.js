@@ -119,7 +119,6 @@ function parseFa(reply) {
 /**
  * SmartSDR CAT MD codes (PowerSDR-style):
  *   1 = LSB, 2 = USB, 3 = CW, 4 = FM
- * (Classic Kenwood uses 0/1/2/3 — wrong for Flex.)
  */
 function modesForCatalogMode(modeStr) {
   const m = (modeStr || "").toUpperCase();
@@ -129,7 +128,6 @@ function modesForCatalogMode(modeStr) {
   if (/\bCW\b/.test(m) && !/\bSSB\b/.test(m)) {
     return { ul: "3", dl: "3", ulName: "CW", dlName: "CW" };
   }
-  // Linear SSB: UL LSB, DL USB
   return { ul: "1", dl: "2", ulName: "LSB", dlName: "USB" };
 }
 
@@ -501,7 +499,12 @@ function stopVfoPoll() {
 }
 
 function adjustFine(delta) {
-  if (typeof delta === "number") ulFineOffset += delta;
+  if (typeof delta === "number") {
+    ulFineOffset += delta;
+    // Force next pushFrequencies to resend FA on UL
+    ul.lastFreqHz = null;
+    console.log("Flex UL fine", delta >= 0 ? "+" + delta : delta, "→", ulFineOffset, "Hz");
+  }
   broadcastStatus();
 }
 
@@ -513,6 +516,9 @@ function setStep(step) {
 function center() {
   manualDlOffset = 0;
   ulFineOffset = 0;
+  ul.lastFreqHz = null;
+  dl.lastFreqHz = null;
+  console.log("Flex center offsets");
   broadcastStatus();
 }
 
