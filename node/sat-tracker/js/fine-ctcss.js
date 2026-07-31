@@ -29,8 +29,7 @@
     if (stepEl) stepEl.value = String(fineStep);
 
     const row = document.getElementById("ctcss-row");
-    const has =
-      ctcssAccessHz != null || ctcssActivationHz != null;
+    const has = ctcssAccessHz != null || ctcssActivationHz != null;
     if (row) row.hidden = !has;
 
     const btnAcc = document.getElementById("btn-ctcss-access");
@@ -83,7 +82,6 @@
   }
 
   function sendCtcss(which) {
-    // Mutual exclusive: clicking active again → off
     let next = which;
     if (which === ctcssMode) next = "off";
     ctcssMode = next;
@@ -93,23 +91,42 @@
     }
   }
 
-  window.applyFineCtcssFromTick = function (msg) {
+  function applyFromMsg(msg) {
+    if (!msg || typeof msg !== "object") return;
     if (typeof msg.ulFineOffset === "number") ulFineOffset = msg.ulFineOffset;
     if (typeof msg.dlFineOffset === "number") dlFineOffset = msg.dlFineOffset;
     if (typeof msg.ctcssMode === "string") ctcssMode = msg.ctcssMode;
     if (msg.ctcssAccessHz !== undefined) ctcssAccessHz = msg.ctcssAccessHz;
     if (msg.ctcssActivationHz !== undefined)
       ctcssActivationHz = msg.ctcssActivationHz;
-    // Also from modes of active sat
-    if (msg.modes && msg.modes.length && msg.modeIndex != null) {
-      const m = msg.modes[msg.modeIndex] || msg.modes[0];
+    if (msg.modes && msg.modes.length) {
+      const idx = msg.modeIndex != null ? msg.modeIndex : 0;
+      const m = msg.modes[idx] || msg.modes[0];
       if (m) {
         if (m.ctcssAccess != null) ctcssAccessHz = m.ctcssAccess;
         if (m.ctcssActivation != null) ctcssActivationHz = m.ctcssActivation;
       }
     }
     updateDisplays();
-  };
+  }
+
+  window.applyFineCtcssFromTick = applyFromMsg;
+
+  function patchWs() {
+    if (typeof ws === "undefined" || !ws) return;
+    if (ws.__fineCtcssPatched) return;
+    const prev = ws.onmessage;
+    ws.onmessage = function (ev) {
+      if (typeof prev === "function") prev.call(this, ev);
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === "tick" || msg.type === "state" || msg.type === "tci") {
+          applyFromMsg(msg);
+        }
+      } catch (_) {}
+    };
+    ws.__fineCtcssPatched = true;
+  }
 
   function initFineCtcss() {
     const bind = (id, side, sign) => {
@@ -147,6 +164,7 @@
     if (off) off.addEventListener("click", () => sendCtcss("off"));
 
     updateDisplays();
+    setInterval(patchWs, 500);
   }
 
   if (document.readyState === "loading") {
