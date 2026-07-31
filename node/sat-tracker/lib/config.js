@@ -1,5 +1,11 @@
 const path = require("path");
 const os = require("os");
+const {
+  listMakes,
+  listModels,
+  findModel,
+  defaultSerialSelection,
+} = require("./serial-catalog");
 
 const ROOT = path.join(__dirname, "..");
 const CACHE_DIR = path.join(os.homedir(), ".rpitrack");
@@ -17,6 +23,10 @@ let RADIO_TYPE = process.env.RADIO_TYPE || "smartsdr";
 let RADIO_PROTOCOL = process.env.RADIO_PROTOCOL || "cat"; // cat | tci
 
 if (RADIO_TYPE === "flex") RADIO_TYPE = "smartsdr";
+
+const _serDef = defaultSerialSelection();
+let SERIAL_MAKE = (process.env.SERIAL_MAKE || _serDef.make).toLowerCase();
+let SERIAL_MODEL = (process.env.SERIAL_MODEL || _serDef.model).toLowerCase();
 
 let TCI_HOST = process.env.TCI_HOST || "127.0.0.1";
 let TCI_PORT = parseInt(process.env.TCI_PORT || "50001", 10);
@@ -54,7 +64,7 @@ const ROTOR_LEAD_DEG = parseFloat(process.env.ROTOR_LEAD_DEG || "4");
 
 let CAT_DEVICE = process.env.CAT_DEVICE || "/dev/ttyACM0";
 let CAT_BAUD = parseInt(process.env.CAT_BAUD || "19200", 10);
-const CAT_CIV_ADDR = parseInt(process.env.CAT_CIV_ADDR || "0xA4", 16);
+let CAT_CIV_ADDR = parseInt(process.env.CAT_CIV_ADDR || "0xA4", 16);
 
 let FLEX_UL_HOST =
   process.env.FLEX_UL_HOST || process.env.FLEX_HOST || "172.17.18.229";
@@ -120,9 +130,25 @@ function useTci() {
   );
 }
 
-/** Icom CI-V over USB serial */
+/** True when serial transport is selected (any make/model). */
 function useSerialCat() {
   return RADIO_TRANSPORT === "serial";
+}
+
+/** True when the active serial model is the Icom IC-705 (or compatible CI-V). */
+function useIcomSerial() {
+  if (RADIO_TRANSPORT !== "serial") return false;
+  const make = String(SERIAL_MAKE || "").toLowerCase();
+  const model = String(SERIAL_MODEL || "").toLowerCase();
+  if (make && make !== "icom") return false;
+  // Default / unknown model → IC-705 path (only supported Icom so far)
+  if (!model || model === "ic-705" || model === "ic705") return true;
+  const m = findModel(make || "icom", model);
+  return !!(m && m.supported && m.driver === "icom");
+}
+
+function getSerialModelInfo() {
+  return findModel(SERIAL_MAKE, SERIAL_MODEL);
 }
 
 function getEndpoints() {
@@ -130,6 +156,8 @@ function getEndpoints() {
     radioTransport: RADIO_TRANSPORT,
     radioType: normalizeRadioType(RADIO_TYPE),
     radioProtocol: RADIO_PROTOCOL,
+    serialMake: SERIAL_MAKE,
+    serialModel: SERIAL_MODEL,
     tciHost: TCI_HOST,
     tciPort: TCI_PORT,
     rotorAzDevice: ROTOR_AZ_DEVICE,
@@ -146,6 +174,10 @@ function getEndpoints() {
     rotorHost: ROTOR_AZ_HOST,
     rotorAzPort: ROTOR_AZ_PORT,
     rotorElPort: ROTOR_EL_PORT,
+    serialCatalog: {
+      makes: listMakes(),
+      models: listModels(SERIAL_MAKE),
+    },
   };
 }
 
@@ -191,6 +223,32 @@ function applyEndpoints(ep) {
   if (normalizeRadioType(RADIO_TYPE) === "smartsdr" && RADIO_PROTOCOL !== "cat") {
     RADIO_PROTOCOL = "cat";
     radioSelChanged = true;
+  }
+
+  // Serial make / model
+  if (typeof ep.serialMake === "string" && ep.serialMake.trim()) {
+    const v = ep.serialMake.trim().toLowerCase();
+    if (v !== SERIAL_MAKE) {
+      SERIAL_MAKE = v;
+      radioSelChanged = true;
+      catChanged = true;
+    }
+  }
+  if (typeof ep.serialModel === "string" && ep.serialModel.trim()) {
+    const v = ep.serialModel.trim().toLowerCase();
+    if (v !== SERIAL_MODEL) {
+      SERIAL_MODEL = v;
+      radioSelChanged = true;
+      catChanged = true;
+    }
+  }
+
+  // Apply model defaults (baud / CIV) when known
+  const minfo = findModel(SERIAL_MAKE, SERIAL_MODEL);
+  if (minfo) {
+    if (minfo.defaultBaud && !ep.serialBaud) {
+      // keep user baud if provided; otherwise leave existing
+    }
   }
 
   if (typeof ep.tciHost === "string" && ep.tciHost.trim()) {
@@ -318,6 +376,12 @@ module.exports = {
   get RADIO_PROTOCOL() {
     return RADIO_PROTOCOL;
   },
+  get SERIAL_MAKE() {
+    return SERIAL_MAKE;
+  },
+  get SERIAL_MODEL() {
+    return SERIAL_MODEL;
+  },
   get TCI_HOST() {
     return TCI_HOST;
   },
@@ -363,7 +427,9 @@ module.exports = {
   get CAT_BAUD() {
     return CAT_BAUD;
   },
-  CAT_CIV_ADDR,
+  get CAT_CIV_ADDR() {
+    return CAT_CIV_ADDR;
+  },
   get FLEX_HOST() {
     return FLEX_UL_HOST;
   },
@@ -400,4 +466,6 @@ module.exports = {
   useFlexCat,
   useTci,
   useSerialCat,
+  useIcomSerial,
+  getSerialModelInfo,
 };
