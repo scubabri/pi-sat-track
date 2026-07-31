@@ -2,6 +2,9 @@
  * FlexRadio SmartSDR CAT driver (Kenwood-style over TCP).
  * Dual connections: uplink (TX slice) + downlink (RX slice).
  *
+ * Links open lazily: only when that side has a frequency to push.
+ * Downlink-only sats never open the UL CAT port.
+ *
  * Protocol:
  *   FA;              → read VFO A frequency
  *   FA00014250000;   → set VFO A (11-digit Hz)
@@ -22,6 +25,7 @@ function makeLink(name) {
     buf: "",
     lastFreqHz: null,
     reconnectTimer: null,
+    wanted: false, // true while this side should stay connected
   };
 }
 
@@ -37,13 +41,19 @@ function init(opts) {
   if (opts && opts.broadcast) broadcastFn = opts.broadcast;
 }
 
+function anyConnected() {
+  return ul.connected || dl.connected;
+}
+
 function statusPayload() {
   return {
     type: "flex",
     radioOn,
-    connected: ul.connected && dl.connected,
+    connected: anyConnected(),
     ulConnected: ul.connected,
     dlConnected: dl.connected,
+    ulWanted: ul.wanted,
+    dlWanted: dl.wanted,
     connecting: ul.connecting || dl.connecting,
     ulHost: config.FLEX_UL_HOST,
     ulPort: config.FLEX_UL_PORT,
@@ -58,11 +68,11 @@ function statusPayload() {
 
 function broadcastStatus() {
   broadcastFn(statusPayload());
-  // Also emit tci-shaped status so existing UI Radio indicator works
+  // tci-shaped status so existing UI Radio indicator works
   broadcastFn({
     type: "tci",
     radioOn,
-    connected: ul.connected && dl.connected,
+    connected: anyConnected(),
     connecting: ul.connecting || dl.connecting,
     host: config.FLEX_UL_HOST,
     port: config.FLEX_UL_PORT,
@@ -94,10 +104,10 @@ function clearReconnect(link) {
 
 function scheduleReconnect(link) {
   clearReconnect(link);
-  if (!radioOn) return;
+  if (!radioOn || !link.wanted) return;
   link.reconnectTimer = setTimeout(() => {
     link.reconnectTimer = null;
-    if (radioOn && !link.connected && !link.connecting) {
+    if (radioOn && link.wanted && !link.connected && !link.connecting) {
       console.log("Flex", link.name.toUpperCase(), "retry connect...");
       openLink(link).catch(() => {});
     }
@@ -228,7 +238,7 @@ function openLink(link) {
       link.buf = "";
       link.busy = false;
       broadcastStatus();
-      if (radioOn) scheduleReconnect(link);
+      if (radioOn && link.wanted) scheduleReconnect(link);
     });
     s.on("error", (err) => {
       console.warn("Flex", link.name.toUpperCase(), "error:", err.message);
@@ -245,6 +255,7 @@ function openLink(link) {
 
 function closeLink(link) {
   clearReconnect(link);
+  link.wanted = false;
   link.connecting = false;
   if (link.socket) {
     try {
@@ -257,12 +268,6 @@ function closeLink(link) {
   link.busy = false;
   link.buf = "";
   link.lastFreqHz = null;
-}
-
-async function open() {
-  const a = await openLink(ul);
-  const b = await openLink(dl);
-  return a && b;
 }
 
 function close() {
@@ -278,11 +283,11 @@ function setRadio(on) {
   if (on) {
     radioOn = true;
     ulFineOffset = 0;
-    open().catch(() => {});
+    // Do not open ports here — pushFrequencies opens each side on demand
+    broadcastStatus();
   } else {
     close();
   }
-  broadcastStatus();
 }
 
 async function setLinkFrequency(link, freqHz) {
@@ -300,21 +305,41 @@ async function setLinkFrequency(link, freqHz) {
 }
 
 /**
- * Push Doppler-corrected frequencies to both slices.
- * ulHz / dlHz are absolute Hz (already include Doppler + fine offset).
+ * Ensure a side is open (if wanted) then set frequency.
+ * If freq is null/invalid, close that side.
+ */
+async function pushSide(link, freqHz) {
+  const hasFreq = freqHz != null && Number.isFinite(freqHz);
+
+  if (!hasFreq) {
+    if (link.wanted || link.connected || link.connecting) {
+      console.log("Flex", link.name.toUpperCase(), "not needed — closing");
+      closeLink(link);
+      broadcastStatus();
+    }
+    return;
+  }
+
+  link.wanted = true;
+
+  if (!link.connected) {
+    const ok = await openLink(link);
+    if (!ok) return;
+  }
+
+  if (link.lastFreqHz == null || Math.abs(freqHz - link.lastFreqHz) >= 1) {
+    await setLinkFrequency(link, freqHz);
+  }
+}
+
+/**
+ * Push Doppler-corrected frequencies.
+ * Only opens the UL port when ulHz is present; same for DL.
  */
 async function pushFrequencies(ulHz, dlHz) {
   if (!radioOn) return;
-  if (ulHz != null && Number.isFinite(ulHz)) {
-    if (!ul.connected || ul.lastFreqHz == null || Math.abs(ulHz - ul.lastFreqHz) >= 1) {
-      await setLinkFrequency(ul, ulHz);
-    }
-  }
-  if (dlHz != null && Number.isFinite(dlHz)) {
-    if (!dl.connected || dl.lastFreqHz == null || Math.abs(dlHz - dl.lastFreqHz) >= 1) {
-      await setLinkFrequency(dl, dlHz);
-    }
-  }
+  await pushSide(ul, ulHz);
+  await pushSide(dl, dlHz);
 }
 
 function adjustFine(delta) {
@@ -341,8 +366,8 @@ function resetOffsets() {
 function getRadioState() {
   return {
     radioOn,
-    tciConnected: ul.connected && dl.connected, // UI reuse
-    connected: ul.connected && dl.connected,
+    tciConnected: anyConnected(),
+    connected: anyConnected(),
     ulConnected: ul.connected,
     dlConnected: dl.connected,
     connecting: ul.connecting || dl.connecting,
@@ -362,16 +387,27 @@ function applyEndpointChange() {
     config.FLEX_DL_HOST + ":" + config.FLEX_DL_PORT,
   );
   const wasOn = radioOn;
+  const ulWanted = ul.wanted;
+  const dlWanted = dl.wanted;
   closeLink(ul);
   closeLink(dl);
   radioOn = wasOn;
-  if (wasOn) open().catch(() => {});
-  else broadcastStatus();
+  // Restore wanted flags; next pushFrequencies will reopen as needed
+  if (wasOn) {
+    ul.wanted = ulWanted;
+    dl.wanted = dlWanted;
+    if (ulWanted) openLink(ul).catch(() => {});
+    if (dlWanted) openLink(dl).catch(() => {});
+  }
+  broadcastStatus();
 }
 
 module.exports = {
   init,
-  open,
+  open: async () => {
+    // kept for API compatibility — no-op eager open
+    return true;
+  },
   close,
   setRadio,
   pushFrequencies,
