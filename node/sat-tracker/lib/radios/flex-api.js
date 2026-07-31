@@ -2,21 +2,21 @@
  * Minimal FlexRadio SmartSDR TCP/IP API client.
  * Radio LAN IP port 4992 (not Windows SmartSDR CAT).
  *
- * CTCSS is applied only to the UL (TX) slice:
+ * Protocol notes (status examples from Flex community):
+ *   S3E53ED3B|slice 0 ... RF_frequency=14.188000 ... tx=1 mode=USB ...
+ *   S2E87F93C|slice 0 RF_frequency=14.328900 wide=0 lock=0
+ *
+ * CTCSS on UL slice only:
  *   slice set N fm_tone_mode=CTCSS
  *   slice set N fm_tone_value=67.0
- *
- * Slice selection order:
- *   1) slice with tx=1
- *   2) slice whose RF_frequency is closest to optional UL Hz (from CAT)
- *   3) first known slice
  */
 
 const net = require("net");
 const config = require("../config");
 
 const CONNECT_TIMEOUT_MS = 4000;
-const SLICE_WAIT_MS = 500;
+const SLICE_WAIT_MS = 800;
+const MAX_DEBUG_LINES = 40;
 
 function createApiClient() {
   let socket = null;
@@ -26,9 +26,10 @@ function createApiClient() {
   let buf = "";
   let host = null;
   let port = 4992;
+  let clientHandle = null;
+  let debugLines = 0;
   /** @type {Map<number, {tx:boolean, mode:string, freqHz:number|null}>} */
   let slices = new Map();
-  let pending = [];
 
   function nextSeq() {
     const n = seq++;
@@ -49,32 +50,26 @@ function createApiClient() {
     }
   }
 
-  function parseLine(line) {
-    line = line.trim();
-    if (!line) return;
-    if (!(line.startsWith("S") && line.includes("|slice "))) return;
-
-    const body = line.slice(line.indexOf("|") + 1);
-    const m = body.match(/^slice\s+(\d+)\s+(.*)$/);
+  function parseSliceStatus(body) {
+    // body starts after "|"  e.g. "slice 0 RF_frequency=... tx=1 ..."
+    const m = body.match(/^slice\s+(\d+)\b(.*)$/i);
     if (!m) return;
-
     const idx = parseInt(m[1], 10);
-    const rest = m[2];
+    const rest = m[2] || "";
     const cur = slices.get(idx) || { tx: false, mode: "", freqHz: null };
 
-    if (/\btx=1\b/i.test(rest)) cur.tx = true;
-    if (/\btx=0\b/i.test(rest)) cur.tx = false;
+    if (/\btx\s*=\s*1\b/i.test(rest)) cur.tx = true;
+    if (/\btx\s*=\s*0\b/i.test(rest)) cur.tx = false;
 
-    const mm = rest.match(/\bmode=([A-Za-z0-9]+)/i);
+    const mm = rest.match(/\bmode\s*=\s*([A-Za-z0-9]+)/i);
     if (mm) cur.mode = mm[1];
 
-    // RF_frequency is in MHz (e.g. 0.435250000 or 435.250000 depending on firmware)
-    const fm = rest.match(/\bRF_frequency=([0-9.]+)/i);
+    const fm = rest.match(/\bRF_frequency\s*=\s*([0-9.]+)/i);
     if (fm) {
       let mhz = parseFloat(fm[1]);
       if (Number.isFinite(mhz)) {
-        // normalize: values < 1000 treated as MHz
-        if (mhz < 1000) mhz = mhz * 1e6;
+        // API reports MHz (14.188000, 435.250000, sometimes 0.435250)
+        if (mhz > 0 && mhz < 1000) mhz = mhz * 1e6;
         cur.freqHz = Math.round(mhz);
       }
     }
@@ -82,12 +77,51 @@ function createApiClient() {
     slices.set(idx, cur);
   }
 
+  function parseLine(line) {
+    line = String(line).replace(/\r/g, "").trim();
+    if (!line) return;
+
+    // Temporary debug so we can see what the radio actually sends
+    if (debugLines < MAX_DEBUG_LINES) {
+      debugLines += 1;
+      const show =
+        line.length > 220 ? line.slice(0, 220) + "…" : line;
+      console.log("Flex API <<", show);
+    }
+
+    // Version
+    if (line.startsWith("V")) return;
+
+    // Client handle: HBAAC4C0F or H0xBAAC4C0F
+    if (line.startsWith("H") && line.length > 1) {
+      clientHandle = line.slice(1);
+      return;
+    }
+
+    // Reply to our command: R1|0|
+    if (line.startsWith("R")) return;
+
+    // Message: M10000001|...
+    if (line.startsWith("M")) return;
+
+    // Status: S<handle>|payload
+    if (line.startsWith("S") && line.includes("|")) {
+      const bar = line.indexOf("|");
+      const body = line.slice(bar + 1);
+      if (/^slice\s+\d+/i.test(body)) {
+        parseSliceStatus(body);
+      }
+    }
+  }
+
   function onData(chunk) {
     buf += chunk.toString("utf8");
+    // Flex uses \n; tolerate \r\n
     let idx;
-    while ((idx = buf.indexOf("\n")) >= 0) {
+    while ((idx = buf.search(/\r?\n/)) >= 0) {
+      const nl = buf[idx] === "\r" && buf[idx + 1] === "\n" ? 2 : 1;
       const line = buf.slice(0, idx);
-      buf = buf.slice(idx + 1);
+      buf = buf.slice(idx + nl);
       parseLine(line);
     }
   }
@@ -107,9 +141,9 @@ function createApiClient() {
   }
 
   /**
- * Prefer TX slice; else closest RF to ulHz; else first slice.
- * @param {number|null|undefined} ulHz
- */
+   * Prefer TX slice; else closest RF to ulHz; else first slice.
+   * @param {number|null|undefined} ulHz
+   */
   function findUlSlice(ulHz) {
     for (const [idx, s] of slices) {
       if (s.tx) return idx;
@@ -126,7 +160,6 @@ function createApiClient() {
           best = idx;
         }
       }
-      // accept match within 50 kHz (Doppler + tune)
       if (best != null && bestDiff < 50000) return best;
     }
 
@@ -134,6 +167,12 @@ function createApiClient() {
     const first = slices.keys().next();
     if (!first.done) return first.value;
     return 0;
+  }
+
+  function subscribeSlices() {
+    // Non-GUI client — SmartSDR for Windows is already the GUI client
+    send("client program pi-sat-track");
+    send("sub slice all");
   }
 
   function connect(apiHost, apiPort) {
@@ -171,18 +210,24 @@ function createApiClient() {
         connected = true;
         buf = "";
         slices = new Map();
+        clientHandle = null;
+        debugLines = 0;
         console.log("Flex API connected", host + ":" + port);
-        // gui client so we receive slice status
-        send("client gui");
-        send("sub slice all");
+
+        // Brief delay so V/H/initial status can arrive, then subscribe
         setTimeout(() => {
-          console.log("Flex API slices:", dumpSlices());
-          for (const fn of pending.splice(0)) {
-            try {
-              fn();
-            } catch (_) {}
-          }
-        }, SLICE_WAIT_MS);
+          subscribeSlices();
+          setTimeout(() => {
+            console.log("Flex API slices:", dumpSlices());
+            if (slices.size === 0) {
+              console.warn(
+                "Flex API: no slice status yet — re-subscribing (is SmartSDR running with open slices?)",
+              );
+              subscribeSlices();
+            }
+          }, SLICE_WAIT_MS);
+        }, 200);
+
         done(true);
       });
       s.once("timeout", () => {
@@ -211,7 +256,6 @@ function createApiClient() {
   }
 
   function close() {
-    pending = [];
     if (socket) {
       try {
         socket.removeAllListeners();
@@ -222,12 +266,14 @@ function createApiClient() {
     connected = false;
     connecting = false;
     slices = new Map();
+    clientHandle = null;
+    buf = "";
   }
 
   /**
    * Apply CTCSS on UL slice only.
-   * @param {number|null} hz  tone Hz, or null/0 to turn off
-   * @param {number|null} [ulHz] optional UL frequency from CAT to help pick slice
+   * @param {number|null} hz
+   * @param {number|null} [ulHz]
    */
   async function setCtcss(hz, ulHz) {
     if (!host) {
@@ -239,9 +285,11 @@ function createApiClient() {
     if (!connected) {
       const ok = await connect(host, port);
       if (!ok) return false;
-      await new Promise((r) => setTimeout(r, SLICE_WAIT_MS));
-    } else if (slices.size === 0) {
-      send("sub slice all");
+      await new Promise((r) => setTimeout(r, SLICE_WAIT_MS + 300));
+    }
+
+    if (slices.size === 0) {
+      subscribeSlices();
       await new Promise((r) => setTimeout(r, SLICE_WAIT_MS));
     }
 
@@ -256,7 +304,6 @@ function createApiClient() {
 
     if (hz != null && Number.isFinite(hz) && hz > 0) {
       const val = Number(hz).toFixed(1);
-      // Ensure FM tone encode path on this slice only
       const ok1 = send("slice set " + sliceIdx + " fm_tone_mode=CTCSS");
       const ok2 = send("slice set " + sliceIdx + " fm_tone_value=" + val);
       console.log(
