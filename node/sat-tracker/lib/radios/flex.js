@@ -2,18 +2,14 @@
  * FlexRadio SmartSDR CAT driver (Kenwood-style over TCP).
  * Dual connections: uplink (TX slice) + downlink (RX slice).
  *
- * Links open lazily: only when that side has a frequency to push.
- *
- * VFO follow: polls FA; on the DL port. If the operator tunes away from
- * the last commanded DL freq (>80 Hz), manualDlOffset is updated so UL
- * (and subsequent DL holds) track — same model as TCI vfo: messages.
+ * VFO follow: polls FA; on DL. When unlocked, operator tunes update
+ * manualDlOffset (UL tracks). When locked (FM default), tunes are ignored.
  */
 
 const net = require("net");
 const config = require("../config");
 const {
   formatFreqDisplayFromMode,
-  isInverting,
   getCatalog,
 } = require("../catalog");
 const { rangeRateKmS } = require("../orbit");
@@ -36,6 +32,7 @@ const ul = makeLink("ul");
 const dl = makeLink("dl");
 
 let radioOn = false;
+let locked = false;
 let manualDlOffset = 0;
 let ulFineOffset = 0;
 let digitStep = 100;
@@ -64,6 +61,7 @@ function statusPayload() {
   return {
     type: "flex",
     radioOn,
+    locked,
     connected: anyConnected(),
     ulConnected: ul.connected,
     dlConnected: dl.connected,
@@ -87,6 +85,7 @@ function broadcastStatus() {
   broadcastFn({
     type: "tci",
     radioOn,
+    locked,
     connected: anyConnected(),
     connecting: ul.connecting || dl.connecting,
     host: config.FLEX_UL_HOST,
@@ -318,6 +317,19 @@ function setRadio(on) {
   }
 }
 
+function setLock(on) {
+  locked = !!on;
+  console.log("Flex LOCK", locked ? "ON" : "OFF");
+  broadcastStatus();
+}
+
+/** FM → locked true, linear → locked false */
+function applyDefaultLock(isFm) {
+  locked = !!isFm;
+  console.log("Flex default LOCK", locked ? "ON (FM)" : "OFF (linear)");
+  broadcastStatus();
+}
+
 async function setLinkFrequency(link, freqHz) {
   if (!Number.isFinite(freqHz) || freqHz < 1e5 || freqHz > 6e8) return false;
   if (!link.connected) return false;
@@ -356,10 +368,6 @@ async function pushSide(link, freqHz) {
   }
 }
 
-/**
- * Push Doppler-corrected frequencies (absolute Hz).
- * Only opens sides that have a frequency.
- */
 async function pushFrequencies(ulHz, dlHz) {
   if (!radioOn) return;
   await pushSide(ul, ulHz);
@@ -381,13 +389,11 @@ function getActiveModeObj(info, modeIndex) {
   return modes[idx];
 }
 
-/**
- * Read DL FA; — if operator tuned away from last commanded DL, update
- * manualDlOffset so UL follows (same as TCI vfo: path).
- */
 async function pollDlVfo() {
   if (!radioOn || !dl.connected || !dl.wanted || dl.busy) return;
   if (dl.lastFreqHz == null || dl.lastFreqHz <= 0) return;
+  // Locked: ignore operator tunes (FM default)
+  if (locked) return;
 
   let reply;
   try {
@@ -398,7 +404,6 @@ async function pollDlVfo() {
 
   const freq = parseFa(reply);
   if (freq == null) return;
-
   if (Math.abs(freq - dl.lastFreqHz) <= VFO_THRESH_HZ) return;
 
   const { satrec, observer, currentSatKey, currentModeIndex } = getCtx();
@@ -416,8 +421,6 @@ async function pollDlVfo() {
   const df = 1 - rr / config.C_MS;
   const prev = manualDlOffset;
   manualDlOffset = freq - f0 * df;
-
-  // Accept operator tune as new baseline so we don't fight it next push
   dl.lastFreqHz = freq;
 
   if (Math.abs(manualDlOffset - prev) >= 1) {
@@ -472,6 +475,7 @@ function resetOffsets() {
 function getRadioState() {
   return {
     radioOn,
+    locked,
     tciConnected: anyConnected(),
     connected: anyConnected(),
     ulConnected: ul.connected,
@@ -512,6 +516,8 @@ module.exports = {
   open: async () => true,
   close,
   setRadio,
+  setLock,
+  applyDefaultLock,
   pushFrequencies,
   adjustFine,
   setStep,
