@@ -34,6 +34,8 @@ let satrec = null;
 let tleNote = "";
 let currentNorad = null;
 let currentOrbit = null;
+/** FM: hold published UL (no Doppler). Default ON for 2m UL. */
+let ulFixed = false;
 let observer = {
   latitude: satellite.degreesToRadians(40.5),
   longitude: satellite.degreesToRadians(-111.9),
@@ -46,21 +48,10 @@ let lastAosAz = null;
 function init(opts) {
   if (opts.broadcast) broadcastFn = opts.broadcast;
   const ctx = () => ({ satrec, observer, currentSatKey, currentModeIndex });
-  tci.init({
-    getContext: ctx,
-    broadcast: broadcastFn,
-  });
-  flex.init({
-    getContext: ctx,
-    broadcast: broadcastFn,
-  });
-  icom.init({
-    getContext: ctx,
-    broadcast: broadcastFn,
-  });
-  rotor.init({
-    broadcast: broadcastFn,
-  });
+  tci.init({ getContext: ctx, broadcast: broadcastFn });
+  flex.init({ getContext: ctx, broadcast: broadcastFn });
+  icom.init({ getContext: ctx, broadcast: broadcastFn });
+  rotor.init({ broadcast: broadcastFn });
 }
 
 function applyLockDefaultForMode(modeStr) {
@@ -71,30 +62,18 @@ function applyLockDefaultForMode(modeStr) {
   else if (typeof tci.setLock === "function") tci.setLock(fm);
 }
 
-/**
- * Fix UL default for FM:
- *   2m uplink (SO-50, ISS style) → ON (SOP: published UL, track DL)
- *   70cm uplink (AO-91/Fox) → OFF (UL Doppler matters)
- * Linear always OFF.
- */
 function applyUlFixedDefaultForMode(active) {
   const fm = isFmMode(active && active.mode);
   const ulMHz = centerFreqMHz(active && active.uplink);
   const ul = ulMHz != null ? parseFloat(ulMHz) : null;
-  let fixed = false;
-  if (fm && ul != null && Number.isFinite(ul)) {
-    fixed = ul < 200; // VHF UL → fix; UHF UL → doppler
-  }
-  const apply = (driver) => {
-    if (typeof driver.applyDefaultUlFixed === "function") {
-      driver.applyDefaultUlFixed(fixed);
-    } else if (typeof driver.setUlFixed === "function") {
-      driver.setUlFixed(fixed);
-    }
-  };
-  if (config.useSerialCat()) apply(icom);
-  else if (config.useFlexCat()) apply(flex);
-  else apply(tci);
+  // SO-50 / ISS style (2m UL): fix published UL. Fox-style (70cm UL): Doppler.
+  ulFixed = !!(fm && ul != null && Number.isFinite(ul) && ul < 200);
+  console.log("UL fixed default", ulFixed, "(FM", fm, "UL", ul, "MHz)");
+}
+
+function setUlFixed(on) {
+  ulFixed = !!on;
+  console.log("UL fixed", ulFixed ? "ON (published)" : "OFF (Doppler)");
 }
 
 function applyCtcssDefaultForMode(info, active) {
@@ -256,7 +235,6 @@ function computeTick() {
   const inverting = isInverting(activeMode && activeMode.mode);
   const radio = activeRadioState();
   const modes = modesPayload(info);
-  const ulFixed = !!radio.ulFixed;
 
   let ulDopplerHz = null;
   let dlDopplerHz = null;
@@ -280,7 +258,6 @@ function computeTick() {
     if (freqs.ulMHz != null) {
       const f0 = freqs.ulMHz * 1e6;
       if (ulFixed) {
-        // Fixed published uplink (SO-50 SOP) — fine still applies
         const fTx = f0 + (radio.ulFineOffset || 0);
         ulDopplerHz = 0;
         ulHz = Math.round(fTx);
@@ -325,10 +302,7 @@ function computeTick() {
   rotor.updateTracking(trackLook, lastAosAz);
 
   const r = rotor.getRotorState();
-
-  if (r.antennaOn) {
-    rotor.logSample(look.az, look.el);
-  }
+  if (r.antennaOn) rotor.logSample(look.az, look.el);
 
   return {
     type: "tick",
@@ -433,7 +407,7 @@ function computeState() {
     passes,
     radioOn: radio.radioOn,
     locked: !!radio.locked,
-    ulFixed: !!radio.ulFixed,
+    ulFixed,
     tciConnected: radio.tciConnected || radio.connected,
     manualDlOffset: radio.manualDlOffset || 0,
     ulFineOffset: radio.ulFineOffset || 0,
@@ -461,6 +435,7 @@ module.exports = {
   getCurrentKey,
   setModeIndex,
   loadSatellite,
+  setUlFixed,
   computeTick,
   computeState,
   satsPayload,
