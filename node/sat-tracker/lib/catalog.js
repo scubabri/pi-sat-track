@@ -15,10 +15,32 @@ let catalogNote = "not loaded";
 let ACTIVE = new Set();
 let statusNote = "not loaded";
 
-/** Known dual-tone FM sats (Hz). Access is normal ops; activation arms timer. */
+/**
+ * Known FM CTCSS (Hz). access = talk tone; activation = timer arm (SO-50 only).
+ * Keys: designator, aliases, and NORAD as "N#####".
+ */
 const CTCSS_OVERRIDES = {
+  // SO-50 — dual tone
   "SO-50": { access: 67.0, activation: 74.4 },
   SO50: { access: 67.0, activation: 74.4 },
+  N27607: { access: 67.0, activation: 74.4 },
+
+  // ISS crossband FM repeater
+  ISS: { access: 67.0 },
+  "ZARYA": { access: 67.0 },
+  N25544: { access: 67.0 },
+
+  // IO-86 / LAPAN-A2
+  "IO-86": { access: 88.5 },
+  IO86: { access: 88.5 },
+  "LAPAN-A2": { access: 88.5 },
+  LAPANA2: { access: 88.5 },
+  N40931: { access: 88.5 },
+
+  // ASRTU-1
+  "ASRTU-1": { access: 67.0 },
+  ASRTU1: { access: 67.0 },
+  N61781: { access: 67.0 },
 };
 
 function ensureCacheDir() {
@@ -109,9 +131,8 @@ function isInverting(mode) {
 /**
  * Extract CTCSS tones from mode text + known sat overrides.
  * Returns { access, activation } in Hz (or null).
- * SO-50 style: activation arms timer; access is talk tone.
  */
-function parseCtcss(modeStr, satKey, satName) {
+function parseCtcss(modeStr, satKey, satName, norad) {
   const result = { access: null, activation: null };
   const m = String(modeStr || "");
 
@@ -124,7 +145,6 @@ function parseCtcss(modeStr, satKey, satName) {
     const v = parseFloat(match[1] || match[2]);
     if (Number.isFinite(v) && v >= 67 && v <= 254.1) tones.push(v);
   }
-  // bare "67.0" near CTCSS word
   if (!tones.length && /CTCSS|\bPL\b/i.test(m)) {
     const bare = m.match(/\b(6[7-9]|[7-9]\d|1\d{2}|2[0-4]\d)(?:\.\d)?\b/);
     if (bare) {
@@ -134,7 +154,6 @@ function parseCtcss(modeStr, satKey, satName) {
   }
 
   if (tones.length >= 2) {
-    // Convention: lower or first listed often access; activation often 74.4
     const act = tones.find((t) => Math.abs(t - 74.4) < 0.05);
     if (act != null) {
       result.activation = act;
@@ -147,10 +166,24 @@ function parseCtcss(modeStr, satKey, satName) {
     result.access = tones[0];
   }
 
-  const keys = [satKey, satName, designator(satName), designator(satKey)]
+  // Overrides win — catalog strings often omit tone for ISS etc.
+  const candidates = [
+    satKey,
+    satName,
+    designator(satName),
+    designator(satKey),
+    norad != null ? "N" + norad : null,
+  ]
     .filter(Boolean)
     .map((k) => String(k).toUpperCase());
-  for (const k of keys) {
+
+  // Also match "ISS" substring in name (e.g. "ISS (ZARYA)")
+  const nameU = String(satName || "").toUpperCase();
+  if (/\bISS\b/.test(nameU) || nameU.includes("ZARYA")) {
+    candidates.unshift("ISS");
+  }
+
+  for (const k of candidates) {
     const o = CTCSS_OVERRIDES[k] || CTCSS_OVERRIDES[norm(k)];
     if (o) {
       if (o.access != null) result.access = o.access;
@@ -304,18 +337,26 @@ function parseAmsatJson(arr) {
         : fromCs || fromName || entry.name;
 
     let key = makeKey(entry.name, entry.norad, entry.callsign);
-    if (key.startsWith("N") && (fromCs || fromName)) {
+    // Prefer ISS as key for NORAD 25544
+    if (entry.norad === 25544) key = "ISS";
+    else if (key.startsWith("N") && (fromCs || fromName)) {
       key = fromCs || fromName;
     }
     entry.key = key;
-    entry.display = clean;
+    entry.display = entry.norad === 25544 ? "ISS" : clean;
     entry.trackable = !!entry.norad;
 
-    // Attach CTCSS to each mode
+    // Attach CTCSS to each mode (FM modes get override tones)
     for (const mo of entry.modes) {
-      const tones = parseCtcss(mo.mode, key, entry.name);
-      mo.ctcssAccess = tones.access;
-      mo.ctcssActivation = tones.activation;
+      const tones = parseCtcss(mo.mode, key, entry.name, entry.norad);
+      // Only attach to FM-ish modes so linear modes stay clean
+      if (isFmMode(mo.mode) || tones.access != null || tones.activation != null) {
+        mo.ctcssAccess = tones.access;
+        mo.ctcssActivation = tones.activation;
+      } else {
+        mo.ctcssAccess = null;
+        mo.ctcssActivation = null;
+      }
     }
 
     catalog[key] = entry;
@@ -470,6 +511,14 @@ async function refreshCatalog() {
       );
     } else {
       console.warn("RS-44 not found in catalog keys");
+    }
+    const iss = catalog["ISS"];
+    if (iss) {
+      const fm = (iss.modes || []).filter((m) => isFmMode(m.mode));
+      console.log(
+        "ISS modes:",
+        (iss.modes || []).map((m) => m.mode + (m.ctcssAccess != null ? " CTCSS " + m.ctcssAccess : "")).join(" | "),
+      );
     }
   } catch (e) {
     if (fs.existsSync(CATALOG_CACHE)) {
