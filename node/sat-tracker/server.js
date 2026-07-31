@@ -180,6 +180,8 @@ wss.on("connection", (ws) => {
           flexUlPort: msg.flexUlPort,
           flexDlHost: msg.flexDlHost,
           flexDlPort: msg.flexDlPort,
+          flexApiHost: msg.flexApiHost,
+          flexApiPort: msg.flexApiPort,
           flexHost: msg.flexHost,
           flexPort: msg.flexPort,
           serialDevice: msg.serialDevice,
