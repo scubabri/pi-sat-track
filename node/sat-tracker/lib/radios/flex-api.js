@@ -1,20 +1,15 @@
 /**
- * Minimal FlexRadio SmartSDR TCP/IP API client (port 4992).
- * Used only for features CAT cannot do — currently FM CTCSS.
+ * Minimal FlexRadio SmartSDR TCP/IP API client.
+ * Listens on the *radio* (not the Windows SmartSDR CAT PC), default port 4992.
  *
- * Protocol (see G3WGV API primer / Flex TCPIP API):
- *   Connect TCP to radio:4992
- *   C<n>|command ...\n
- *   Responses: R<n>|0|  status lines: S<handle>|slice N key=val ...
- *
- * Slice FM fields:
- *   fm_tone_mode=OFF|CTCSS
- *   fm_tone_value=67.0
+ * CTCSS:
+ *   slice set N fm_tone_mode=CTCSS
+ *   slice set N fm_tone_value=67.0
  */
 
 const net = require("net");
+const config = require("../config");
 
-const API_PORT = 4992;
 const CONNECT_TIMEOUT_MS = 4000;
 
 function createApiClient() {
@@ -24,6 +19,7 @@ function createApiClient() {
   let seq = 1;
   let buf = "";
   let host = null;
+  let port = 4992;
   /** @type {Map<number, {tx:boolean, mode:string}>} */
   let slices = new Map();
   let pending = [];
@@ -50,8 +46,6 @@ function createApiClient() {
   function parseLine(line) {
     line = line.trim();
     if (!line) return;
-
-    // Status: Sxxxx|slice 0 ... fm_tone_mode=OFF fm_tone_value=67.0 ...
     if (line.startsWith("S") && line.includes("|slice ")) {
       const body = line.slice(line.indexOf("|") + 1);
       const m = body.match(/^slice\s+(\d+)\s+(.*)$/);
@@ -64,7 +58,6 @@ function createApiClient() {
       const mm = rest.match(/\bmode=([A-Za-z0-9]+)/);
       if (mm) cur.mode = mm[1];
       slices.set(idx, cur);
-      return;
     }
   }
 
@@ -82,15 +75,18 @@ function createApiClient() {
     for (const [idx, s] of slices) {
       if (s.tx) return idx;
     }
-    // Prefer slice 1 (common UL), else 0
     if (slices.has(1)) return 1;
     if (slices.has(0)) return 0;
     return 0;
   }
 
-  function connect(apiHost) {
-    host = apiHost || host;
-    if (!host) return Promise.resolve(false);
+  function connect(apiHost, apiPort) {
+    host = (apiHost || host || "").trim();
+    port = apiPort || config.FLEX_API_PORT || 4992;
+    if (!host) {
+      console.log("Flex API: no radio IP configured (set API host in config)");
+      return Promise.resolve(false);
+    }
     if (socket && connected) return Promise.resolve(true);
     if (connecting) return Promise.resolve(false);
 
@@ -119,13 +115,9 @@ function createApiClient() {
         connected = true;
         buf = "";
         slices = new Map();
-        console.log("Flex API connected", host + ":" + API_PORT);
-
-        // Identify as non-GUI client and subscribe to slices
+        console.log("Flex API connected", host + ":" + port);
         send("client gui 0");
         send("sub slice all");
-
-        // Flush any pending CTCSS after short settle
         setTimeout(() => {
           for (const fn of pending.splice(0)) {
             try {
@@ -133,11 +125,10 @@ function createApiClient() {
             } catch (_) {}
           }
         }, 300);
-
         done(true);
       });
       s.once("timeout", () => {
-        console.warn("Flex API connect timeout", host + ":" + API_PORT);
+        console.warn("Flex API connect timeout", host + ":" + port);
         done(false);
       });
       s.once("error", (err) => {
@@ -153,7 +144,7 @@ function createApiClient() {
       });
 
       try {
-        s.connect(API_PORT, host);
+        s.connect(port, host);
       } catch (e) {
         console.warn("Flex API exception:", e.message);
         done(false);
@@ -175,30 +166,22 @@ function createApiClient() {
     slices = new Map();
   }
 
-  /**
-   * Set FM TX CTCSS on the transmit slice.
-   * @param {number|null} hz  null/undefined = off
-   */
   async function setCtcss(hz) {
+    if (!host) {
+      console.warn("Flex API: CTCSS skipped — set radio API host (radio LAN IP:4992)");
+      return false;
+    }
     if (!connected) {
-      const ok = await connect(host);
-      if (!ok) {
-        console.warn("Flex API not connected — cannot set CTCSS");
-        return false;
-      }
-      // Wait briefly for slice status
+      const ok = await connect(host, port);
+      if (!ok) return false;
       await new Promise((r) => setTimeout(r, 400));
     }
 
     const sliceIdx = findTxSlice();
     if (hz != null && Number.isFinite(hz) && hz > 0) {
       const val = Number(hz).toFixed(1);
-      const ok1 = send(
-        "slice set " + sliceIdx + " fm_tone_mode=CTCSS",
-      );
-      const ok2 = send(
-        "slice set " + sliceIdx + " fm_tone_value=" + val,
-      );
+      const ok1 = send("slice set " + sliceIdx + " fm_tone_mode=CTCSS");
+      const ok2 = send("slice set " + sliceIdx + " fm_tone_value=" + val);
       console.log(
         "Flex API slice",
         sliceIdx,
@@ -209,7 +192,6 @@ function createApiClient() {
       );
       return ok1 && ok2;
     }
-
     const ok = send("slice set " + sliceIdx + " fm_tone_mode=OFF");
     console.log("Flex API slice", sliceIdx, "CTCSS OFF", ok ? "OK" : "SEND FAIL");
     return ok;
@@ -220,10 +202,7 @@ function createApiClient() {
     close,
     setCtcss,
     isConnected: () => connected,
-    get API_PORT() {
-      return API_PORT;
-    },
   };
 }
 
-module.exports = { createApiClient, API_PORT };
+module.exports = { createApiClient };
