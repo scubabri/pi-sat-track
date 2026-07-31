@@ -13,9 +13,12 @@ const CATALOG_URL =
 const AMSAT_STATUS = "https://www.amsat.org/status/";
 
 // Radio selection (from Station Configuration)
+// radioType: smartsdr | aethersdr | flex (legacy alias of smartsdr)
 let RADIO_TRANSPORT = process.env.RADIO_TRANSPORT || "tcp"; // tcp | serial
-let RADIO_TYPE = process.env.RADIO_TYPE || "flex"; // flex | icom (serial)
+let RADIO_TYPE = process.env.RADIO_TYPE || "smartsdr";
 let RADIO_PROTOCOL = process.env.RADIO_PROTOCOL || "cat"; // cat | tci
+
+if (RADIO_TYPE === "flex") RADIO_TYPE = "smartsdr";
 
 // Mutable endpoints (defaults; overridden by client Station Configuration)
 let TCI_HOST = process.env.TCI_HOST || "127.0.0.1";
@@ -58,16 +61,17 @@ let CAT_DEVICE = process.env.CAT_DEVICE || "/dev/ttyACM0";
 const CAT_BAUD = parseInt(process.env.CAT_BAUD || "19200", 10);
 const CAT_CIV_ADDR = parseInt(process.env.CAT_CIV_ADDR || "0xA4", 16);
 
-// FlexRadio dual CAT ports (UL TX slice + DL RX slice)
-let FLEX_UL_HOST = process.env.FLEX_UL_HOST || process.env.FLEX_HOST || "172.17.18.229";
+// Dual CAT ports (SmartSDR slices / AetherSDR CAT)
+let FLEX_UL_HOST =
+  process.env.FLEX_UL_HOST || process.env.FLEX_HOST || "172.17.18.229";
 let FLEX_UL_PORT = parseInt(
   process.env.FLEX_UL_PORT || process.env.FLEX_PORT || "60002",
   10,
 );
-let FLEX_DL_HOST = process.env.FLEX_DL_HOST || process.env.FLEX_HOST || "172.17.18.229";
+let FLEX_DL_HOST =
+  process.env.FLEX_DL_HOST || process.env.FLEX_HOST || "172.17.18.229";
 let FLEX_DL_PORT = parseInt(process.env.FLEX_DL_PORT || "60001", 10);
 
-// Legacy single-port aliases
 let FLEX_HOST = FLEX_UL_HOST;
 let FLEX_PORT = FLEX_UL_PORT;
 
@@ -99,24 +103,35 @@ function tciUri() {
   return "ws://" + TCI_HOST + ":" + TCI_PORT;
 }
 
-/** True when Doppler should use Flex CAT (dual TCP ports) */
+function normalizeRadioType(t) {
+  if (!t) return "smartsdr";
+  t = String(t).toLowerCase();
+  if (t === "flex") return "smartsdr";
+  return t;
+}
+
+/** Kenwood CAT over TCP (dual UL/DL ports) — SmartSDR or AetherSDR CAT */
 function useFlexCat() {
+  const t = normalizeRadioType(RADIO_TYPE);
   return (
     RADIO_TRANSPORT === "tcp" &&
-    RADIO_TYPE === "flex" &&
-    RADIO_PROTOCOL === "cat"
+    RADIO_PROTOCOL === "cat" &&
+    (t === "smartsdr" || t === "aethersdr")
   );
 }
 
-/** True when Doppler should use TCI */
+/** TCI — AetherSDR only */
 function useTci() {
-  return RADIO_TRANSPORT === "tcp" && RADIO_PROTOCOL === "tci";
+  const t = normalizeRadioType(RADIO_TYPE);
+  return (
+    RADIO_TRANSPORT === "tcp" && RADIO_PROTOCOL === "tci" && t === "aethersdr"
+  );
 }
 
 function getEndpoints() {
   return {
     radioTransport: RADIO_TRANSPORT,
-    radioType: RADIO_TYPE,
+    radioType: normalizeRadioType(RADIO_TYPE),
     radioProtocol: RADIO_PROTOCOL,
     tciHost: TCI_HOST,
     tciPort: TCI_PORT,
@@ -159,18 +174,26 @@ function applyEndpoints(ep) {
     }
   }
   if (typeof ep.radioType === "string" && ep.radioType.trim()) {
-    const v = ep.radioType.trim().toLowerCase();
-    if (v !== RADIO_TYPE) {
+    const v = normalizeRadioType(ep.radioType.trim());
+    if (v !== normalizeRadioType(RADIO_TYPE)) {
       RADIO_TYPE = v;
       radioSelChanged = true;
     }
   }
   if (typeof ep.radioProtocol === "string" && ep.radioProtocol.trim()) {
-    const v = ep.radioProtocol.trim().toLowerCase();
+    let v = ep.radioProtocol.trim().toLowerCase();
+    // SmartSDR cannot use TCI
+    if (normalizeRadioType(RADIO_TYPE) === "smartsdr") v = "cat";
     if ((v === "cat" || v === "tci") && v !== RADIO_PROTOCOL) {
       RADIO_PROTOCOL = v;
       radioSelChanged = true;
     }
+  }
+
+  // Force protocol consistency after type change
+  if (normalizeRadioType(RADIO_TYPE) === "smartsdr" && RADIO_PROTOCOL !== "cat") {
+    RADIO_PROTOCOL = "cat";
+    radioSelChanged = true;
   }
 
   if (typeof ep.tciHost === "string" && ep.tciHost.trim()) {
@@ -242,7 +265,6 @@ function applyEndpoints(ep) {
     }
   }
 
-  // Legacy single flex host/port
   if (typeof ep.flexHost === "string" && ep.flexHost.trim()) {
     const h = ep.flexHost.trim();
     if (h !== FLEX_UL_HOST) {
@@ -286,7 +308,7 @@ module.exports = {
     return RADIO_TRANSPORT;
   },
   get RADIO_TYPE() {
-    return RADIO_TYPE;
+    return normalizeRadioType(RADIO_TYPE);
   },
   get RADIO_PROTOCOL() {
     return RADIO_PROTOCOL;
