@@ -172,6 +172,8 @@ wss.on("connection", (ws) => {
           radioTransport: msg.radioTransport,
           radioType: msg.radioType,
           radioProtocol: msg.radioProtocol,
+          serialMake: msg.serialMake,
+          serialModel: msg.serialModel,
           tciHost: msg.tciHost,
           tciPort: msg.tciPort,
           flexUlHost: msg.flexUlHost,
@@ -236,7 +238,11 @@ setInterval(() => {
   }
   server.listen(PORT, "0.0.0.0", () => {
     console.log("Sat Tracker  http://127.0.0.1:" + PORT);
-    console.log("Active radio", radios.active().meta.id, radios.active().meta.label);
+    console.log(
+      "Active radio",
+      radios.active().meta.id,
+      radios.active().meta.label,
+    );
     console.log("TCI target   " + TCI_URI);
     console.log(
       "Tick " + TICK_MS + "ms (Doppler), state " + STATE_MS + "ms (map)",

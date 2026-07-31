@@ -163,6 +163,20 @@
 
               <div id="cfg-serial-block" hidden>
                 <div class="form-row">
+                  <label for="cfg-serial-make">Manufacturer</label>
+                  <select id="cfg-serial-make" class="cfg-select">
+                    <option value="icom">Icom</option>
+                    <option value="kenwood">Kenwood</option>
+                    <option value="yaesu">Yaesu</option>
+                  </select>
+                </div>
+                <div class="form-row">
+                  <label for="cfg-serial-model">Model</label>
+                  <select id="cfg-serial-model" class="cfg-select">
+                    <option value="ic-705">IC-705</option>
+                  </select>
+                </div>
+                <div class="form-row">
                   <label for="cfg-serial-device">Serial device</label>
                   <input
                     type="text"
@@ -181,9 +195,8 @@
                     step="1"
                   />
                 </div>
-                <p class="form-hint">
-                  Icom CI-V (IC-705 addr 0xA4). Cross-band split: VFO A =
-                  downlink (RX), VFO B = uplink (TX). Mode set per VFO.
+                <p class="form-hint" id="cfg-serial-hint">
+                  CI-V over USB. Cross-band split: VFO A = DL, VFO B = UL.
                 </p>
               </div>
             </div>
