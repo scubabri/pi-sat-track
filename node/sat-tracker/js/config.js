@@ -382,6 +382,11 @@ function initConfig() {
 
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
+    // Reload form from last *saved* config so unsaved edits are discarded
+    // if the panel was closed without Save.
+    if (!panel.classList.contains("open")) {
+      fillForm(loadConfig());
+    }
     panel.classList.toggle("open");
   });
 
@@ -403,28 +408,25 @@ function initConfig() {
   if (makeEl) makeEl.addEventListener("change", onSerialMakeChange);
   if (modelEl) modelEl.addEventListener("change", onSerialModelChange);
 
-  document.getElementById("btn-save-config").addEventListener("click", () => {
-    const newCfg = readFormConfig();
-    saveConfig(newCfg);
+  const saveBtn = document.getElementById("btn-save-config");
+  if (saveBtn) {
+    saveBtn.addEventListener("click", () => {
+      const newCfg = readFormConfig();
+      saveConfig(newCfg);
 
-    if (newCfg.grid) {
-      centerOnGrid(newCfg.grid);
-    }
+      if (newCfg.grid && typeof centerOnGrid === "function") {
+        centerOnGrid(newCfg.grid);
+      }
 
-    if (typeof notifyObserverChanged === "function") {
-      notifyObserverChanged();
-    }
+      if (typeof notifyObserverChanged === "function") {
+        notifyObserverChanged();
+      }
 
-    sendEndpointsToServer(newCfg);
+      sendEndpointsToServer(newCfg);
 
-    panel.classList.remove("open");
-  });
-
-  document.getElementById("btn-center-grid").addEventListener("click", () => {
-    const grid = document.getElementById("cfg-grid").value.trim();
-    if (grid) centerOnGrid(grid);
-    else alert("Please enter a gridsquare first");
-  });
+      panel.classList.remove("open");
+    });
+  }
 }
 
 function applySavedGrid() {
@@ -432,6 +434,7 @@ function applySavedGrid() {
   if (cfg.grid) centerOnGrid(cfg.grid);
 }
 
+/** Push last *saved* config to server (WS reconnect). Does not read the open form. */
 function pushSavedEndpoints() {
   const cfg = Object.assign(defaultsEndpoints(), loadConfig());
   if (cfg.radioType === "flex") cfg.radioType = "smartsdr";
