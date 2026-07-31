@@ -71,6 +71,32 @@ function applyLockDefaultForMode(modeStr) {
   else if (typeof tci.setLock === "function") tci.setLock(fm);
 }
 
+/**
+ * Fix UL default for FM:
+ *   2m uplink (SO-50, ISS style) → ON (SOP: published UL, track DL)
+ *   70cm uplink (AO-91/Fox) → OFF (UL Doppler matters)
+ * Linear always OFF.
+ */
+function applyUlFixedDefaultForMode(active) {
+  const fm = isFmMode(active && active.mode);
+  const ulMHz = centerFreqMHz(active && active.uplink);
+  const ul = ulMHz != null ? parseFloat(ulMHz) : null;
+  let fixed = false;
+  if (fm && ul != null && Number.isFinite(ul)) {
+    fixed = ul < 200; // VHF UL → fix; UHF UL → doppler
+  }
+  const apply = (driver) => {
+    if (typeof driver.applyDefaultUlFixed === "function") {
+      driver.applyDefaultUlFixed(fixed);
+    } else if (typeof driver.setUlFixed === "function") {
+      driver.setUlFixed(fixed);
+    }
+  };
+  if (config.useSerialCat()) apply(icom);
+  else if (config.useFlexCat()) apply(flex);
+  else apply(tci);
+}
+
 function applyCtcssDefaultForMode(info, active) {
   let access = active && active.ctcssAccess;
   let activation = active && active.ctcssActivation;
@@ -133,6 +159,7 @@ function setModeIndex(index) {
   const active = getActiveMode(info);
   applyLockDefaultForMode(active && active.mode);
   applyCtcssDefaultForMode(info, active);
+  applyUlFixedDefaultForMode(active);
   return currentModeIndex;
 }
 
@@ -176,6 +203,7 @@ async function loadSatellite(key) {
   const active = getActiveMode(info);
   applyLockDefaultForMode(active && active.mode);
   applyCtcssDefaultForMode(info, active);
+  applyUlFixedDefaultForMode(active);
 }
 
 function modesPayload(info) {
@@ -228,6 +256,7 @@ function computeTick() {
   const inverting = isInverting(activeMode && activeMode.mode);
   const radio = activeRadioState();
   const modes = modesPayload(info);
+  const ulFixed = !!radio.ulFixed;
 
   let ulDopplerHz = null;
   let dlDopplerHz = null;
@@ -250,21 +279,34 @@ function computeTick() {
     }
     if (freqs.ulMHz != null) {
       const f0 = freqs.ulMHz * 1e6;
-      let fTx;
-      if (inverting) {
-        fTx =
-          f0 * (2 - df) -
-          (radio.manualDlOffset || 0) +
-          (radio.ulFineOffset || 0);
-        ulDopplerHz = f0 * (2 - df) - f0;
+      if (ulFixed) {
+        // Fixed published uplink (SO-50 SOP) — fine still applies
+        const fTx = f0 + (radio.ulFineOffset || 0);
+        ulDopplerHz = 0;
+        ulHz = Math.round(fTx);
+        uplink = (fTx / 1e6).toFixed(6);
       } else {
-        fTx =
-          f0 * df + (radio.manualDlOffset || 0) + (radio.ulFineOffset || 0);
-        ulDopplerHz = f0 * df - f0;
+        let fTx;
+        if (inverting) {
+          fTx =
+            f0 * (2 - df) -
+            (radio.manualDlOffset || 0) +
+            (radio.ulFineOffset || 0);
+          ulDopplerHz = f0 * (2 - df) - f0;
+        } else {
+          fTx =
+            f0 * df + (radio.manualDlOffset || 0) + (radio.ulFineOffset || 0);
+          ulDopplerHz = f0 * df - f0;
+        }
+        ulHz = Math.round(fTx);
+        uplink = (fTx / 1e6).toFixed(6);
       }
-      ulHz = Math.round(fTx);
-      uplink = (fTx / 1e6).toFixed(6);
     }
+  } else if (ulFixed && freqs.ulMHz != null) {
+    const fTx = freqs.ulMHz * 1e6 + (radio.ulFineOffset || 0);
+    ulHz = Math.round(fTx);
+    uplink = (fTx / 1e6).toFixed(6);
+    ulDopplerHz = 0;
   }
 
   if (config.useSerialCat()) {
@@ -294,6 +336,7 @@ function computeTick() {
     modeIndex: currentModeIndex,
     mode: freqs.mode,
     modes,
+    isFm: !!freqs.isFm,
     time: now.toISOString(),
     look: { az: look.az, el: look.el, rangeKm: look.rangeKm },
     leadLook: leadLook ? { az: leadLook.az, el: leadLook.el } : null,
@@ -314,6 +357,7 @@ function computeTick() {
       activeMode && activeMode.downlink ? String(activeMode.downlink) : "-",
     radioOn: radio.radioOn,
     locked: !!radio.locked,
+    ulFixed,
     tciConnected: radio.tciConnected || radio.connected,
     manualDlOffset: radio.manualDlOffset || 0,
     ulFineOffset: radio.ulFineOffset || 0,
@@ -366,6 +410,7 @@ function computeState() {
     modeIndex: tick ? tick.modeIndex : 0,
     mode: tick ? tick.mode : "",
     modes: tick ? tick.modes : [],
+    isFm: tick ? tick.isFm : false,
     uplink: tick ? tick.uplink : "-",
     downlink: tick ? tick.downlink : "-",
     ulHz: tick ? tick.ulHz : null,
@@ -388,6 +433,7 @@ function computeState() {
     passes,
     radioOn: radio.radioOn,
     locked: !!radio.locked,
+    ulFixed: !!radio.ulFixed,
     tciConnected: radio.tciConnected || radio.connected,
     manualDlOffset: radio.manualDlOffset || 0,
     ulFineOffset: radio.ulFineOffset || 0,
