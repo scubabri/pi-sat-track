@@ -1,0 +1,24 @@
+/* LOCK button (loaded after style.css if linked; also inlined rules below for single-file deploy) */
+.btn-lock {
+  margin-left: auto;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #30363d);
+  background: var(--bg-elevated, #21262d);
+  color: var(--text-dim, #8b949e);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  cursor: pointer;
+  line-height: 1;
+}
+.btn-lock:hover {
+  color: var(--text, #e6edf3);
+  border-color: #484f58;
+}
+.btn-lock.active {
+  background: rgba(63, 185, 80, 0.2);
+  border-color: var(--green, #3fb950);
+  color: var(--green, #3fb950);
+}
