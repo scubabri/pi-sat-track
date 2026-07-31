@@ -198,6 +198,18 @@ function activeCtcssHz() {
   return null;
 }
 
+function resolveUlHzForCtcss() {
+  if (lastCmdUl > 0) return lastCmdUl;
+  try {
+    const { currentSatKey, currentModeIndex } = getCtx();
+    const info = getCatalog()[currentSatKey] || {};
+    const active = getActiveModeObj(info, currentModeIndex);
+    const freqs = formatFreqDisplayFromMode(active);
+    if (freqs.ulMHz != null) return Math.round(freqs.ulMHz * 1e6);
+  } catch (_) {}
+  return null;
+}
+
 /**
  * Prefer Flex radio API for CTCSS (works with AetherSDR + Flex hardware).
  * Also emit ExpertSDR-style TCI CTCSS_* as best-effort.
@@ -207,7 +219,6 @@ async function applyCtcssToRadio(force) {
   const key = hz != null ? String(hz) : "off";
   if (!force && key === lastCtcssApplied) return;
 
-  // Best-effort TCI (may be ignored by Aether)
   if (tciConnected) {
     if (hz != null && Number.isFinite(hz) && hz > 0) {
       const tone = Number(hz).toFixed(1);
@@ -219,7 +230,6 @@ async function applyCtcssToRadio(force) {
     }
   }
 
-  // Authoritative path for Flex hardware under AetherSDR
   const h = apiHost();
   if (!h) {
     if (force) {
@@ -241,8 +251,8 @@ async function applyCtcssToRadio(force) {
   }
 
   try {
-    // Prefer match to last commanded UL freq (TX slice may be wrong if Aether flipped TX)
-    await api.setCtcss(hz, lastCmdUl > 0 ? lastCmdUl : null);
+    const ulHz = resolveUlHzForCtcss();
+    await api.setCtcss(hz, ulHz);
     lastCtcssApplied = key;
   } catch (e) {
     console.warn("TCI CTCSS Flex API:", e.message);
