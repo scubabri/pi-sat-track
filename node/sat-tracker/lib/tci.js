@@ -13,6 +13,7 @@ let tciWs = null;
 let tciConnected = false;
 let radioOn = false;
 let connecting = false;
+let locked = false;
 let manualDlOffset = 0;
 let ulFineOffset = 0;
 let lastCmdDl = 0;
@@ -39,6 +40,7 @@ function statusPayload() {
   return {
     type: "tci",
     radioOn,
+    locked,
     connected: tciConnected,
     connecting,
     host: config.TCI_HOST,
@@ -114,12 +116,6 @@ function disconnect() {
   console.log("TCI disconnected");
 }
 
-/**
- * Map catalog mode → ExpertSDR / AetherSDR TCI modulation name.
- * Channels: 0 = downlink (RX), 1 = uplink (TX/other VFO)
- * Linear inverting sats: UL LSB, DL USB
- * FM sats: NFM both ways
- */
 function modesForActive(active) {
   const modeStr = (active && active.mode) || "";
   if (isFmMode(modeStr)) {
@@ -224,6 +220,7 @@ async function connect() {
     const msg = raw.toString().trim();
 
     if (!msg.startsWith("vfo:")) return;
+    if (locked) return;
     try {
       const body = msg.replace(/;$/, "");
       const parts = body.split(":")[1].split(",");
@@ -243,6 +240,7 @@ async function connect() {
               const f0 = freqs.dlMHz * 1e6;
               const df = 1 - rr / config.C_MS;
               manualDlOffset = freq - f0 * df;
+              broadcastStatus();
             }
           }
         }
@@ -319,7 +317,18 @@ function setRadio(on) {
   broadcastStatus();
 }
 
-/** Host/port changed from Station Configuration — reconnect if radio is on */
+function setLock(on) {
+  locked = !!on;
+  console.log("TCI LOCK", locked ? "ON" : "OFF");
+  broadcastStatus();
+}
+
+function applyDefaultLock(isFm) {
+  locked = !!isFm;
+  console.log("TCI default LOCK", locked ? "ON (FM)" : "OFF (linear)");
+  broadcastStatus();
+}
+
 function applyEndpointChange() {
   console.log("TCI endpoint changed →", config.TCI_URI);
   if (radioOn) {
@@ -402,6 +411,7 @@ function pushFrequencies() {
 function getRadioState() {
   return {
     radioOn,
+    locked,
     tciConnected,
     connecting,
     manualDlOffset,
@@ -417,6 +427,8 @@ function getRadioState() {
 module.exports = {
   init,
   setRadio,
+  setLock,
+  applyDefaultLock,
   adjustFine,
   setStep,
   center,
