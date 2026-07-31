@@ -2,11 +2,9 @@
  * Minimal FlexRadio SmartSDR TCP/IP API client.
  * Radio LAN IP port 4992 (not Windows SmartSDR CAT).
  *
- * Status examples:
- *   S3E53ED3B|slice 0 ... RF_frequency=14.188000 ... tx=1 mode=USB ...
- *
- * CTCSS on UL slice only (single command preferred):
- *   slice set N fm_tone_mode=CTCSS fm_tone_value=67.0
+ * FlexLib FMToneMode: Off | CTCSS_TX  (not "CTCSS")
+ * CTCSS on UL slice only:
+ *   slice set N fm_tone_mode=CTCSS_TX fm_tone_value=67.0
  */
 
 const net = require("net");
@@ -26,7 +24,7 @@ function createApiClient() {
   let port = 4992;
   let clientHandle = null;
   let debugLines = 0;
-  /** @type {Map<number, string>} seq -> last command (for matching R replies) */
+  /** @type {Map<number, string>} */
   let pendingCmd = new Map();
   /** @type {Map<number, {tx:boolean, mode:string, freqHz:number|null, letter:string}>} */
   let slices = new Map();
@@ -102,7 +100,6 @@ function createApiClient() {
       return;
     }
 
-    // R<seq>|<status>|<message>
     if (line.startsWith("R")) {
       const rm = line.match(/^R(\d+)\|(\d+)\|(.*)$/);
       if (rm) {
@@ -191,8 +188,6 @@ function createApiClient() {
   }
 
   function subscribeSlices() {
-    // Do NOT send "client program …" — radio replies unknown client program.
-    // Plain connection + sub is enough alongside SmartSDR GUI.
     send("sub slice all");
   }
 
@@ -319,17 +314,17 @@ function createApiClient() {
 
     if (hz != null && Number.isFinite(hz) && hz > 0) {
       const val = Number(hz).toFixed(1);
-      // Single command — both params together (avoids partial apply / odd errors)
+      // FlexLib FMToneMode: Off | CTCSS_TX ("CTCSS" alone returns 50000033)
       const cmd =
         "slice set " +
         sliceIdx +
-        " fm_tone_mode=CTCSS fm_tone_value=" +
+        " fm_tone_mode=CTCSS_TX fm_tone_value=" +
         val;
       const ok = send(cmd);
       console.log(
         "Flex API slice",
         sliceIdx,
-        "CTCSS ON",
+        "CTCSS_TX ON",
         val,
         "Hz",
         ok ? "sent" : "SEND FAIL",
