@@ -16,9 +16,7 @@ const {
 
 const catalog = require("./lib/catalog");
 const state = require("./lib/state");
-const tci = require("./lib/tci");
-const flex = require("./lib/radios/flex");
-const icom = require("./lib/radios/icom");
+const radios = require("./lib/radios");
 const rotor = require("./lib/rotor");
 const config = require("./lib/config");
 
@@ -81,38 +79,6 @@ function broadcastSats() {
   broadcast({ type: "sats", ...state.satsPayload("trackable") });
 }
 
-function activeDriver() {
-  if (config.useSerialCat()) return "serial";
-  if (config.useFlexCat()) return "flex";
-  if (config.useTci()) return "tci";
-  return "none";
-}
-
-function activeRadio() {
-  if (config.useSerialCat()) return icom;
-  if (config.useFlexCat()) return flex;
-  return tci;
-}
-
-function setRadio(on) {
-  const want = !!on;
-  if (tci.getRadioState().radioOn) tci.setRadio(false);
-  if (flex.getRadioState().radioOn) flex.setRadio(false);
-  if (icom.getRadioState().radioOn) icom.setRadio(false);
-
-  if (!want) return;
-
-  if (config.useSerialCat()) icom.setRadio(true);
-  else if (config.useFlexCat()) flex.setRadio(true);
-  else tci.setRadio(true);
-}
-
-function setLock(on) {
-  if (config.useSerialCat()) icom.setLock(!!on);
-  else if (config.useFlexCat()) flex.setLock(!!on);
-  else tci.setLock(!!on);
-}
-
 function pushNow() {
   const tk = state.computeTick();
   if (tk) broadcast(tk);
@@ -121,9 +87,7 @@ function pushNow() {
 wss.on("connection", (ws) => {
   console.log("Client connected");
   ws.send(JSON.stringify({ type: "sats", ...state.satsPayload("trackable") }));
-  tci.broadcastStatus();
-  flex.broadcastStatus();
-  icom.broadcastStatus();
+  radios.broadcastAllStatus();
   rotor.broadcastStatus();
 
   const s = state.computeState();
@@ -163,11 +127,11 @@ wss.on("connection", (ws) => {
       }
 
       if (msg.type === "radio") {
-        setRadio(!!msg.on);
+        radios.setRadio(!!msg.on);
       }
 
       if (msg.type === "lock") {
-        setLock(!!msg.on);
+        radios.setLock(!!msg.on);
       }
 
       if (msg.type === "ulFixed") {
@@ -180,16 +144,16 @@ wss.on("connection", (ws) => {
       }
 
       if (msg.type === "fine") {
-        const radio = activeRadio();
+        const r = radios.active();
         const side = msg.side === "dl" ? "dl" : "ul";
-        if (typeof msg.step === "number" && radio.setStep) radio.setStep(msg.step);
-        if (typeof msg.delta === "number" && radio.adjustFine)
-          radio.adjustFine(msg.delta, side);
+        if (typeof msg.step === "number" && r.setStep) r.setStep(msg.step);
+        if (typeof msg.delta === "number" && r.adjustFine)
+          r.adjustFine(msg.delta, side);
         pushNow();
       }
 
       if (msg.type === "center") {
-        activeRadio().center();
+        radios.active().center();
         pushNow();
       }
 
@@ -198,19 +162,13 @@ wss.on("connection", (ws) => {
           msg.which === "access" || msg.which === "activation"
             ? msg.which
             : "off";
-        const radio = activeRadio();
-        if (typeof radio.setCtcss === "function") radio.setCtcss(which);
+        const r = radios.active();
+        if (typeof r.setCtcss === "function") r.setCtcss(which);
         pushNow();
       }
 
       if (msg.type === "endpoints") {
-        const {
-          tciChanged,
-          rotorChanged,
-          catChanged,
-          flexChanged,
-          radioSelChanged,
-        } = config.applyEndpoints({
+        const flags = config.applyEndpoints({
           radioTransport: msg.radioTransport,
           radioType: msg.radioType,
           radioProtocol: msg.radioProtocol,
@@ -230,25 +188,10 @@ wss.on("connection", (ws) => {
           rotorElPort: msg.rotorElPort,
         });
         console.log("Endpoints updated", config.getEndpoints());
-        console.log("Radio path:", activeDriver());
+        console.log("Radio path:", radios.active().meta.id);
 
-        if (tciChanged) tci.applyEndpointChange();
-        if (flexChanged || radioSelChanged) flex.applyEndpointChange();
-        if (catChanged || radioSelChanged) icom.applyEndpointChange();
-        if (rotorChanged) rotor.applyEndpointChange();
-
-        if (radioSelChanged) {
-          const anyOn =
-            tci.getRadioState().radioOn ||
-            flex.getRadioState().radioOn ||
-            icom.getRadioState().radioOn;
-          if (anyOn) {
-            tci.setRadio(false);
-            flex.setRadio(false);
-            icom.setRadio(false);
-            setRadio(true);
-          }
-        }
+        radios.applyEndpointChange(flags);
+        if (flags.rotorChanged) rotor.applyEndpointChange();
 
         broadcast({
           type: "endpoints",
@@ -293,21 +236,8 @@ setInterval(() => {
   }
   server.listen(PORT, "0.0.0.0", () => {
     console.log("Sat Tracker  http://127.0.0.1:" + PORT);
+    console.log("Active radio", radios.active().meta.id, radios.active().meta.label);
     console.log("TCI target   " + TCI_URI);
-    console.log(
-      "Flex UL      " + config.FLEX_UL_HOST + ":" + config.FLEX_UL_PORT,
-    );
-    console.log(
-      "Flex DL      " + config.FLEX_DL_HOST + ":" + config.FLEX_DL_PORT,
-    );
-    console.log(
-      "Icom CI-V    " +
-        config.CAT_DEVICE +
-        " @ " +
-        config.CAT_BAUD +
-        " addr 0x" +
-        config.CAT_CIV_ADDR.toString(16).toUpperCase(),
-    );
     console.log(
       "Tick " + TICK_MS + "ms (Doppler), state " + STATE_MS + "ms (map)",
     );

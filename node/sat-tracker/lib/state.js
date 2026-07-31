@@ -23,9 +23,7 @@ const {
   findPasses,
   passSkyPath,
 } = require("./orbit");
-const tci = require("./tci");
-const flex = require("./radios/flex");
-const icom = require("./radios/icom");
+const radios = require("./radios");
 const rotor = require("./rotor");
 
 let currentSatKey = null;
@@ -34,7 +32,6 @@ let satrec = null;
 let tleNote = "";
 let currentNorad = null;
 let currentOrbit = null;
-/** FM: hold published UL (no Doppler). Default ON for 2m UL. */
 let ulFixed = false;
 let observer = {
   latitude: satellite.degreesToRadians(40.5),
@@ -48,25 +45,25 @@ let lastAosAz = null;
 function init(opts) {
   if (opts.broadcast) broadcastFn = opts.broadcast;
   const ctx = () => ({ satrec, observer, currentSatKey, currentModeIndex });
-  tci.init({ getContext: ctx, broadcast: broadcastFn });
-  flex.init({ getContext: ctx, broadcast: broadcastFn });
-  icom.init({ getContext: ctx, broadcast: broadcastFn });
+  radios.init({ getContext: ctx, broadcast: broadcastFn });
   rotor.init({ broadcast: broadcastFn });
+}
+
+function radio() {
+  return radios.active();
 }
 
 function applyLockDefaultForMode(modeStr) {
   const fm = isFmMode(modeStr);
-  if (config.useSerialCat()) icom.applyDefaultLock(fm);
-  else if (config.useFlexCat()) flex.applyDefaultLock(fm);
-  else if (typeof tci.applyDefaultLock === "function") tci.applyDefaultLock(fm);
-  else if (typeof tci.setLock === "function") tci.setLock(fm);
+  const r = radio();
+  if (typeof r.applyDefaultLock === "function") r.applyDefaultLock(fm);
+  else if (typeof r.setLock === "function") r.setLock(fm);
 }
 
 function applyUlFixedDefaultForMode(active) {
   const fm = isFmMode(active && active.mode);
   const ulMHz = centerFreqMHz(active && active.uplink);
   const ul = ulMHz != null ? parseFloat(ulMHz) : null;
-  // SO-50 / ISS style (2m UL): fix published UL. Fox-style (70cm UL): Doppler.
   ulFixed = !!(fm && ul != null && Number.isFinite(ul) && ul < 200);
   console.log("UL fixed default", ulFixed, "(FM", fm, "UL", ul, "MHz)");
 }
@@ -84,18 +81,15 @@ function applyCtcssDefaultForMode(info, active) {
       active && active.mode,
       currentSatKey,
       info && (info.display || info.name),
+      info && info.norad,
     );
     access = tones.access;
     activation = tones.activation;
   }
-  const apply = (driver) => {
-    if (typeof driver.applyDefaultCtcss === "function") {
-      driver.applyDefaultCtcss(access, activation);
-    }
-  };
-  if (config.useSerialCat()) apply(icom);
-  else if (config.useFlexCat()) apply(flex);
-  else apply(tci);
+  const r = radio();
+  if (typeof r.applyDefaultCtcss === "function") {
+    r.applyDefaultCtcss(access, activation);
+  }
 }
 
 function setObserver(lat, lon, elevM) {
@@ -150,9 +144,7 @@ async function loadSatellite(key) {
   currentModeIndex = 0;
   currentNorad = info.norad;
   lastAosAz = null;
-  tci.resetOffsets();
-  flex.resetOffsets();
-  icom.resetOffsets();
+  radios.resetAllOffsets();
   const modes = info.modes || [];
   console.log(
     "Catalog freqs for",
@@ -196,7 +188,12 @@ function modesPayload(info) {
     ctcssActivation: m.ctcssActivation != null ? m.ctcssActivation : null,
   }));
   if (!modes.length) {
-    const tones = parseCtcss(info.mode, currentSatKey, info.display || info.name);
+    const tones = parseCtcss(
+      info.mode,
+      currentSatKey,
+      info.display || info.name,
+      info.norad,
+    );
     modes = [
       {
         index: 0,
@@ -210,12 +207,6 @@ function modesPayload(info) {
     ];
   }
   return modes;
-}
-
-function activeRadioState() {
-  if (config.useSerialCat()) return icom.getRadioState();
-  if (config.useFlexCat()) return flex.getRadioState();
-  return tci.getRadioState();
 }
 
 function computeTick() {
@@ -233,7 +224,7 @@ function computeTick() {
   const activeMode = getActiveMode(info);
   const freqs = formatFreqDisplayFromMode(activeMode);
   const inverting = isInverting(activeMode && activeMode.mode);
-  const radio = activeRadioState();
+  const rState = radio().getRadioState();
   const modes = modesPayload(info);
 
   let ulDopplerHz = null;
@@ -249,8 +240,8 @@ function computeTick() {
       const f0 = freqs.dlMHz * 1e6;
       const fRx =
         f0 * df +
-        (radio.manualDlOffset || 0) +
-        (radio.dlFineOffset || 0);
+        (rState.manualDlOffset || 0) +
+        (rState.dlFineOffset || 0);
       dlDopplerHz = f0 * df - f0;
       dlHz = Math.round(fRx);
       downlink = (fRx / 1e6).toFixed(6);
@@ -258,7 +249,7 @@ function computeTick() {
     if (freqs.ulMHz != null) {
       const f0 = freqs.ulMHz * 1e6;
       if (ulFixed) {
-        const fTx = f0 + (radio.ulFineOffset || 0);
+        const fTx = f0 + (rState.ulFineOffset || 0);
         ulDopplerHz = 0;
         ulHz = Math.round(fTx);
         uplink = (fTx / 1e6).toFixed(6);
@@ -267,12 +258,14 @@ function computeTick() {
         if (inverting) {
           fTx =
             f0 * (2 - df) -
-            (radio.manualDlOffset || 0) +
-            (radio.ulFineOffset || 0);
+            (rState.manualDlOffset || 0) +
+            (rState.ulFineOffset || 0);
           ulDopplerHz = f0 * (2 - df) - f0;
         } else {
           fTx =
-            f0 * df + (radio.manualDlOffset || 0) + (radio.ulFineOffset || 0);
+            f0 * df +
+            (rState.manualDlOffset || 0) +
+            (rState.ulFineOffset || 0);
           ulDopplerHz = f0 * df - f0;
         }
         ulHz = Math.round(fTx);
@@ -280,22 +273,20 @@ function computeTick() {
       }
     }
   } else if (ulFixed && freqs.ulMHz != null) {
-    const fTx = freqs.ulMHz * 1e6 + (radio.ulFineOffset || 0);
+    const fTx = freqs.ulMHz * 1e6 + (rState.ulFineOffset || 0);
     ulHz = Math.round(fTx);
     uplink = (fTx / 1e6).toFixed(6);
     ulDopplerHz = 0;
   }
 
-  if (config.useSerialCat()) {
-    icom.pushFrequencies(ulHz, dlHz).catch((e) =>
-      console.warn("Icom push:", e.message),
-    );
-  } else if (config.useFlexCat()) {
-    flex.pushFrequencies(ulHz, dlHz).catch((e) =>
-      console.warn("Flex push:", e.message),
-    );
-  } else {
-    tci.pushFrequencies();
+  // Active driver only — registry picks which implementation
+  try {
+    const p = radio().pushFrequencies(ulHz, dlHz);
+    if (p && typeof p.catch === "function") {
+      p.catch((e) => console.warn("Radio push:", e.message));
+    }
+  } catch (e) {
+    console.warn("Radio push:", e.message);
   }
 
   const trackLook = leadLook || look;
@@ -329,17 +320,17 @@ function computeTick() {
       activeMode && activeMode.uplink ? String(activeMode.uplink) : "-",
     passbandDl:
       activeMode && activeMode.downlink ? String(activeMode.downlink) : "-",
-    radioOn: radio.radioOn,
-    locked: !!radio.locked,
+    radioOn: rState.radioOn,
+    locked: !!rState.locked,
     ulFixed,
-    tciConnected: radio.tciConnected || radio.connected,
-    manualDlOffset: radio.manualDlOffset || 0,
-    ulFineOffset: radio.ulFineOffset || 0,
-    dlFineOffset: radio.dlFineOffset || 0,
-    ctcssMode: radio.ctcssMode || "off",
-    ctcssAccessHz: radio.ctcssAccessHz != null ? radio.ctcssAccessHz : null,
+    tciConnected: rState.tciConnected || rState.connected,
+    manualDlOffset: rState.manualDlOffset || 0,
+    ulFineOffset: rState.ulFineOffset || 0,
+    dlFineOffset: rState.dlFineOffset || 0,
+    ctcssMode: rState.ctcssMode || "off",
+    ctcssAccessHz: rState.ctcssAccessHz != null ? rState.ctcssAccessHz : null,
     ctcssActivationHz:
-      radio.ctcssActivationHz != null ? radio.ctcssActivationHz : null,
+      rState.ctcssActivationHz != null ? rState.ctcssActivationHz : null,
     antennaOn: r.antennaOn,
     rotorAz: r.az,
     rotorEl: r.el,
@@ -372,7 +363,7 @@ function computeState() {
 
   const info = getCatalog()[currentSatKey] || {};
   const tick = computeTick();
-  const radio = activeRadioState();
+  const rState = radio().getRadioState();
   const r = rotor.getRotorState();
 
   return {
@@ -405,17 +396,17 @@ function computeState() {
     trail,
     forward,
     passes,
-    radioOn: radio.radioOn,
-    locked: !!radio.locked,
+    radioOn: rState.radioOn,
+    locked: !!rState.locked,
     ulFixed,
-    tciConnected: radio.tciConnected || radio.connected,
-    manualDlOffset: radio.manualDlOffset || 0,
-    ulFineOffset: radio.ulFineOffset || 0,
-    dlFineOffset: radio.dlFineOffset || 0,
-    ctcssMode: radio.ctcssMode || "off",
-    ctcssAccessHz: radio.ctcssAccessHz != null ? radio.ctcssAccessHz : null,
+    tciConnected: rState.tciConnected || rState.connected,
+    manualDlOffset: rState.manualDlOffset || 0,
+    ulFineOffset: rState.ulFineOffset || 0,
+    dlFineOffset: rState.dlFineOffset || 0,
+    ctcssMode: rState.ctcssMode || "off",
+    ctcssAccessHz: rState.ctcssAccessHz != null ? rState.ctcssAccessHz : null,
     ctcssActivationHz:
-      radio.ctcssActivationHz != null ? radio.ctcssActivationHz : null,
+      rState.ctcssActivationHz != null ? rState.ctcssActivationHz : null,
     antennaOn: r.antennaOn,
     rotorAz: r.az,
     rotorEl: r.el,

@@ -2,30 +2,22 @@
  * Radio driver registry.
  *
  * To add a radio:
- *   1. Create lib/radios/<name>.js implementing the driver interface
- *      (see INTERFACE.md in this folder).
- *   2. require() it once below (or auto-load) and call register(driver).
- *   3. Implement meta.match(config) so the registry can pick it.
+ *   1. Create lib/radios/<name>.js (see INTERFACE.md)
+ *   2. register(require("./name")) below
+ *   3. Implement meta.match(config) — first match wins
  *
- * state.js / server.js only talk to radios.active() — no per-radio if/else.
+ * state.js / server.js only use radios.active() — no per-radio if/else.
  */
 
 const config = require("../config");
 
-/** @type {import('./INTERFACE').RadioDriver[]} */
 const drivers = [];
 
 let getCtx = () => ({});
 let broadcastFn = () => {};
-let inited = false;
 
-/** Null driver — safe no-ops when nothing matches. */
 const nullDriver = {
-  meta: {
-    id: "none",
-    label: "No radio",
-    match: () => false,
-  },
+  meta: { id: "none", label: "No radio", match: () => false },
   init() {},
   setRadio() {},
   setLock() {},
@@ -60,24 +52,20 @@ function register(driver) {
   if (!driver || !driver.meta || !driver.meta.id) {
     throw new Error("radio driver must export meta.id");
   }
-  const id = driver.meta.id;
-  if (drivers.some((d) => d.meta.id === id)) {
-    console.warn("Radio driver already registered:", id);
+  if (drivers.some((d) => d.meta.id === driver.meta.id)) {
+    console.warn("Radio driver already registered:", driver.meta.id);
     return;
   }
   drivers.push(driver);
-  console.log("Radio registered:", id, "—", driver.meta.label || id);
+  console.log("Radio registered:", driver.meta.id, "—", driver.meta.label || "");
 }
 
-/** First driver whose meta.match(config) returns true. */
 function resolve() {
   for (const d of drivers) {
     try {
-      if (typeof d.meta.match === "function" && d.meta.match(config)) {
-        return d;
-      }
+      if (typeof d.meta.match === "function" && d.meta.match(config)) return d;
     } catch (e) {
-      console.warn("Radio match error", d.meta && d.meta.id, e.message);
+      console.warn("Radio match error", d.meta.id, e.message);
     }
   }
   return nullDriver;
@@ -95,10 +83,6 @@ function get(id) {
   return drivers.find((d) => d.meta.id === id) || null;
 }
 
-/**
- * Init every registered driver once with shared context/broadcast.
- * Call from state.init().
- */
 function init(opts) {
   if (opts && opts.getContext) getCtx = opts.getContext;
   if (opts && opts.broadcast) broadcastFn = opts.broadcast;
@@ -107,7 +91,6 @@ function init(opts) {
       d.init({ getContext: getCtx, broadcast: broadcastFn });
     }
   }
-  inited = true;
   console.log(
     "Radio active path:",
     active().meta.id,
@@ -119,7 +102,6 @@ function init(opts) {
 
 function setRadio(on) {
   const want = !!on;
-  // Turn all off first so only one path is live
   for (const d of drivers) {
     const st = d.getRadioState && d.getRadioState();
     if (st && st.radioOn) d.setRadio(false);
@@ -133,13 +115,9 @@ function setLock(on) {
 
 function applyEndpointChange(flags) {
   flags = flags || {};
-  // Notify every driver; each decides if its endpoints changed
   for (const d of drivers) {
-    if (typeof d.applyEndpointChange === "function") {
-      d.applyEndpointChange(flags);
-    }
+    if (typeof d.applyEndpointChange === "function") d.applyEndpointChange(flags);
   }
-  // If selection changed, bounce radio if it was on
   if (flags.radioSelChanged) {
     const anyOn = drivers.some((d) => {
       const st = d.getRadioState && d.getRadioState();
@@ -164,11 +142,38 @@ function resetAllOffsets() {
   }
 }
 
-// ── Built-in drivers ──────────────────────────────────────────
-// Add new radios here with one line: register(require("./foo"));
-register(require("./flex"));
-register(require("./icom"));
+// ── Built-in drivers (order = match priority) ─────────────────
+const flex = require("./flex");
+if (!flex.meta) {
+  flex.meta = {
+    id: "flex",
+    label: "Flex / SmartSDR CAT (TCP)",
+    match(cfg) {
+      return typeof cfg.useFlexCat === "function"
+        ? cfg.useFlexCat()
+        : cfg.RADIO_TRANSPORT === "tcp" && cfg.RADIO_PROTOCOL === "cat";
+    },
+  };
+}
+register(flex);
+
+const icom = require("./icom");
+if (!icom.meta) {
+  icom.meta = {
+    id: "icom",
+    label: "Icom CI-V (serial)",
+    match(cfg) {
+      return typeof cfg.useSerialCat === "function"
+        ? cfg.useSerialCat()
+        : cfg.RADIO_TRANSPORT === "serial";
+    },
+  };
+}
+register(icom);
+
 register(require("./tci"));
+
+// register(require("./your-new-radio"));
 
 module.exports = {
   register,
