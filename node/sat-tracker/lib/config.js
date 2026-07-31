@@ -53,6 +53,11 @@ const ROTOR_POLL_MS = parseInt(process.env.ROTOR_POLL_MS || "250", 10);
 // Angular leapfrog: command this many degrees ahead along-track (0 = off)
 const ROTOR_LEAD_DEG = parseFloat(process.env.ROTOR_LEAD_DEG || "4");
 
+// IC-705 CI-V CAT (USB serial)
+let CAT_DEVICE = process.env.CAT_DEVICE || "/dev/ttyACM0";
+const CAT_BAUD = parseInt(process.env.CAT_BAUD || "19200", 10);
+const CAT_CIV_ADDR = parseInt(process.env.CAT_CIV_ADDR || "0xA4", 16);
+
 const DEFAULT_SAT = "RS-44";
 const MIN_EL = 0.0;
 const TRAIL_MINUTES = 30;
@@ -87,6 +92,7 @@ function getEndpoints() {
     tciPort: TCI_PORT,
     rotorAzDevice: ROTOR_AZ_DEVICE,
     rotorElDevice: ROTOR_EL_DEVICE,
+    catDevice: CAT_DEVICE,
     // legacy fields for older UI
     rotorHost: ROTOR_AZ_HOST,
     rotorAzPort: ROTOR_AZ_PORT,
@@ -97,7 +103,10 @@ function getEndpoints() {
 function applyEndpoints(ep) {
   let tciChanged = false;
   let rotorChanged = false;
-  if (!ep || typeof ep !== "object") return { tciChanged, rotorChanged };
+  let catChanged = false;
+  if (!ep || typeof ep !== "object") {
+    return { tciChanged, rotorChanged, catChanged };
+  }
 
   if (typeof ep.tciHost === "string" && ep.tciHost.trim()) {
     const h = ep.tciHost.trim();
@@ -129,6 +138,14 @@ function applyEndpoints(ep) {
     }
   }
 
+  if (typeof ep.catDevice === "string" && ep.catDevice.trim()) {
+    const d = ep.catDevice.trim();
+    if (d !== CAT_DEVICE) {
+      CAT_DEVICE = d;
+      catChanged = true;
+    }
+  }
+
   // Legacy host/port (ignored by serial driver, stored for UI compatibility)
   if (typeof ep.rotorHost === "string" && ep.rotorHost.trim()) {
     ROTOR_AZ_HOST = ep.rotorHost.trim();
@@ -141,7 +158,7 @@ function applyEndpoints(ep) {
     ROTOR_EL_PORT = parseInt(ep.rotorElPort, 10);
   }
 
-  return { tciChanged, rotorChanged };
+  return { tciChanged, rotorChanged, catChanged };
 }
 
 module.exports = {
@@ -191,6 +208,11 @@ module.exports = {
   ROTOR_STALL_RETRIES,
   ROTOR_POLL_MS,
   ROTOR_LEAD_DEG,
+  get CAT_DEVICE() {
+    return CAT_DEVICE;
+  },
+  CAT_BAUD,
+  CAT_CIV_ADDR,
   DEFAULT_SAT,
   MIN_EL,
   TRAIL_MINUTES,
