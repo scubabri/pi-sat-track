@@ -55,9 +55,11 @@ function radio() {
 
 function applyLockDefaultForMode(modeStr) {
   const fm = isFmMode(modeStr);
-  const r = radio();
-  if (typeof r.applyDefaultLock === "function") r.applyDefaultLock(fm);
-  else if (typeof r.setLock === "function") r.setLock(fm);
+  // Apply to all drivers so switching radio paths keeps lock defaults
+  for (const d of radios.all()) {
+    if (typeof d.applyDefaultLock === "function") d.applyDefaultLock(fm);
+    else if (typeof d.setLock === "function") d.setLock(fm);
+  }
 }
 
 function applyUlFixedDefaultForMode(active) {
@@ -86,10 +88,13 @@ function applyCtcssDefaultForMode(info, active) {
     access = tones.access;
     activation = tones.activation;
   }
-  const r = radio();
-  if (typeof r.applyDefaultCtcss === "function") {
-    r.applyDefaultCtcss(access, activation);
+  // All drivers — so Flex has tones even if TCI was active when sat loaded
+  for (const d of radios.all()) {
+    if (typeof d.applyDefaultCtcss === "function") {
+      d.applyDefaultCtcss(access, activation);
+    }
   }
+  console.log("CTCSS defaults → access", access, "activation", activation);
 }
 
 function setObserver(lat, lon, elevM) {
@@ -206,6 +211,19 @@ function modesPayload(info) {
       },
     ];
   }
+  // Ensure SO-50 / ISS overrides show even if mode object was stale
+  for (const m of modes) {
+    if (m.ctcssAccess == null && m.ctcssActivation == null && m.isFm) {
+      const tones = parseCtcss(
+        m.mode,
+        currentSatKey,
+        info.display || info.name,
+        info.norad,
+      );
+      m.ctcssAccess = tones.access;
+      m.ctcssActivation = tones.activation;
+    }
+  }
   return modes;
 }
 
@@ -226,6 +244,20 @@ function computeTick() {
   const inverting = isInverting(activeMode && activeMode.mode);
   const rState = radio().getRadioState();
   const modes = modesPayload(info);
+
+  // Prefer driver tones; fall back to mode payload so UI always has Hz
+  let ctcssAccessHz =
+    rState.ctcssAccessHz != null
+      ? rState.ctcssAccessHz
+      : modes[currentModeIndex] && modes[currentModeIndex].ctcssAccess != null
+        ? modes[currentModeIndex].ctcssAccess
+        : null;
+  let ctcssActivationHz =
+    rState.ctcssActivationHz != null
+      ? rState.ctcssActivationHz
+      : modes[currentModeIndex] && modes[currentModeIndex].ctcssActivation != null
+        ? modes[currentModeIndex].ctcssActivation
+        : null;
 
   let ulDopplerHz = null;
   let dlDopplerHz = null;
@@ -279,7 +311,6 @@ function computeTick() {
     ulDopplerHz = 0;
   }
 
-  // Active driver only — registry picks which implementation
   try {
     const p = radio().pushFrequencies(ulHz, dlHz);
     if (p && typeof p.catch === "function") {
@@ -328,9 +359,8 @@ function computeTick() {
     ulFineOffset: rState.ulFineOffset || 0,
     dlFineOffset: rState.dlFineOffset || 0,
     ctcssMode: rState.ctcssMode || "off",
-    ctcssAccessHz: rState.ctcssAccessHz != null ? rState.ctcssAccessHz : null,
-    ctcssActivationHz:
-      rState.ctcssActivationHz != null ? rState.ctcssActivationHz : null,
+    ctcssAccessHz,
+    ctcssActivationHz,
     antennaOn: r.antennaOn,
     rotorAz: r.az,
     rotorEl: r.el,
@@ -404,9 +434,8 @@ function computeState() {
     ulFineOffset: rState.ulFineOffset || 0,
     dlFineOffset: rState.dlFineOffset || 0,
     ctcssMode: rState.ctcssMode || "off",
-    ctcssAccessHz: rState.ctcssAccessHz != null ? rState.ctcssAccessHz : null,
-    ctcssActivationHz:
-      rState.ctcssActivationHz != null ? rState.ctcssActivationHz : null,
+    ctcssAccessHz: tick ? tick.ctcssAccessHz : null,
+    ctcssActivationHz: tick ? tick.ctcssActivationHz : null,
     antennaOn: r.antennaOn,
     rotorAz: r.az,
     rotorEl: r.el,
