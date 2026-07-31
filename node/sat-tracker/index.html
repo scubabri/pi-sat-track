@@ -105,7 +105,6 @@
                 </select>
               </div>
 
-              <!-- TCP options -->
               <div id="cfg-tcp-block">
                 <div class="form-row">
                   <label for="cfg-radio-type">Radio / software</label>
@@ -123,7 +122,6 @@
                   </select>
                 </div>
 
-                <!-- TCI: single host:port (AetherSDR) -->
                 <div id="cfg-tci-block">
                   <div class="form-row">
                     <label for="cfg-tci-endpoint">TCI endpoint</label>
@@ -137,7 +135,6 @@
                   </div>
                 </div>
 
-                <!-- CAT over TCP: UL + DL as host:port -->
                 <div id="cfg-flex-cat-block">
                   <div class="form-row">
                     <label for="cfg-flex-ul-endpoint">Uplink (TX)</label>
@@ -162,7 +159,6 @@
                 </div>
               </div>
 
-              <!-- Serial options (Icom path — placeholder for now) -->
               <div id="cfg-serial-block" hidden>
                 <div class="form-row">
                   <label for="cfg-serial-device">Serial device</label>
@@ -269,6 +265,14 @@
             <span id="fine-offset" class="fine-offset" title="UL fine offset"
               >0 Hz</span
             >
+            <button
+              type="button"
+              id="btn-lock"
+              class="btn-lock"
+              title="Lock VFO — ignore operator DL tunes (FM default ON)"
+            >
+              LOCK
+            </button>
           </div>
           <div class="passband" id="passband">
             <div class="passband-row">
