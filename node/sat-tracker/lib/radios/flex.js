@@ -1,27 +1,37 @@
 /**
  * FlexRadio SmartSDR CAT driver (Kenwood-style over TCP).
- * Standalone — not yet wired into state/server.
+ * Dual connections: uplink (TX slice) + downlink (RX slice).
  *
  * Protocol:
- *   ASCII commands terminated by ';'
  *   FA;              → read VFO A frequency
  *   FA00014250000;   → set VFO A (11-digit Hz)
- *   MD; / MD2;       → mode (future)
  *
- * Set commands usually produce no reply; read commands return data.
+ * Set commands usually produce no reply.
  */
 
 const net = require("net");
 const config = require("../config");
 
-let socket = null;
-let connected = false;
-let connecting = false;
-let busy = false;
-let lastFreqHz = null;
-let buf = "";
+function makeLink(name) {
+  return {
+    name,
+    socket: null,
+    connected: false,
+    connecting: false,
+    busy: false,
+    buf: "",
+    lastFreqHz: null,
+    reconnectTimer: null,
+  };
+}
+
+const ul = makeLink("ul");
+const dl = makeLink("dl");
+
+let radioOn = false;
+let ulFineOffset = 0;
+let digitStep = 100;
 let broadcastFn = () => {};
-let reconnectTimer = null;
 
 function init(opts) {
   if (opts && opts.broadcast) broadcastFn = opts.broadcast;
@@ -30,105 +40,119 @@ function init(opts) {
 function statusPayload() {
   return {
     type: "flex",
-    connected,
-    connecting,
-    host: config.FLEX_HOST,
-    port: config.FLEX_PORT,
-    lastFreqHz,
+    radioOn,
+    connected: ul.connected && dl.connected,
+    ulConnected: ul.connected,
+    dlConnected: dl.connected,
+    connecting: ul.connecting || dl.connecting,
+    ulHost: config.FLEX_UL_HOST,
+    ulPort: config.FLEX_UL_PORT,
+    dlHost: config.FLEX_DL_HOST,
+    dlPort: config.FLEX_DL_PORT,
+    lastUlHz: ul.lastFreqHz,
+    lastDlHz: dl.lastFreqHz,
+    ulFineOffset,
+    step: digitStep,
   };
 }
 
 function broadcastStatus() {
   broadcastFn(statusPayload());
-}
-
-function clearReconnect() {
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
-}
-
-function scheduleReconnect() {
-  clearReconnect();
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    if (!connected && !connecting) {
-      console.log("Flex: retry connect...");
-      open().catch(() => {});
-    }
-  }, 3000);
+  // Also emit tci-shaped status so existing UI Radio indicator works
+  broadcastFn({
+    type: "tci",
+    radioOn,
+    connected: ul.connected && dl.connected,
+    connecting: ul.connecting || dl.connecting,
+    host: config.FLEX_UL_HOST,
+    port: config.FLEX_UL_PORT,
+    manualDlOffset: 0,
+    ulFineOffset,
+    step: digitStep,
+    lastCmdDl: dl.lastFreqHz,
+    lastCmdUl: ul.lastFreqHz,
+  });
 }
 
 function freqToFa(freqHz) {
   return "FA" + String(Math.round(freqHz)).padStart(11, "0") + ";";
 }
 
-function parseFa(reply) {
-  if (!reply) return null;
-  const s = String(reply).trim();
-  if (!s.startsWith("FA") || !s.endsWith(";")) return null;
-  const digits = s.slice(2, -1);
-  if (!/^\d{11}$/.test(digits)) return null;
-  return parseInt(digits, 10);
+function linkHostPort(link) {
+  if (link.name === "ul") {
+    return { host: config.FLEX_UL_HOST, port: config.FLEX_UL_PORT };
+  }
+  return { host: config.FLEX_DL_HOST, port: config.FLEX_DL_PORT };
 }
 
-/**
- * Send a command. If expectReply is false, just fire-and-forget.
- * Returns the reply string (or "" when no reply expected / timeout).
- */
-function sendCmd(cmd, expectReply) {
-  return new Promise((resolve, reject) => {
-    if (!socket || !connected) {
-      reject(new Error("Flex not connected"));
-      return;
-    }
-    if (busy) {
-      reject(new Error("Flex busy"));
-      return;
-    }
+function clearReconnect(link) {
+  if (link.reconnectTimer) {
+    clearTimeout(link.reconnectTimer);
+    link.reconnectTimer = null;
+  }
+}
 
+function scheduleReconnect(link) {
+  clearReconnect(link);
+  if (!radioOn) return;
+  link.reconnectTimer = setTimeout(() => {
+    link.reconnectTimer = null;
+    if (radioOn && !link.connected && !link.connecting) {
+      console.log("Flex", link.name.toUpperCase(), "retry connect...");
+      openLink(link).catch(() => {});
+    }
+  }, 3000);
+}
+
+function sendCmd(link, cmd, expectReply) {
+  return new Promise((resolve, reject) => {
+    if (!link.socket || !link.connected) {
+      reject(new Error("Flex " + link.name + " not connected"));
+      return;
+    }
+    if (link.busy) {
+      reject(new Error("Flex " + link.name + " busy"));
+      return;
+    }
     if (!cmd.endsWith(";")) cmd += ";";
 
-    busy = true;
-    buf = "";
+    link.busy = true;
+    link.buf = "";
 
     const onData = (chunk) => {
-      buf += chunk.toString("ascii");
-      if (buf.includes(";")) {
+      link.buf += chunk.toString("ascii");
+      if (link.buf.includes(";")) {
         cleanup();
-        const reply = buf.trim();
-        buf = "";
+        const reply = link.buf.trim();
+        link.buf = "";
         resolve(reply);
       }
     };
-
     const onError = (err) => {
       cleanup();
       reject(err);
     };
-
     let timer = null;
     const cleanup = () => {
-      busy = false;
+      link.busy = false;
       if (timer) clearTimeout(timer);
-      if (socket) {
-        socket.removeListener("data", onData);
-        socket.removeListener("error", onError);
+      if (link.socket) {
+        link.socket.removeListener("data", onData);
+        link.socket.removeListener("error", onError);
       }
     };
 
     if (expectReply) {
-      socket.on("data", onData);
-      socket.on("error", onError);
+      link.socket.on("data", onData);
+      link.socket.on("error", onError);
       timer = setTimeout(() => {
         cleanup();
-        resolve(buf.trim() || "");
-      }, 1500);
+        resolve(link.buf.trim() || "");
+      }, 1200);
     }
 
     try {
-      socket.write(cmd, "ascii", (err) => {
+      link.socket.write(cmd, "ascii", (err) => {
         if (err) {
           cleanup();
           reject(err);
@@ -136,9 +160,9 @@ function sendCmd(cmd, expectReply) {
         }
         if (!expectReply) {
           setTimeout(() => {
-            busy = false;
+            link.busy = false;
             resolve("");
-          }, 50);
+          }, 40);
         }
       });
     } catch (e) {
@@ -148,174 +172,214 @@ function sendCmd(cmd, expectReply) {
   });
 }
 
-function open() {
-  if (socket && connected) return Promise.resolve(true);
-  if (connecting) return Promise.resolve(false);
+function openLink(link) {
+  if (link.socket && link.connected) return Promise.resolve(true);
+  if (link.connecting) return Promise.resolve(false);
 
-  connecting = true;
+  link.connecting = true;
   broadcastStatus();
 
   return new Promise((resolve) => {
-    const host = config.FLEX_HOST;
-    const port = config.FLEX_PORT;
-    console.log("Flex: connecting to", host + ":" + port);
+    const { host, port } = linkHostPort(link);
+    console.log("Flex", link.name.toUpperCase(), "connecting", host + ":" + port);
 
     const s = new net.Socket();
     let settled = false;
-
     const done = (ok) => {
       if (settled) return;
       settled = true;
-      connecting = false;
+      link.connecting = false;
       if (!ok) {
         try {
           s.destroy();
         } catch (_) {}
-        connected = false;
-        socket = null;
+        link.connected = false;
+        link.socket = null;
         broadcastStatus();
-        scheduleReconnect();
+        scheduleReconnect(link);
       }
       resolve(ok);
     };
 
     s.setTimeout(4000);
-
     s.once("connect", () => {
       s.setTimeout(0);
-      socket = s;
-      connected = true;
-      buf = "";
-      clearReconnect();
-      console.log("Flex connected", host + ":" + port);
+      link.socket = s;
+      link.connected = true;
+      link.buf = "";
+      clearReconnect(link);
+      console.log("Flex", link.name.toUpperCase(), "connected", host + ":" + port);
       broadcastStatus();
       done(true);
     });
-
     s.once("timeout", () => {
-      console.warn("Flex connect timeout");
+      console.warn("Flex", link.name.toUpperCase(), "connect timeout");
       done(false);
     });
-
     s.once("error", (err) => {
-      console.warn("Flex connect error:", err.message);
+      console.warn("Flex", link.name.toUpperCase(), "connect error:", err.message);
       done(false);
     });
-
     s.on("close", () => {
-      console.log("Flex closed");
-      connected = false;
-      connecting = false;
-      socket = null;
-      buf = "";
-      busy = false;
+      console.log("Flex", link.name.toUpperCase(), "closed");
+      link.connected = false;
+      link.connecting = false;
+      link.socket = null;
+      link.buf = "";
+      link.busy = false;
       broadcastStatus();
-      scheduleReconnect();
+      if (radioOn) scheduleReconnect(link);
     });
-
     s.on("error", (err) => {
-      console.warn("Flex error:", err.message);
+      console.warn("Flex", link.name.toUpperCase(), "error:", err.message);
     });
 
     try {
       s.connect(port, host);
     } catch (e) {
-      console.warn("Flex connect exception:", e.message);
+      console.warn("Flex", link.name.toUpperCase(), "exception:", e.message);
       done(false);
     }
   });
 }
 
-function close() {
-  clearReconnect();
-  connecting = false;
-  if (socket) {
+function closeLink(link) {
+  clearReconnect(link);
+  link.connecting = false;
+  if (link.socket) {
     try {
-      socket.removeAllListeners();
-      socket.destroy();
+      link.socket.removeAllListeners();
+      link.socket.destroy();
     } catch (_) {}
-    socket = null;
+    link.socket = null;
   }
-  connected = false;
-  busy = false;
-  buf = "";
-  lastFreqHz = null;
+  link.connected = false;
+  link.busy = false;
+  link.buf = "";
+  link.lastFreqHz = null;
+}
+
+async function open() {
+  const a = await openLink(ul);
+  const b = await openLink(dl);
+  return a && b;
+}
+
+function close() {
+  radioOn = false;
+  closeLink(ul);
+  closeLink(dl);
   broadcastStatus();
   console.log("Flex disconnected");
 }
 
-/**
- * Set VFO A frequency (Hz).
- * Returns true on success (command sent).
- */
-async function setFrequency(freqHz) {
-  if (!Number.isFinite(freqHz) || freqHz < 1e5 || freqHz > 6e8) {
-    throw new Error("Frequency out of range: " + freqHz);
+function setRadio(on) {
+  console.log("Flex setRadio(" + on + ")");
+  if (on) {
+    radioOn = true;
+    ulFineOffset = 0;
+    open().catch(() => {});
+  } else {
+    close();
   }
-  if (!connected) {
-    const ok = await open();
-    if (!ok) throw new Error("Flex not connected");
-  }
-
-  const cmd = freqToFa(freqHz);
-  console.log("Flex set", (freqHz / 1e6).toFixed(6), "MHz →", cmd);
-  await sendCmd(cmd, false);
-  lastFreqHz = Math.round(freqHz);
   broadcastStatus();
-  return true;
+}
+
+async function setLinkFrequency(link, freqHz) {
+  if (!Number.isFinite(freqHz) || freqHz < 1e5 || freqHz > 6e8) return false;
+  if (!link.connected) return false;
+  const cmd = freqToFa(freqHz);
+  try {
+    await sendCmd(link, cmd, false);
+    link.lastFreqHz = Math.round(freqHz);
+    return true;
+  } catch (e) {
+    console.warn("Flex", link.name, "set failed:", e.message);
+    return false;
+  }
 }
 
 /**
- * Read VFO A frequency (Hz).
- * Returns frequency in Hz or null on failure.
+ * Push Doppler-corrected frequencies to both slices.
+ * ulHz / dlHz are absolute Hz (already include Doppler + fine offset).
  */
-async function getFrequency() {
-  if (!connected) {
-    const ok = await open();
-    if (!ok) return null;
+async function pushFrequencies(ulHz, dlHz) {
+  if (!radioOn) return;
+  if (ulHz != null && Number.isFinite(ulHz)) {
+    if (!ul.connected || ul.lastFreqHz == null || Math.abs(ulHz - ul.lastFreqHz) >= 1) {
+      await setLinkFrequency(ul, ulHz);
+    }
   }
-
-  const reply = await sendCmd("FA;", true);
-  console.log("Flex get →", reply || "(empty)");
-
-  const freq = parseFa(reply);
-  if (freq != null) {
-    lastFreqHz = freq;
-    broadcastStatus();
-    return freq;
+  if (dlHz != null && Number.isFinite(dlHz)) {
+    if (!dl.connected || dl.lastFreqHz == null || Math.abs(dlHz - dl.lastFreqHz) >= 1) {
+      await setLinkFrequency(dl, dlHz);
+    }
   }
-  return null;
 }
 
-function getFlexState() {
+function adjustFine(delta) {
+  if (typeof delta === "number") ulFineOffset += delta;
+  broadcastStatus();
+}
+
+function setStep(step) {
+  if (typeof step === "number" && step > 0) digitStep = Math.round(step);
+  broadcastStatus();
+}
+
+function center() {
+  ulFineOffset = 0;
+  broadcastStatus();
+}
+
+function resetOffsets() {
+  ulFineOffset = 0;
+  ul.lastFreqHz = null;
+  dl.lastFreqHz = null;
+}
+
+function getRadioState() {
   return {
-    connected,
-    connecting,
-    host: config.FLEX_HOST,
-    port: config.FLEX_PORT,
-    lastFreqHz,
+    radioOn,
+    tciConnected: ul.connected && dl.connected, // UI reuse
+    connected: ul.connected && dl.connected,
+    ulConnected: ul.connected,
+    dlConnected: dl.connected,
+    connecting: ul.connecting || dl.connecting,
+    manualDlOffset: 0,
+    ulFineOffset,
+    lastCmdDl: dl.lastFreqHz,
+    lastCmdUl: ul.lastFreqHz,
+    step: digitStep,
   };
 }
 
-/** Host/port changed — reconnect if we were connected */
 function applyEndpointChange() {
-  console.log("Flex endpoint →", config.FLEX_HOST + ":" + config.FLEX_PORT);
-  const wasConnected = connected;
-  close();
-  if (wasConnected) {
-    open().catch(() => {});
-  } else {
-    broadcastStatus();
-  }
+  console.log(
+    "Flex endpoints → UL",
+    config.FLEX_UL_HOST + ":" + config.FLEX_UL_PORT,
+    "DL",
+    config.FLEX_DL_HOST + ":" + config.FLEX_DL_PORT,
+  );
+  const wasOn = radioOn;
+  closeLink(ul);
+  closeLink(dl);
+  radioOn = wasOn;
+  if (wasOn) open().catch(() => {});
+  else broadcastStatus();
 }
 
 module.exports = {
   init,
   open,
   close,
-  setFrequency,
-  getFrequency,
-  getFlexState,
+  setRadio,
+  pushFrequencies,
+  adjustFine,
+  setStep,
+  center,
+  resetOffsets,
+  getRadioState,
   statusPayload,
   broadcastStatus,
   applyEndpointChange,
