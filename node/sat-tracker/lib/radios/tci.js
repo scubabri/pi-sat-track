@@ -1,6 +1,11 @@
 /**
  * AetherSDR / ExpertSDR TCI driver (WebSocket).
  * UL = rx1, DL = rx0.
+ *
+ * CTCSS (ExpertSDR TCI protocol 1.6 / eesdr-tci):
+ *   CTCSS_TX_TONE:rx,hz;
+ *   CTCSS_MODE:rx,mode;     // 0=off 1=rx 2=tx 3=rx/tx (TX Only for uplink)
+ *   CTCSS_ENABLE:rx,true|false;
  */
 
 const WebSocket = require("ws");
@@ -45,6 +50,11 @@ let ctcssMode = "off";
 let ctcssAccessHz = null;
 let ctcssActivationHz = null;
 let lastCtcssApplied = null;
+
+// UL receiver index in TCI (split: rx0 = DL, rx1 = UL)
+const UL_RX = 1;
+// CTCSS_MODE: 2 = TX Only (encode on uplink)
+const CTCSS_MODE_TX = 2;
 
 let getCtx = () => ({
   satrec: null,
@@ -177,19 +187,40 @@ function activeCtcssHz() {
   return null;
 }
 
+/**
+ * Apply CTCSS on UL receiver (rx1) only — TX encode for satellite uplink.
+ * Command set from ExpertSDR TCI protocol 1.6 (also listed in eesdr-tci).
+ */
 function applyCtcssToRadio(force) {
-  if (!tciConnected) return;
+  if (!tciConnected) {
+    if (force) console.log("TCI CTCSS: not connected — will apply on connect");
+    return;
+  }
   const hz = activeCtcssHz();
   const key = hz != null ? String(hz) : "off";
   if (!force && key === lastCtcssApplied) return;
-  if (hz != null) {
-    tciSend(`ctcss_tx_tone:1,${hz};`);
-    tciSend(`ctcss_enable:1,true;`);
-    tciSend(`ctcss_mode:1,tx;`);
-    console.log("TCI UL CTCSS", hz, "Hz ON");
+
+  if (hz != null && Number.isFinite(hz) && hz > 0) {
+    const tone = Number(hz).toFixed(1);
+    // Order: tone → mode (TX only) → enable
+    const okTone = tciSend(`CTCSS_TX_TONE:${UL_RX},${tone};`);
+    const okMode = tciSend(`CTCSS_MODE:${UL_RX},${CTCSS_MODE_TX};`);
+    const okEn = tciSend(`CTCSS_ENABLE:${UL_RX},true;`);
+    console.log(
+      "TCI UL CTCSS ON",
+      tone,
+      "Hz",
+      "(tone",
+      okTone ? "ok" : "FAIL",
+      "mode",
+      okMode ? "ok" : "FAIL",
+      "enable",
+      okEn ? "ok" : "FAIL",
+      ")",
+    );
   } else {
-    tciSend(`ctcss_enable:1,false;`);
-    console.log("TCI UL CTCSS OFF");
+    const ok = tciSend(`CTCSS_ENABLE:${UL_RX},false;`);
+    console.log("TCI UL CTCSS OFF", ok ? "ok" : "FAIL");
   }
   lastCtcssApplied = key;
 }
@@ -256,11 +287,16 @@ async function connect() {
     const info = getCatalog()[currentSatKey] || {};
     const active = getActiveModeObj(info, currentModeIndex);
     pushModulation(active, true);
-    applyCtcssToRadio(true);
+    // Slight delay so Aether finishes init status dump before CTCSS
+    setTimeout(() => applyCtcssToRadio(true), 300);
   });
 
   tciWs.on("message", (raw) => {
     const msg = raw.toString().trim();
+    // Log CTCSS-related status from server (helps verify support)
+    if (/^ctcss_/i.test(msg)) {
+      console.log("TCI <<", msg);
+    }
     if (!msg.startsWith("vfo:")) return;
     if (locked) return;
     try {
@@ -397,6 +433,7 @@ function setCtcss(which) {
     ctcssMode = "activation";
   else ctcssMode = "off";
   lastCtcssApplied = null;
+  console.log("TCI setCtcss", ctcssMode, activeCtcssHz());
   applyCtcssToRadio(true);
   broadcastStatus();
 }
@@ -407,6 +444,14 @@ function applyDefaultCtcss(accessHz, activationHz) {
   if (ctcssAccessHz != null) ctcssMode = "access";
   else ctcssMode = "off";
   lastCtcssApplied = null;
+  console.log(
+    "TCI CTCSS default",
+    ctcssMode,
+    "access",
+    ctcssAccessHz,
+    "act",
+    ctcssActivationHz,
+  );
   applyCtcssToRadio(true);
   broadcastStatus();
 }
