@@ -4,7 +4,8 @@
  *
  * Mode (SmartSDR CAT MD — PowerSDR numbering):
  *   MD1 LSB, MD2 USB, MD3 CW, MD4 FM
- * CTCSS: TN + TO on UL slice when supported.
+ * CTCSS (best-effort on SmartSDR CAT):
+ *   ensure FM, then TN (Hz*10) + TO1; also try CT1 / CN index.
  */
 
 const net = require("net");
@@ -13,6 +14,7 @@ const {
   formatFreqDisplayFromMode,
   isFmMode,
   getCatalog,
+  parseCtcss,
 } = require("../catalog");
 const { rangeRateKmS } = require("../orbit");
 
@@ -49,6 +51,29 @@ let ctcssMode = "off";
 let ctcssAccessHz = null;
 let ctcssActivationHz = null;
 let lastCtcssApplied = null;
+
+/** Standard CTCSS table (Hz) used by many Kenwood-style CAT implementations. */
+const CTCSS_TABLE = [
+  67.0, 69.3, 71.9, 74.4, 77.0, 79.7, 82.5, 85.4, 88.5, 91.5, 94.8, 97.4, 100.0,
+  103.5, 107.2, 110.9, 114.8, 118.8, 123.0, 127.3, 131.8, 136.5, 141.3, 146.2,
+  151.4, 156.7, 159.8, 162.2, 165.5, 167.9, 171.3, 173.8, 177.3, 179.9, 183.5,
+  186.2, 189.9, 192.8, 196.6, 199.5, 203.5, 206.5, 210.7, 218.1, 225.7, 229.1,
+  233.6, 241.8, 250.3, 254.1,
+];
+
+function toneIndex(hz) {
+  if (hz == null || !Number.isFinite(hz)) return null;
+  let best = 0;
+  let bestDiff = Infinity;
+  for (let i = 0; i < CTCSS_TABLE.length; i++) {
+    const d = Math.abs(CTCSS_TABLE[i] - hz);
+    if (d < bestDiff) {
+      bestDiff = d;
+      best = i;
+    }
+  }
+  return bestDiff < 0.3 ? best : null;
+}
 
 let getCtx = () => ({
   satrec: null,
@@ -225,7 +250,7 @@ function sendCmd(link, cmd, expectReply) {
           setTimeout(() => {
             link.busy = false;
             resolve("");
-          }, 40);
+          }, 50);
         }
       });
     } catch (e) {
@@ -275,7 +300,10 @@ function openLink(link) {
       console.log("Flex", link.name.toUpperCase(), "connected", host + ":" + port);
       broadcastStatus();
       if (link.name === "dl") startVfoPoll();
-      if (link.name === "ul") applyCtcssToRadio().catch(() => {});
+      if (link.name === "ul") {
+        lastCtcssApplied = null;
+        applyCtcssToRadio(true).catch(() => {});
+      }
       done(true);
     });
     s.once("timeout", () => {
@@ -347,6 +375,7 @@ function setRadio(on) {
     ulFineOffset = 0;
     dlFineOffset = 0;
     lastCtcssApplied = null;
+    syncTonesFromCatalog();
     broadcastStatus();
   } else {
     close();
@@ -371,14 +400,44 @@ function activeCtcssHz() {
   return null;
 }
 
+/** Pull CTCSS Hz from current catalog mode so UI clicks always have values. */
+function syncTonesFromCatalog() {
+  try {
+    const { currentSatKey, currentModeIndex } = getCtx();
+    const info = getCatalog()[currentSatKey] || {};
+    const active = getActiveModeObj(info, currentModeIndex);
+    if (!active) return;
+    let access = active.ctcssAccess;
+    let activation = active.ctcssActivation;
+    if (access == null && activation == null) {
+      const tones = parseCtcss(
+        active.mode,
+        currentSatKey,
+        info.display || info.name,
+        info.norad,
+      );
+      access = tones.access;
+      activation = tones.activation;
+    }
+    if (access != null) ctcssAccessHz = access;
+    if (activation != null) ctcssActivationHz = activation;
+  } catch (e) {
+    console.warn("Flex syncTones:", e.message);
+  }
+}
+
 function setCtcss(which) {
-  if (which === "access" && ctcssAccessHz != null) ctcssMode = "access";
-  else if (which === "activation" && ctcssActivationHz != null)
-    ctcssMode = "activation";
-  else ctcssMode = "off";
+  syncTonesFromCatalog();
+  if (which === "access") {
+    ctcssMode = ctcssAccessHz != null ? "access" : "off";
+  } else if (which === "activation") {
+    ctcssMode = ctcssActivationHz != null ? "activation" : "off";
+  } else {
+    ctcssMode = "off";
+  }
   lastCtcssApplied = null;
   console.log("Flex CTCSS", ctcssMode, activeCtcssHz());
-  applyCtcssToRadio().catch(() => {});
+  applyCtcssToRadio(true).catch(() => {});
   broadcastStatus();
 }
 
@@ -396,24 +455,50 @@ function applyDefaultCtcss(accessHz, activationHz) {
     "act",
     ctcssActivationHz,
   );
-  applyCtcssToRadio().catch(() => {});
+  applyCtcssToRadio(true).catch(() => {});
   broadcastStatus();
 }
 
-/** Kenwood-style TN (tone Hz*10) + TO1/0 on UL */
-async function applyCtcssToRadio() {
-  if (!ul.connected) return;
+/**
+ * Best-effort CTCSS over SmartSDR CAT.
+ * CAT is limited on Flex — try several Kenwood-style encodings.
+ * UI state is authoritative even if radio ignores commands.
+ */
+async function applyCtcssToRadio(force) {
+  if (!ul.connected) {
+    console.log("Flex CTCSS deferred (UL not connected)", ctcssMode, activeCtcssHz());
+    return;
+  }
   const hz = activeCtcssHz();
   const key = hz != null ? String(hz) : "off";
-  if (key === lastCtcssApplied) return;
+  if (!force && key === lastCtcssApplied) return;
+
   try {
+    // FM required for tone encode on most stacks
+    await sendCmd(ul, "MD4;", false);
+    ul.lastMode = "4";
+
     if (hz != null) {
       const tn = Math.round(hz * 10);
+      const idx = toneIndex(hz);
+      // PowerSDR-style: frequency × 10
       await sendCmd(ul, "TN" + String(tn).padStart(4, "0") + ";", false);
       await sendCmd(ul, "TO1;", false);
-      console.log("Flex UL CTCSS", hz, "Hz ON");
+      // Alternate Kenwood: CT on, CN tone number
+      await sendCmd(ul, "CT1;", false);
+      if (idx != null) {
+        await sendCmd(ul, "CN" + String(idx).padStart(2, "0") + ";", false);
+      }
+      console.log(
+        "Flex UL CTCSS",
+        hz,
+        "Hz ON (TN" + tn + " TO1 CT1" +
+          (idx != null ? " CN" + idx : "") +
+          ")",
+      );
     } else {
       await sendCmd(ul, "TO0;", false);
+      await sendCmd(ul, "CT0;", false);
       console.log("Flex UL CTCSS OFF");
     }
     lastCtcssApplied = key;
@@ -493,7 +578,7 @@ async function pushFrequencies(ulHz, dlHz) {
   await pushSide(ul, ulHz);
   await pushSide(dl, dlHz);
   await pushModulation();
-  await applyCtcssToRadio();
+  await applyCtcssToRadio(false);
 }
 
 function getActiveModeObj(info, modeIndex) {
@@ -505,6 +590,8 @@ function getActiveModeObj(info, modeIndex) {
       uplink: info.uplink || "",
       downlink: info.downlink || "",
       beacon: info.beacon || "",
+      ctcssAccess: null,
+      ctcssActivation: null,
     };
   }
   const idx = Math.max(0, Math.min(modeIndex || 0, modes.length - 1));
@@ -575,11 +662,9 @@ function adjustFine(delta, side) {
   if (side === "dl") {
     dlFineOffset += delta;
     dl.lastFreqHz = null;
-    console.log("Flex DL fine", delta >= 0 ? "+" + delta : delta, "→", dlFineOffset, "Hz");
   } else {
     ulFineOffset += delta;
     ul.lastFreqHz = null;
-    console.log("Flex UL fine", delta >= 0 ? "+" + delta : delta, "→", ulFineOffset, "Hz");
   }
   broadcastStatus();
 }
@@ -595,7 +680,6 @@ function center() {
   dlFineOffset = 0;
   ul.lastFreqHz = null;
   dl.lastFreqHz = null;
-  console.log("Flex center offsets");
   broadcastStatus();
 }
 
