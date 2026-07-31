@@ -170,6 +170,11 @@ wss.on("connection", (ws) => {
         setLock(!!msg.on);
       }
 
+      if (msg.type === "ulFixed") {
+        state.setUlFixed(!!msg.on);
+        pushNow();
+      }
+
       if (msg.type === "antenna") {
         rotor.setAntenna(!!msg.on);
       }
@@ -189,9 +194,10 @@ wss.on("connection", (ws) => {
       }
 
       if (msg.type === "ctcss") {
-        const which = msg.which === "access" || msg.which === "activation"
-          ? msg.which
-          : "off";
+        const which =
+          msg.which === "access" || msg.which === "activation"
+            ? msg.which
+            : "off";
         const radio = activeRadio();
         if (typeof radio.setCtcss === "function") radio.setCtcss(which);
         pushNow();
@@ -289,16 +295,10 @@ setInterval(() => {
     console.log("Sat Tracker  http://127.0.0.1:" + PORT);
     console.log("TCI target   " + TCI_URI);
     console.log(
-      "Flex UL      " +
-        config.FLEX_UL_HOST +
-        ":" +
-        config.FLEX_UL_PORT,
+      "Flex UL      " + config.FLEX_UL_HOST + ":" + config.FLEX_UL_PORT,
     );
     console.log(
-      "Flex DL      " +
-        config.FLEX_DL_HOST +
-        ":" +
-        config.FLEX_DL_PORT,
+      "Flex DL      " + config.FLEX_DL_HOST + ":" + config.FLEX_DL_PORT,
     );
     console.log(
       "Icom CI-V    " +
