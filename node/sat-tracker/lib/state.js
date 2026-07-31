@@ -1,5 +1,6 @@
 const satellite = require("satellite.js");
-const { C_MS } = require("./config");
+const config = require("./config");
+const { C_MS } = config;
 const {
   getCatalog,
   getCatalogNote,
@@ -13,6 +14,7 @@ const {
 const { fetchTLE, cacheSatrec } = require("./tle");
 const {
   lookAngles,
+  lookAnglesLead,
   rangeRateKmS,
   groundPoint,
   buildTrail,
@@ -193,8 +195,12 @@ function computeTick() {
 
   tci.pushFrequencies();
 
-  // Drive rotors (uses last known AOS az from computeState)
-  rotor.updateTracking(look, lastAosAz);
+  // Drive rotors with ~ROTOR_LEAD_DEG angular lead
+  const leadLook =
+    config.ROTOR_LEAD_DEG > 0
+      ? lookAnglesLead(satrec, observer, now, config.ROTOR_LEAD_DEG)
+      : look;
+  rotor.updateTracking(leadLook || look, lastAosAz);
 
   const r = rotor.getRotorState();
 

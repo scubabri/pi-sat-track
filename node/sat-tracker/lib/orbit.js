@@ -36,6 +36,64 @@ function lookAngles(satrec, observer, date) {
   };
 }
 
+/**
+ * Approximate angular separation (degrees) between two az/el points.
+ * Uses mean elevation for the azimuth component.
+ */
+function angularDistanceDeg(a, b) {
+  if (!a || !b) return 0;
+  let daz = b.az - a.az;
+  daz = ((daz + 540) % 360) - 180; // shortest angle
+  const meanElRad = ((a.el + b.el) / 2) * (Math.PI / 180);
+  const cosEl = Math.cos(meanElRad);
+  return Math.sqrt((daz * cosEl) ** 2 + (b.el - a.el) ** 2);
+}
+
+/**
+ * Return look angles approximately `leadDeg` ahead of `now` along the track.
+ * Iteratively finds a future time that yields ~leadDeg of angular travel.
+ */
+function lookAnglesLead(satrec, observer, now, leadDeg) {
+  if (!leadDeg || leadDeg <= 0) return lookAngles(satrec, observer, now);
+
+  const current = lookAngles(satrec, observer, now);
+  if (!current) return null;
+
+  // Initial guess: assume ~0.3–0.5 °/s typical LEO near mid-pass
+  let dtSec = leadDeg / 0.4;
+  const maxDt = 90; // safety
+  const minDt = 0.5;
+
+  for (let i = 0; i < 12; i++) {
+    dtSec = Math.max(minDt, Math.min(maxDt, dtSec));
+    const future = lookAngles(
+      satrec,
+      observer,
+      new Date(now.getTime() + dtSec * 1000),
+    );
+    if (!future) break;
+
+    const dang = angularDistanceDeg(current, future);
+    if (Math.abs(dang - leadDeg) < 0.3) return future; // close enough
+    if (dang < 0.05) {
+      // almost stationary – just return a modest fixed lead
+      return lookAngles(
+        satrec,
+        observer,
+        new Date(now.getTime() + Math.min(15, leadDeg / 0.2) * 1000),
+      );
+    }
+    // scale time proportionally
+    dtSec = dtSec * (leadDeg / dang);
+  }
+
+  return lookAngles(
+    satrec,
+    observer,
+    new Date(now.getTime() + Math.max(minDt, Math.min(maxDt, dtSec)) * 1000),
+  );
+}
+
 function rangeRateKmS(satrec, observer, date) {
   const pv = satellite.propagate(satrec, date);
   if (!pv.position || !pv.velocity) return null;
@@ -169,6 +227,8 @@ function passSkyPath(satrec, observer, aosIso, losIso, stepSec) {
 
 module.exports = {
   lookAngles,
+  lookAnglesLead,
+  angularDistanceDeg,
   rangeRateKmS,
   groundPoint,
   buildTrail,

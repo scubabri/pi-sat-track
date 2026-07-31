@@ -24,10 +24,15 @@ let ROTOR_EL_PORT = parseInt(process.env.ROTOR_EL_PORT || "4536", 10);
 
 const ROTOR_MIN_EL = parseFloat(process.env.ROTOR_MIN_EL || "10");
 const ROTOR_PARK_EL = parseFloat(process.env.ROTOR_PARK_EL || "0");
+
+// Send a move command at most this often (ms)
 const ROTOR_MOVE_INTERVAL_MS = parseInt(
   process.env.ROTOR_MOVE_INTERVAL_MS || "30000",
   10,
 );
+
+// Angular lead (degrees). Rotor is commanded ~this far ahead along the track.
+const ROTOR_LEAD_DEG = parseFloat(process.env.ROTOR_LEAD_DEG || "5");
 
 const DEFAULT_SAT = "RS-44";
 const MIN_EL = 0.0;
@@ -151,6 +156,7 @@ module.exports = {
   ROTOR_MIN_EL,
   ROTOR_PARK_EL,
   ROTOR_MOVE_INTERVAL_MS,
+  ROTOR_LEAD_DEG,
   DEFAULT_SAT,
   MIN_EL,
   TRAIL_MINUTES,
