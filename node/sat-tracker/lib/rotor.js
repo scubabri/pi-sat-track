@@ -1,5 +1,9 @@
 const net = require("net");
+const fs = require("fs");
+const path = require("path");
 const config = require("./config");
+
+const LOG_PATH = path.join(config.CACHE_DIR, "rotor_track.log");
 
 let antennaOn = false;
 let azSock = null;
@@ -16,6 +20,7 @@ let lastMoveAt = 0;
 let reconnectTimer = null;
 let pollTimer = null;
 let nextAosAz = null;
+let logging = false;
 
 let broadcastFn = () => {};
 
@@ -242,6 +247,7 @@ function disconnect() {
   clearReconnect();
   stopPoll();
   antennaOn = false;
+  logging = false;
 
   if (azSock) {
     try {
@@ -263,10 +269,53 @@ function disconnect() {
   console.log("Rotor disconnected");
 }
 
+function startLog() {
+  try {
+    if (!fs.existsSync(config.CACHE_DIR)) {
+      fs.mkdirSync(config.CACHE_DIR, { recursive: true });
+    }
+    // Overwrite existing log each time antenna is enabled
+    fs.writeFileSync(
+      LOG_PATH,
+      "timestamp,sat_az,sat_el,rotor_az,rotor_el,cmd_az,cmd_el\n",
+    );
+    logging = true;
+    console.log("Rotor log started →", LOG_PATH);
+  } catch (e) {
+    console.warn("Rotor log open failed:", e.message);
+    logging = false;
+  }
+}
+
+/**
+ * Append one sample. Called from state.computeTick while antenna is on.
+ * satAz/satEl = live calculated position; rotor values come from hardware + lastCmd.
+ */
+function logSample(satAz, satEl) {
+  if (!logging || !antennaOn) return;
+  try {
+    const ts = new Date().toISOString();
+    const line =
+      [
+        ts,
+        satAz != null && Number.isFinite(satAz) ? satAz.toFixed(2) : "",
+        satEl != null && Number.isFinite(satEl) ? satEl.toFixed(2) : "",
+        lastAz != null ? lastAz.toFixed(2) : "",
+        lastEl != null ? lastEl.toFixed(2) : "",
+        lastCmdAz != null ? lastCmdAz.toFixed(2) : "",
+        lastCmdEl != null ? lastCmdEl.toFixed(2) : "",
+      ].join(",") + "\n";
+    fs.appendFileSync(LOG_PATH, line);
+  } catch (e) {
+    console.warn("Rotor log write failed:", e.message);
+  }
+}
+
 function setAntenna(on) {
   console.log("Rotor setAntenna(" + on + ")");
   if (on) {
     antennaOn = true;
+    startLog();
     connect();
   } else {
     disconnect();
@@ -283,6 +332,7 @@ function applyEndpointChange() {
   if (antennaOn) {
     disconnect();
     antennaOn = true;
+    startLog();
     connect();
   } else {
     broadcastStatus();
@@ -377,4 +427,5 @@ module.exports = {
   applyEndpointChange,
   connect,
   disconnect,
+  logSample,
 };

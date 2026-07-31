@@ -204,6 +204,11 @@ function computeTick() {
 
   const r = rotor.getRotorState();
 
+  // Log live sat + rotor positions while antenna is enabled
+  if (r.antennaOn) {
+    rotor.logSample(look.az, look.el);
+  }
+
   return {
     type: "tick",
     sat: currentSatKey,
