@@ -1,13 +1,10 @@
 /**
  * AetherSDR / ExpertSDR TCI driver (WebSocket).
- * UL = rx1, DL = rx0.
+ * UL = rx1, DL = rx0 for VFO + mode over TCI.
  *
- * CTCSS (ExpertSDR TCI protocol 1.6 / eesdr-tci):
- *   CTCSS_TX_TONE:rx,hz;
- *   CTCSS_MODE:rx,mode;     // 0=off 1=rx 2=tx 3=rx/tx (TX Only for uplink)
- *   CTCSS_ENABLE:rx,true|false;
- *
- * Frequencies come from state.js (includes Fix UL / Doppler) — do not recompute.
+ * CTCSS: AetherSDR is a Flex client — tone must be set on the radio via
+ * SmartSDR API (LAN IP:4992), not TCI. ExpertSDR CTCSS_* TCI cmds are
+ * still sent as a best-effort; Flex API is authoritative when configured.
  */
 
 const WebSocket = require("ws");
@@ -19,6 +16,7 @@ const {
   getCatalog,
 } = require("../catalog");
 const { rangeRateKmS } = require("../orbit");
+const { createApiClient } = require("./flex-api");
 
 const meta = {
   id: "tci",
@@ -55,6 +53,8 @@ let lastCtcssApplied = null;
 const UL_RX = 1;
 const CTCSS_MODE_TX = 2;
 
+const api = createApiClient();
+
 let getCtx = () => ({
   satrec: null,
   observer: null,
@@ -68,6 +68,14 @@ function init(opts) {
   if (opts.broadcast) broadcastFn = opts.broadcast;
 }
 
+function apiHost() {
+  return (config.FLEX_API_HOST || "").trim();
+}
+
+function apiPort() {
+  return config.FLEX_API_PORT || 4992;
+}
+
 function statusPayload() {
   return {
     type: "tci",
@@ -78,6 +86,9 @@ function statusPayload() {
     host: config.TCI_HOST,
     port: config.TCI_PORT,
     uri: config.TCI_URI,
+    apiConnected: api.isConnected(),
+    apiHost: apiHost(),
+    apiPort: apiPort(),
     manualDlOffset,
     ulFineOffset,
     dlFineOffset,
@@ -150,6 +161,7 @@ function disconnect() {
   lastModDl = "";
   lastModUl = "";
   lastCtcssApplied = null;
+  api.close();
   broadcastStatus();
   console.log("TCI disconnected");
 }
@@ -186,37 +198,55 @@ function activeCtcssHz() {
   return null;
 }
 
-function applyCtcssToRadio(force) {
-  if (!tciConnected) {
-    if (force) console.log("TCI CTCSS: not connected — will apply on connect");
-    return;
-  }
+/**
+ * Prefer Flex radio API for CTCSS (works with AetherSDR + Flex hardware).
+ * Also emit ExpertSDR-style TCI CTCSS_* as best-effort.
+ */
+async function applyCtcssToRadio(force) {
   const hz = activeCtcssHz();
   const key = hz != null ? String(hz) : "off";
   if (!force && key === lastCtcssApplied) return;
 
-  if (hz != null && Number.isFinite(hz) && hz > 0) {
-    const tone = Number(hz).toFixed(1);
-    const okTone = tciSend(`CTCSS_TX_TONE:${UL_RX},${tone};`);
-    const okMode = tciSend(`CTCSS_MODE:${UL_RX},${CTCSS_MODE_TX};`);
-    const okEn = tciSend(`CTCSS_ENABLE:${UL_RX},true;`);
-    console.log(
-      "TCI UL CTCSS ON",
-      tone,
-      "Hz",
-      "(tone",
-      okTone ? "ok" : "FAIL",
-      "mode",
-      okMode ? "ok" : "FAIL",
-      "enable",
-      okEn ? "ok" : "FAIL",
-      ")",
-    );
-  } else {
-    const ok = tciSend(`CTCSS_ENABLE:${UL_RX},false;`);
-    console.log("TCI UL CTCSS OFF", ok ? "ok" : "FAIL");
+  // Best-effort TCI (may be ignored by Aether)
+  if (tciConnected) {
+    if (hz != null && Number.isFinite(hz) && hz > 0) {
+      const tone = Number(hz).toFixed(1);
+      tciSend(`CTCSS_TX_TONE:${UL_RX},${tone};`);
+      tciSend(`CTCSS_MODE:${UL_RX},${CTCSS_MODE_TX};`);
+      tciSend(`CTCSS_ENABLE:${UL_RX},true;`);
+    } else {
+      tciSend(`CTCSS_ENABLE:${UL_RX},false;`);
+    }
   }
-  lastCtcssApplied = key;
+
+  // Authoritative path for Flex hardware under AetherSDR
+  const h = apiHost();
+  if (!h) {
+    if (force) {
+      console.warn(
+        "TCI CTCSS: set Radio API host (Flex radio LAN IP:4992) in config — " +
+          "AetherSDR TCI does not apply tone on the radio by itself",
+      );
+    }
+    lastCtcssApplied = key;
+    return;
+  }
+
+  if (!api.isConnected()) {
+    const ok = await api.connect(h, apiPort());
+    if (!ok) {
+      console.warn("TCI CTCSS: Flex API unreachable", h + ":" + apiPort());
+      return;
+    }
+  }
+
+  try {
+    // Prefer match to last commanded UL freq (TX slice may be wrong if Aether flipped TX)
+    await api.setCtcss(hz, lastCmdUl > 0 ? lastCmdUl : null);
+    lastCtcssApplied = key;
+  } catch (e) {
+    console.warn("TCI CTCSS Flex API:", e.message);
+  }
 }
 
 async function connect() {
@@ -281,7 +311,15 @@ async function connect() {
     const info = getCatalog()[currentSatKey] || {};
     const active = getActiveModeObj(info, currentModeIndex);
     pushModulation(active, true);
-    setTimeout(() => applyCtcssToRadio(true), 300);
+
+    const h = apiHost();
+    if (h) {
+      api.connect(h, apiPort()).then(() => {
+        setTimeout(() => applyCtcssToRadio(true).catch(() => {}), 400);
+      });
+    } else {
+      setTimeout(() => applyCtcssToRadio(true).catch(() => {}), 300);
+    }
   });
 
   tciWs.on("message", (raw) => {
@@ -382,6 +420,7 @@ function applyDefaultLock(isFm) {
 }
 
 function applyEndpointChange() {
+  api.close();
   if (radioOn) {
     disconnect();
     radioOn = true;
@@ -426,7 +465,7 @@ function setCtcss(which) {
   else ctcssMode = "off";
   lastCtcssApplied = null;
   console.log("TCI setCtcss", ctcssMode, activeCtcssHz());
-  applyCtcssToRadio(true);
+  applyCtcssToRadio(true).catch(() => {});
   broadcastStatus();
 }
 
@@ -444,14 +483,10 @@ function applyDefaultCtcss(accessHz, activationHz) {
     "act",
     ctcssActivationHz,
   );
-  applyCtcssToRadio(true);
+  applyCtcssToRadio(true).catch(() => {});
   broadcastStatus();
 }
 
-/**
- * Use frequencies from state.js (Doppler + Fix UL already applied).
- * Do not recompute Doppler here — that broke Fix UL.
- */
 function pushFrequencies(ulHz, dlHz) {
   if (!radioOn || !tciConnected) return;
 
@@ -459,7 +494,7 @@ function pushFrequencies(ulHz, dlHz) {
   const info = getCatalog()[currentSatKey] || {};
   const active = getActiveModeObj(info, currentModeIndex);
   pushModulation(active, false);
-  applyCtcssToRadio(false);
+  applyCtcssToRadio(false).catch(() => {});
 
   if (dlHz != null && Number.isFinite(dlHz) && Math.abs(dlHz - lastCmdDl) >= 1) {
     if (tciSend(`vfo:0,0,${Math.round(dlHz)};`)) lastCmdDl = Math.round(dlHz);
