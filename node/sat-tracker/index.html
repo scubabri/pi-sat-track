@@ -93,62 +93,168 @@
               <label for="cfg-elev">Elevation (m)</label>
               <input type="number" id="cfg-elev" placeholder="1324" step="1" />
             </div>
-            <div class="form-row">
-              <label for="cfg-tci-host">TCI host (AetherSDR)</label>
-              <input
-                type="text"
-                id="cfg-tci-host"
-                placeholder="127.0.0.1"
-                autocomplete="off"
-              />
+
+            <div class="form-section">
+              <div class="form-section-title">Radio</div>
+
+              <div class="form-row">
+                <label for="cfg-radio-transport">Connection</label>
+                <select id="cfg-radio-transport" class="cfg-select">
+                  <option value="tcp">TCP</option>
+                  <option value="serial">Serial</option>
+                </select>
+              </div>
+
+              <!-- TCP options -->
+              <div id="cfg-tcp-block">
+                <div class="form-row">
+                  <label for="cfg-radio-type">Radio type</label>
+                  <select id="cfg-radio-type" class="cfg-select">
+                    <option value="flex">FlexRadio</option>
+                  </select>
+                </div>
+
+                <div class="form-row">
+                  <label for="cfg-radio-protocol">Protocol</label>
+                  <select id="cfg-radio-protocol" class="cfg-select">
+                    <option value="cat">CAT</option>
+                    <option value="tci">TCI</option>
+                  </select>
+                </div>
+
+                <!-- TCI: single host/port -->
+                <div id="cfg-tci-block">
+                  <div class="form-row">
+                    <label for="cfg-tci-host">TCI host</label>
+                    <input
+                      type="text"
+                      id="cfg-tci-host"
+                      placeholder="127.0.0.1"
+                      autocomplete="off"
+                    />
+                  </div>
+                  <div class="form-row">
+                    <label for="cfg-tci-port">TCI port</label>
+                    <input
+                      type="number"
+                      id="cfg-tci-port"
+                      placeholder="50001"
+                      min="1"
+                      max="65535"
+                      step="1"
+                    />
+                  </div>
+                </div>
+
+                <!-- Flex CAT: UL + DL slice ports -->
+                <div id="cfg-flex-cat-block">
+                  <div class="form-row">
+                    <label for="cfg-flex-ul-host">Uplink (TX) host</label>
+                    <input
+                      type="text"
+                      id="cfg-flex-ul-host"
+                      placeholder="172.17.18.229"
+                      autocomplete="off"
+                    />
+                  </div>
+                  <div class="form-row">
+                    <label for="cfg-flex-ul-port">Uplink (TX) CAT port</label>
+                    <input
+                      type="number"
+                      id="cfg-flex-ul-port"
+                      placeholder="60002"
+                      min="1"
+                      max="65535"
+                      step="1"
+                    />
+                  </div>
+                  <div class="form-row">
+                    <label for="cfg-flex-dl-host">Downlink (RX) host</label>
+                    <input
+                      type="text"
+                      id="cfg-flex-dl-host"
+                      placeholder="172.17.18.229"
+                      autocomplete="off"
+                    />
+                  </div>
+                  <div class="form-row">
+                    <label for="cfg-flex-dl-port">Downlink (RX) CAT port</label>
+                    <input
+                      type="number"
+                      id="cfg-flex-dl-port"
+                      placeholder="60001"
+                      min="1"
+                      max="65535"
+                      step="1"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Serial options (Icom path — placeholder for now) -->
+              <div id="cfg-serial-block" hidden>
+                <div class="form-row">
+                  <label for="cfg-serial-device">Serial device</label>
+                  <input
+                    type="text"
+                    id="cfg-serial-device"
+                    placeholder="/dev/ttyACM0"
+                    autocomplete="off"
+                  />
+                </div>
+                <div class="form-row">
+                  <label for="cfg-serial-baud">Baud</label>
+                  <input
+                    type="number"
+                    id="cfg-serial-baud"
+                    placeholder="19200"
+                    min="1200"
+                    step="1"
+                  />
+                </div>
+                <p class="form-hint">Icom CI-V (IC-705, etc.) — coming next</p>
+              </div>
             </div>
 
-            <div class="form-row">
-              <label for="cfg-tci-port">TCI port</label>
-              <input
-                type="number"
-                id="cfg-tci-port"
-                placeholder="50001"
-                min="1"
-                max="65535"
-                step="1"
-              />
-            </div>
+            <div class="form-section">
+              <div class="form-section-title">Rotor</div>
 
-            <div class="form-row">
-              <label for="cfg-rotor-host">rotctld host</label>
-              <input
-                type="text"
-                id="cfg-rotor-host"
-                placeholder="127.0.0.1"
-                autocomplete="off"
-              />
-            </div>
-
-            <div class="form-row form-row-2">
-              <div>
-                <label for="cfg-rotor-az-port">AZ port</label>
+              <div class="form-row">
+                <label for="cfg-rotor-host">rotctld host</label>
                 <input
-                  type="number"
-                  id="cfg-rotor-az-port"
-                  placeholder="4535"
-                  min="1"
-                  max="65535"
-                  step="1"
+                  type="text"
+                  id="cfg-rotor-host"
+                  placeholder="127.0.0.1"
+                  autocomplete="off"
                 />
               </div>
-              <div>
-                <label for="cfg-rotor-el-port">EL port</label>
-                <input
-                  type="number"
-                  id="cfg-rotor-el-port"
-                  placeholder="4536"
-                  min="1"
-                  max="65535"
-                  step="1"
-                />
+
+              <div class="form-row form-row-2">
+                <div>
+                  <label for="cfg-rotor-az-port">AZ port</label>
+                  <input
+                    type="number"
+                    id="cfg-rotor-az-port"
+                    placeholder="4535"
+                    min="1"
+                    max="65535"
+                    step="1"
+                  />
+                </div>
+                <div>
+                  <label for="cfg-rotor-el-port">EL port</label>
+                  <input
+                    type="number"
+                    id="cfg-rotor-el-port"
+                    placeholder="4536"
+                    min="1"
+                    max="65535"
+                    step="1"
+                  />
+                </div>
               </div>
             </div>
+
             <div id="config-actions">
               <button class="btn" id="btn-center-grid">Center Map</button>
               <button class="btn active" id="btn-save-config">Save</button>
@@ -247,7 +353,7 @@
         <section class="panel-section">
           <h3>Controls</h3>
           <div class="toggle-row">
-            <span class="toggle-label">Radio (TCI)</span>
+            <span class="toggle-label">Radio</span>
             <label class="switch">
               <input type="checkbox" id="toggle-radio" />
               <span class="slider"></span>
@@ -280,7 +386,7 @@
             <span class="label">Elevation</span><span id="station-elev">-</span>
           </div>
           <div class="status-item">
-            <span class="label">TCI</span
+            <span class="label">Radio</span
             ><span id="status-tci">Disconnected</span>
           </div>
           <div class="status-item">

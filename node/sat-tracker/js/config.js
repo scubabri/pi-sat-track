@@ -14,51 +14,111 @@ function saveConfig(cfg) {
 
 function defaultsEndpoints() {
   return {
+    radioTransport: "tcp", // tcp | serial
+    radioType: "flex", // flex (tcp) — more later
+    radioProtocol: "cat", // cat | tci
     tciHost: "127.0.0.1",
     tciPort: 50001,
+    flexUlHost: "172.17.18.229",
+    flexUlPort: 60002,
+    flexDlHost: "172.17.18.229",
+    flexDlPort: 60001,
+    serialDevice: "/dev/ttyACM0",
+    serialBaud: 19200,
     rotorHost: "127.0.0.1",
     rotorAzPort: 4535,
     rotorElPort: 4536,
   };
 }
 
+function val(id) {
+  const el = document.getElementById(id);
+  return el ? el.value : "";
+}
+
+function setVal(id, v) {
+  const el = document.getElementById(id);
+  if (el) el.value = v != null ? v : "";
+}
+
 function readFormConfig() {
   const elevRaw = document.getElementById("cfg-elev");
-  const tciHost = document.getElementById("cfg-tci-host");
-  const tciPort = document.getElementById("cfg-tci-port");
-  const rotorHost = document.getElementById("cfg-rotor-host");
-  const rotorAz = document.getElementById("cfg-rotor-az-port");
-  const rotorEl = document.getElementById("cfg-rotor-el-port");
-
   return {
-    callsign: document
-      .getElementById("cfg-callsign")
-      .value.trim()
-      .toUpperCase(),
-    grid: document.getElementById("cfg-grid").value.trim().toUpperCase(),
+    callsign: val("cfg-callsign").trim().toUpperCase(),
+    grid: val("cfg-grid").trim().toUpperCase(),
     elevation: elevRaw ? parseInt(elevRaw.value, 10) || 0 : 0,
-    tciHost: tciHost ? tciHost.value.trim() || "127.0.0.1" : "127.0.0.1",
-    tciPort: tciPort ? parseInt(tciPort.value, 10) || 50001 : 50001,
-    rotorHost: rotorHost ? rotorHost.value.trim() || "127.0.0.1" : "127.0.0.1",
-    rotorAzPort: rotorAz ? parseInt(rotorAz.value, 10) || 4535 : 4535,
-    rotorElPort: rotorEl ? parseInt(rotorEl.value, 10) || 4536 : 4536,
+
+    radioTransport: val("cfg-radio-transport") || "tcp",
+    radioType: val("cfg-radio-type") || "flex",
+    radioProtocol: val("cfg-radio-protocol") || "cat",
+
+    tciHost: val("cfg-tci-host").trim() || "127.0.0.1",
+    tciPort: parseInt(val("cfg-tci-port"), 10) || 50001,
+
+    flexUlHost: val("cfg-flex-ul-host").trim() || "172.17.18.229",
+    flexUlPort: parseInt(val("cfg-flex-ul-port"), 10) || 60002,
+    flexDlHost: val("cfg-flex-dl-host").trim() || "172.17.18.229",
+    flexDlPort: parseInt(val("cfg-flex-dl-port"), 10) || 60001,
+
+    serialDevice: val("cfg-serial-device").trim() || "/dev/ttyACM0",
+    serialBaud: parseInt(val("cfg-serial-baud"), 10) || 19200,
+
+    rotorHost: val("cfg-rotor-host").trim() || "127.0.0.1",
+    rotorAzPort: parseInt(val("cfg-rotor-az-port"), 10) || 4535,
+    rotorElPort: parseInt(val("cfg-rotor-el-port"), 10) || 4536,
   };
 }
 
 function fillForm(cfg) {
   const d = Object.assign(defaultsEndpoints(), cfg || {});
-  const set = (id, val) => {
-    const el = document.getElementById(id);
-    if (el) el.value = val != null ? val : "";
-  };
-  set("cfg-callsign", d.callsign || "");
-  set("cfg-grid", d.grid || "");
-  set("cfg-elev", d.elevation != null ? d.elevation : "");
-  set("cfg-tci-host", d.tciHost);
-  set("cfg-tci-port", d.tciPort);
-  set("cfg-rotor-host", d.rotorHost);
-  set("cfg-rotor-az-port", d.rotorAzPort);
-  set("cfg-rotor-el-port", d.rotorElPort);
+  setVal("cfg-callsign", d.callsign || "");
+  setVal("cfg-grid", d.grid || "");
+  setVal("cfg-elev", d.elevation != null ? d.elevation : "");
+
+  setVal("cfg-radio-transport", d.radioTransport);
+  setVal("cfg-radio-type", d.radioType);
+  setVal("cfg-radio-protocol", d.radioProtocol);
+
+  setVal("cfg-tci-host", d.tciHost);
+  setVal("cfg-tci-port", d.tciPort);
+
+  setVal("cfg-flex-ul-host", d.flexUlHost);
+  setVal("cfg-flex-ul-port", d.flexUlPort);
+  setVal("cfg-flex-dl-host", d.flexDlHost);
+  setVal("cfg-flex-dl-port", d.flexDlPort);
+
+  setVal("cfg-serial-device", d.serialDevice);
+  setVal("cfg-serial-baud", d.serialBaud);
+
+  setVal("cfg-rotor-host", d.rotorHost);
+  setVal("cfg-rotor-az-port", d.rotorAzPort);
+  setVal("cfg-rotor-el-port", d.rotorElPort);
+
+  updateRadioFormVisibility();
+}
+
+function updateRadioFormVisibility() {
+  const transport = val("cfg-radio-transport") || "tcp";
+  const protocol = val("cfg-radio-protocol") || "cat";
+  const radioType = val("cfg-radio-type") || "flex";
+
+  const tcpBlock = document.getElementById("cfg-tcp-block");
+  const serialBlock = document.getElementById("cfg-serial-block");
+  const tciBlock = document.getElementById("cfg-tci-block");
+  const flexCatBlock = document.getElementById("cfg-flex-cat-block");
+
+  if (tcpBlock) tcpBlock.hidden = transport !== "tcp";
+  if (serialBlock) serialBlock.hidden = transport !== "serial";
+
+  if (transport === "tcp") {
+    const isTci = protocol === "tci";
+    const isFlexCat = protocol === "cat" && radioType === "flex";
+    if (tciBlock) tciBlock.hidden = !isTci;
+    if (flexCatBlock) flexCatBlock.hidden = !isFlexCat;
+  } else {
+    if (tciBlock) tciBlock.hidden = true;
+    if (flexCatBlock) flexCatBlock.hidden = true;
+  }
 }
 
 function sendEndpointsToServer(cfg) {
@@ -68,8 +128,17 @@ function sendEndpointsToServer(cfg) {
   ws.send(
     JSON.stringify({
       type: "endpoints",
+      radioTransport: cfg.radioTransport,
+      radioType: cfg.radioType,
+      radioProtocol: cfg.radioProtocol,
       tciHost: cfg.tciHost,
       tciPort: cfg.tciPort,
+      flexUlHost: cfg.flexUlHost,
+      flexUlPort: cfg.flexUlPort,
+      flexDlHost: cfg.flexDlHost,
+      flexDlPort: cfg.flexDlPort,
+      serialDevice: cfg.serialDevice,
+      serialBaud: cfg.serialBaud,
       rotorHost: cfg.rotorHost,
       rotorAzPort: cfg.rotorAzPort,
       rotorElPort: cfg.rotorElPort,
@@ -95,6 +164,13 @@ function initConfig() {
       panel.classList.remove("open");
     }
   });
+
+  ["cfg-radio-transport", "cfg-radio-type", "cfg-radio-protocol"].forEach(
+    (id) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener("change", updateRadioFormVisibility);
+    },
+  );
 
   document.getElementById("btn-save-config").addEventListener("click", () => {
     const newCfg = readFormConfig();
