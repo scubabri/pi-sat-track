@@ -12,19 +12,15 @@ const CATALOG_URL =
   "https://raw.githubusercontent.com/palewire/amateur-satellite-database/main/data/amsat-all-frequencies.json";
 const AMSAT_STATUS = "https://www.amsat.org/status/";
 
-// Radio selection (from Station Configuration)
-// radioType: smartsdr | aethersdr | flex (legacy alias of smartsdr)
 let RADIO_TRANSPORT = process.env.RADIO_TRANSPORT || "tcp"; // tcp | serial
 let RADIO_TYPE = process.env.RADIO_TYPE || "smartsdr";
 let RADIO_PROTOCOL = process.env.RADIO_PROTOCOL || "cat"; // cat | tci
 
 if (RADIO_TYPE === "flex") RADIO_TYPE = "smartsdr";
 
-// Mutable endpoints (defaults; overridden by client Station Configuration)
 let TCI_HOST = process.env.TCI_HOST || "127.0.0.1";
 let TCI_PORT = parseInt(process.env.TCI_PORT || "50001", 10);
 
-// Direct RT-21 serial (no rotctld)
 let ROTOR_AZ_DEVICE = process.env.ROTOR_AZ_DEVICE || "/dev/ttyUSB0";
 let ROTOR_EL_DEVICE = process.env.ROTOR_EL_DEVICE || "/dev/ttyUSB1";
 const ROTOR_BAUD = parseInt(process.env.ROTOR_BAUD || "4800", 10);
@@ -56,12 +52,10 @@ const ROTOR_STALL_RETRIES = parseInt(
 const ROTOR_POLL_MS = parseInt(process.env.ROTOR_POLL_MS || "250", 10);
 const ROTOR_LEAD_DEG = parseFloat(process.env.ROTOR_LEAD_DEG || "4");
 
-// IC-705 CI-V CAT (USB serial)
 let CAT_DEVICE = process.env.CAT_DEVICE || "/dev/ttyACM0";
-const CAT_BAUD = parseInt(process.env.CAT_BAUD || "19200", 10);
+let CAT_BAUD = parseInt(process.env.CAT_BAUD || "19200", 10);
 const CAT_CIV_ADDR = parseInt(process.env.CAT_CIV_ADDR || "0xA4", 16);
 
-// Dual CAT ports (SmartSDR slices / AetherSDR CAT)
 let FLEX_UL_HOST =
   process.env.FLEX_UL_HOST || process.env.FLEX_HOST || "172.17.18.229";
 let FLEX_UL_PORT = parseInt(
@@ -110,7 +104,6 @@ function normalizeRadioType(t) {
   return t;
 }
 
-/** Kenwood CAT over TCP (dual UL/DL ports) — SmartSDR or AetherSDR CAT */
 function useFlexCat() {
   const t = normalizeRadioType(RADIO_TYPE);
   return (
@@ -120,12 +113,16 @@ function useFlexCat() {
   );
 }
 
-/** TCI — AetherSDR only */
 function useTci() {
   const t = normalizeRadioType(RADIO_TYPE);
   return (
     RADIO_TRANSPORT === "tcp" && RADIO_PROTOCOL === "tci" && t === "aethersdr"
   );
+}
+
+/** Icom CI-V over USB serial */
+function useSerialCat() {
+  return RADIO_TRANSPORT === "serial";
 }
 
 function getEndpoints() {
@@ -138,6 +135,8 @@ function getEndpoints() {
     rotorAzDevice: ROTOR_AZ_DEVICE,
     rotorElDevice: ROTOR_EL_DEVICE,
     catDevice: CAT_DEVICE,
+    serialDevice: CAT_DEVICE,
+    serialBaud: CAT_BAUD,
     flexUlHost: FLEX_UL_HOST,
     flexUlPort: FLEX_UL_PORT,
     flexDlHost: FLEX_DL_HOST,
@@ -182,7 +181,6 @@ function applyEndpoints(ep) {
   }
   if (typeof ep.radioProtocol === "string" && ep.radioProtocol.trim()) {
     let v = ep.radioProtocol.trim().toLowerCase();
-    // SmartSDR cannot use TCI
     if (normalizeRadioType(RADIO_TYPE) === "smartsdr") v = "cat";
     if ((v === "cat" || v === "tci") && v !== RADIO_PROTOCOL) {
       RADIO_PROTOCOL = v;
@@ -190,7 +188,6 @@ function applyEndpoints(ep) {
     }
   }
 
-  // Force protocol consistency after type change
   if (normalizeRadioType(RADIO_TYPE) === "smartsdr" && RADIO_PROTOCOL !== "cat") {
     RADIO_PROTOCOL = "cat";
     radioSelChanged = true;
@@ -226,10 +223,18 @@ function applyEndpoints(ep) {
     }
   }
 
-  if (typeof ep.catDevice === "string" && ep.catDevice.trim()) {
-    const d = ep.catDevice.trim();
-    if (d !== CAT_DEVICE) {
-      CAT_DEVICE = d;
+  const serialDev =
+    (typeof ep.serialDevice === "string" && ep.serialDevice.trim()) ||
+    (typeof ep.catDevice === "string" && ep.catDevice.trim()) ||
+    null;
+  if (serialDev && serialDev !== CAT_DEVICE) {
+    CAT_DEVICE = serialDev;
+    catChanged = true;
+  }
+  if (ep.serialBaud != null && Number.isFinite(Number(ep.serialBaud))) {
+    const b = parseInt(ep.serialBaud, 10);
+    if (b > 0 && b !== CAT_BAUD) {
+      CAT_BAUD = b;
       catChanged = true;
     }
   }
@@ -355,7 +360,9 @@ module.exports = {
   get CAT_DEVICE() {
     return CAT_DEVICE;
   },
-  CAT_BAUD,
+  get CAT_BAUD() {
+    return CAT_BAUD;
+  },
   CAT_CIV_ADDR,
   get FLEX_HOST() {
     return FLEX_UL_HOST;
@@ -392,4 +399,5 @@ module.exports = {
   tciUri,
   useFlexCat,
   useTci,
+  useSerialCat,
 };
