@@ -21,6 +21,7 @@ let reconnectTimer = null;
 let pollTimer = null;
 let nextAosAz = null;
 let logging = false;
+let quietUntil = 0; // suppress polls briefly after a P command
 
 let broadcastFn = () => {};
 
@@ -73,10 +74,14 @@ function stopPoll() {
 
 function startPoll() {
   stopPoll();
+  // Slow poll — Python never polled. Fast get_pos can interrupt set_pos
+  // on the RT-21 controller display / motion.
+  const interval = config.ROTOR_POLL_INTERVAL_MS || 5000;
   pollTimer = setInterval(() => {
     if (!antennaOn) return;
+    if (Date.now() < quietUntil) return; // stay quiet after a P command
     pollPositions();
-  }, 250);
+  }, interval);
 }
 
 function extractFirstNumber(buf) {
@@ -240,6 +245,7 @@ function disconnect() {
   stopPoll();
   antennaOn = false;
   logging = false;
+  quietUntil = 0;
 
   if (azSock) {
     try {
@@ -333,6 +339,7 @@ function applyEndpointChange() {
  *   - single shared 30 s timer
  *   - always send both axes when timer fires (no deadband)
  *   - command is absolute P <val> 0.0 on each axis
+ *   - brief quiet window so get_pos does not immediately follow
  */
 function setRotor(az, el) {
   if (!antennaOn) return;
@@ -360,9 +367,10 @@ function setRotor(az, el) {
     }
   }
 
-  // Advance timer only if at least one axis accepted the command
   if (sent) {
     lastRotorAt = now;
+    // Keep get_pos off the wire for a couple of seconds after set_pos
+    quietUntil = now + 2500;
   }
 }
 

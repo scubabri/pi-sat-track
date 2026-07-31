@@ -37,6 +37,13 @@ const ROTOR_MOVE_INTERVAL_MS = parseInt(
 // Match Python: no lead — command the current satellite position
 const ROTOR_LEAD_DEG = parseFloat(process.env.ROTOR_LEAD_DEG || "0");
 
+// Position poll interval (Python never polled; keep this slow so it
+// does not interrupt set_pos on the RT-21)
+const ROTOR_POLL_INTERVAL_MS = parseInt(
+  process.env.ROTOR_POLL_INTERVAL_MS || "5000",
+  10,
+);
+
 const DEFAULT_SAT = "RS-44";
 const MIN_EL = 0.0;
 const TRAIL_MINUTES = 30;
@@ -154,6 +161,7 @@ module.exports = {
   ROTOR_PARK_EL,
   ROTOR_MOVE_INTERVAL_MS,
   ROTOR_LEAD_DEG,
+  ROTOR_POLL_INTERVAL_MS,
   DEFAULT_SAT,
   MIN_EL,
   TRAIL_MINUTES,
