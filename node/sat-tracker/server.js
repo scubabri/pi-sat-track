@@ -18,6 +18,7 @@ const catalog = require("./lib/catalog");
 const state = require("./lib/state");
 const tci = require("./lib/tci");
 const flex = require("./lib/radios/flex");
+const icom = require("./lib/radios/icom");
 const rotor = require("./lib/rotor");
 const config = require("./lib/config");
 
@@ -80,22 +81,33 @@ function broadcastSats() {
   broadcast({ type: "sats", ...state.satsPayload("trackable") });
 }
 
+function activeDriver() {
+  if (config.useSerialCat()) return "serial";
+  if (config.useFlexCat()) return "flex";
+  if (config.useTci()) return "tci";
+  return "none";
+}
+
 function setRadio(on) {
-  if (config.useFlexCat()) {
-    if (tci.getRadioState().radioOn) tci.setRadio(false);
-    flex.setRadio(!!on);
-  } else {
-    if (flex.getRadioState().radioOn) flex.setRadio(false);
-    tci.setRadio(!!on);
-  }
+  const want = !!on;
+  // Turn off all others first
+  if (tci.getRadioState().radioOn) tci.setRadio(false);
+  if (flex.getRadioState().radioOn) flex.setRadio(false);
+  if (icom.getRadioState().radioOn) icom.setRadio(false);
+
+  if (!want) return;
+
+  if (config.useSerialCat()) icom.setRadio(true);
+  else if (config.useFlexCat()) flex.setRadio(true);
+  else tci.setRadio(true);
 }
 
 function setLock(on) {
-  if (config.useFlexCat()) flex.setLock(!!on);
+  if (config.useSerialCat()) icom.setLock(!!on);
+  else if (config.useFlexCat()) flex.setLock(!!on);
   else tci.setLock(!!on);
 }
 
-/** Push Doppler immediately so fine/center show up without waiting for tick */
 function pushNow() {
   const tk = state.computeTick();
   if (tk) broadcast(tk);
@@ -106,6 +118,7 @@ wss.on("connection", (ws) => {
   ws.send(JSON.stringify({ type: "sats", ...state.satsPayload("trackable") }));
   tci.broadcastStatus();
   flex.broadcastStatus();
+  icom.broadcastStatus();
   rotor.broadcastStatus();
 
   const s = state.computeState();
@@ -157,7 +170,10 @@ wss.on("connection", (ws) => {
       }
 
       if (msg.type === "fine") {
-        if (config.useFlexCat()) {
+        if (config.useSerialCat()) {
+          if (typeof msg.step === "number") icom.setStep(msg.step);
+          if (typeof msg.delta === "number") icom.adjustFine(msg.delta);
+        } else if (config.useFlexCat()) {
           if (typeof msg.step === "number") flex.setStep(msg.step);
           if (typeof msg.delta === "number") flex.adjustFine(msg.delta);
         } else {
@@ -168,7 +184,8 @@ wss.on("connection", (ws) => {
       }
 
       if (msg.type === "center") {
-        if (config.useFlexCat()) flex.center();
+        if (config.useSerialCat()) icom.center();
+        else if (config.useFlexCat()) flex.center();
         else tci.center();
         pushNow();
       }
@@ -177,6 +194,7 @@ wss.on("connection", (ws) => {
         const {
           tciChanged,
           rotorChanged,
+          catChanged,
           flexChanged,
           radioSelChanged,
         } = config.applyEndpoints({
@@ -192,30 +210,29 @@ wss.on("connection", (ws) => {
           flexHost: msg.flexHost,
           flexPort: msg.flexPort,
           serialDevice: msg.serialDevice,
+          serialBaud: msg.serialBaud,
+          catDevice: msg.serialDevice,
           rotorHost: msg.rotorHost,
           rotorAzPort: msg.rotorAzPort,
           rotorElPort: msg.rotorElPort,
         });
         console.log("Endpoints updated", config.getEndpoints());
-        console.log(
-          "Radio path:",
-          config.useFlexCat()
-            ? "Flex CAT"
-            : config.useTci()
-              ? "TCI"
-              : config.RADIO_TRANSPORT + "/" + config.RADIO_PROTOCOL,
-        );
+        console.log("Radio path:", activeDriver());
 
         if (tciChanged) tci.applyEndpointChange();
         if (flexChanged || radioSelChanged) flex.applyEndpointChange();
+        if (catChanged || radioSelChanged) icom.applyEndpointChange();
         if (rotorChanged) rotor.applyEndpointChange();
 
         if (radioSelChanged) {
-          const tciOn = tci.getRadioState().radioOn;
-          const flexOn = flex.getRadioState().radioOn;
-          if (tciOn || flexOn) {
+          const anyOn =
+            tci.getRadioState().radioOn ||
+            flex.getRadioState().radioOn ||
+            icom.getRadioState().radioOn;
+          if (anyOn) {
             tci.setRadio(false);
             flex.setRadio(false);
+            icom.setRadio(false);
             setRadio(true);
           }
         }
@@ -275,6 +292,14 @@ setInterval(() => {
         config.FLEX_DL_HOST +
         ":" +
         config.FLEX_DL_PORT,
+    );
+    console.log(
+      "Icom CI-V    " +
+        config.CAT_DEVICE +
+        " @ " +
+        config.CAT_BAUD +
+        " addr 0x" +
+        config.CAT_CIV_ADDR.toString(16).toUpperCase(),
     );
     console.log(
       "Tick " + TICK_MS + "ms (Doppler), state " + STATE_MS + "ms (map)",

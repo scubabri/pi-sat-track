@@ -24,6 +24,7 @@ const {
 } = require("./orbit");
 const tci = require("./tci");
 const flex = require("./radios/flex");
+const icom = require("./radios/icom");
 const rotor = require("./rotor");
 
 let currentSatKey = null;
@@ -52,6 +53,10 @@ function init(opts) {
     getContext: ctx,
     broadcast: broadcastFn,
   });
+  icom.init({
+    getContext: ctx,
+    broadcast: broadcastFn,
+  });
   rotor.init({
     broadcast: broadcastFn,
   });
@@ -59,7 +64,8 @@ function init(opts) {
 
 function applyLockDefaultForMode(modeStr) {
   const fm = isFmMode(modeStr);
-  if (config.useFlexCat()) flex.applyDefaultLock(fm);
+  if (config.useSerialCat()) icom.applyDefaultLock(fm);
+  else if (config.useFlexCat()) flex.applyDefaultLock(fm);
   else if (typeof tci.applyDefaultLock === "function") tci.applyDefaultLock(fm);
   else if (typeof tci.setLock === "function") tci.setLock(fm);
 }
@@ -114,6 +120,7 @@ async function loadSatellite(key) {
   lastAosAz = null;
   tci.resetOffsets();
   flex.resetOffsets();
+  icom.resetOffsets();
   const modes = info.modes || [];
   console.log(
     "Catalog freqs for",
@@ -167,6 +174,7 @@ function modesPayload(info) {
 }
 
 function activeRadioState() {
+  if (config.useSerialCat()) return icom.getRadioState();
   if (config.useFlexCat()) return flex.getRadioState();
   return tci.getRadioState();
 }
@@ -224,7 +232,11 @@ function computeTick() {
     }
   }
 
-  if (config.useFlexCat()) {
+  if (config.useSerialCat()) {
+    icom.pushFrequencies(ulHz, dlHz).catch((e) =>
+      console.warn("Icom push:", e.message),
+    );
+  } else if (config.useFlexCat()) {
     flex.pushFrequencies(ulHz, dlHz).catch((e) =>
       console.warn("Flex push:", e.message),
     );
