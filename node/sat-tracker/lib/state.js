@@ -57,6 +57,13 @@ function init(opts) {
   });
 }
 
+function applyLockDefaultForMode(modeStr) {
+  const fm = isFmMode(modeStr);
+  if (config.useFlexCat()) flex.applyDefaultLock(fm);
+  else if (typeof tci.applyDefaultLock === "function") tci.applyDefaultLock(fm);
+  else if (typeof tci.setLock === "function") tci.setLock(fm);
+}
+
 function setObserver(lat, lon, elevM) {
   observer = {
     latitude: satellite.degreesToRadians(lat),
@@ -92,6 +99,8 @@ function setModeIndex(index) {
   const info = getCatalog()[currentSatKey];
   const max = info && info.modes ? info.modes.length - 1 : 0;
   currentModeIndex = Math.max(0, Math.min(Math.floor(index), max));
+  const active = getActiveMode(info);
+  applyLockDefaultForMode(active && active.mode);
   return currentModeIndex;
 }
 
@@ -131,6 +140,8 @@ async function loadSatellite(key) {
       tleNote +
       (currentOrbit != null ? " orbit " + currentOrbit : ""),
   );
+  const active = getActiveMode(info);
+  applyLockDefaultForMode(active && active.mode);
 }
 
 function modesPayload(info) {
@@ -255,6 +266,7 @@ function computeTick() {
     passbandDl:
       activeMode && activeMode.downlink ? String(activeMode.downlink) : "-",
     radioOn: radio.radioOn,
+    locked: !!radio.locked,
     tciConnected: radio.tciConnected || radio.connected,
     manualDlOffset: radio.manualDlOffset || 0,
     ulFineOffset: radio.ulFineOffset || 0,
@@ -323,6 +335,7 @@ function computeState() {
     forward,
     passes,
     radioOn: radio.radioOn,
+    locked: !!radio.locked,
     tciConnected: radio.tciConnected || radio.connected,
     manualDlOffset: radio.manualDlOffset || 0,
     ulFineOffset: radio.ulFineOffset || 0,
