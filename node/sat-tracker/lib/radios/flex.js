@@ -1,10 +1,9 @@
 /**
  * FlexRadio SmartSDR driver.
- * - CAT TCP (UL/DL ports): frequency + mode (Kenwood FA/MD)
- * - SmartSDR API :4992: FM CTCSS (CAT has NO tone commands)
+ * - CAT TCP (UL/DL ports on SmartSDR PC): frequency + mode
+ * - SmartSDR API (radio LAN IP:4992): FM CTCSS
  *
- * Mode MD: 1 LSB, 2 USB, 3 CW, 4 FM
- * API: slice set N fm_tone_mode=CTCSS fm_tone_value=67.0
+ * CAT never supports TN/TO. 4992 is on the radio, not the Windows PC.
  */
 
 const net = require("net");
@@ -69,6 +68,14 @@ function anyConnected() {
   return ul.connected || dl.connected;
 }
 
+function apiHost() {
+  return (config.FLEX_API_HOST || "").trim();
+}
+
+function apiPort() {
+  return config.FLEX_API_PORT || 4992;
+}
+
 function statusPayload() {
   return {
     type: "flex",
@@ -81,6 +88,8 @@ function statusPayload() {
     dlWanted: dl.wanted,
     connecting: ul.connecting || dl.connecting,
     apiConnected: api.isConnected(),
+    apiHost: apiHost(),
+    apiPort: apiPort(),
     ulHost: config.FLEX_UL_HOST,
     ulPort: config.FLEX_UL_PORT,
     dlHost: config.FLEX_DL_HOST,
@@ -181,10 +190,8 @@ function sendCmd(link, cmd, expectReply) {
       return;
     }
     if (!cmd.endsWith(";")) cmd += ";";
-
     link.busy = true;
     link.buf = "";
-
     const onData = (chunk) => {
       link.buf += chunk.toString("ascii");
       if (link.buf.includes(";")) {
@@ -207,7 +214,6 @@ function sendCmd(link, cmd, expectReply) {
         link.socket.removeListener("error", onError);
       }
     };
-
     if (expectReply) {
       link.socket.on("data", onData);
       link.socket.on("error", onError);
@@ -216,7 +222,6 @@ function sendCmd(link, cmd, expectReply) {
         resolve(link.buf.trim() || "");
       }, 1200);
     }
-
     try {
       link.socket.write(cmd, "ascii", (err) => {
         if (err) {
@@ -241,14 +246,11 @@ function sendCmd(link, cmd, expectReply) {
 function openLink(link) {
   if (link.socket && link.connected) return Promise.resolve(true);
   if (link.connecting) return Promise.resolve(false);
-
   link.connecting = true;
   broadcastStatus();
-
   return new Promise((resolve) => {
     const { host, port } = linkHostPort(link);
     console.log("Flex", link.name.toUpperCase(), "connecting", host + ":" + port);
-
     const s = new net.Socket();
     let settled = false;
     const done = (ok) => {
@@ -266,7 +268,6 @@ function openLink(link) {
       }
       resolve(ok);
     };
-
     s.setTimeout(4000);
     s.once("connect", () => {
       s.setTimeout(0);
@@ -306,7 +307,6 @@ function openLink(link) {
     s.on("error", (err) => {
       console.warn("Flex", link.name.toUpperCase(), "error:", err.message);
     });
-
     try {
       s.connect(port, host);
     } catch (e) {
@@ -355,10 +355,16 @@ function setRadio(on) {
     dlFineOffset = 0;
     lastCtcssApplied = null;
     syncTonesFromCatalog();
-    // Open API for CTCSS (same radio IP as UL CAT host)
-    api.connect(config.FLEX_UL_HOST).then((ok) => {
-      if (ok) applyCtcssToRadio(true).catch(() => {});
-    });
+    const h = apiHost();
+    if (h) {
+      api.connect(h, apiPort()).then((ok) => {
+        if (ok) applyCtcssToRadio(true).catch(() => {});
+      });
+    } else {
+      console.log(
+        "Flex CTCSS: set radio API host (radio LAN IP, port 4992) in config to enable tones",
+      );
+    }
     broadcastStatus();
   } else {
     close();
@@ -439,16 +445,11 @@ function applyDefaultCtcss(accessHz, activationHz) {
   broadcastStatus();
 }
 
-/**
- * CTCSS via SmartSDR API port 4992 — NOT via CAT.
- * Official CAT command list has no TN/TO/CT/CN.
- */
 async function applyCtcssToRadio(force) {
   const hz = activeCtcssHz();
   const key = hz != null ? String(hz) : "off";
   if (!force && key === lastCtcssApplied) return;
 
-  // Ensure FM on UL CAT if connected (mode only)
   if (ul.connected) {
     try {
       await sendCmd(ul, "MD4;", false);
@@ -456,13 +457,24 @@ async function applyCtcssToRadio(force) {
     } catch (_) {}
   }
 
+  const h = apiHost();
+  if (!h) {
+    if (force) {
+      console.warn(
+        "Flex CTCSS: no radio API host set. " +
+          "CAT ports are on the Windows PC; API is on the radio IP:4992.",
+      );
+    }
+    return;
+  }
+
   if (!api.isConnected()) {
-    const ok = await api.connect(config.FLEX_UL_HOST);
+    const ok = await api.connect(h, apiPort());
     if (!ok) {
       console.warn(
-        "Flex CTCSS: API :4992 unreachable at",
-        config.FLEX_UL_HOST,
-        "— tone not set on radio",
+        "Flex CTCSS: cannot reach radio API",
+        h + ":" + apiPort(),
+        "— check radio LAN IP (not SmartSDR CAT host)",
       );
       return;
     }
@@ -666,7 +678,8 @@ function applyEndpointChange() {
   if (wasOn) {
     ul.wanted = ulWanted;
     dl.wanted = dlWanted;
-    api.connect(config.FLEX_UL_HOST).catch(() => {});
+    const h = apiHost();
+    if (h) api.connect(h, apiPort()).catch(() => {});
     if (ulWanted) openLink(ul).catch(() => {});
     if (dlWanted) openLink(dl).catch(() => {});
   }
