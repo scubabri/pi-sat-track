@@ -50,6 +50,9 @@ const ROTOR_STALL_RETRIES = parseInt(
 );
 const ROTOR_POLL_MS = parseInt(process.env.ROTOR_POLL_MS || "250", 10);
 
+// Angular leapfrog: command this many degrees ahead along-track (0 = off)
+const ROTOR_LEAD_DEG = parseFloat(process.env.ROTOR_LEAD_DEG || "4");
+
 const DEFAULT_SAT = "RS-44";
 const MIN_EL = 0.0;
 const TRAIL_MINUTES = 30;
@@ -187,6 +190,7 @@ module.exports = {
   ROTOR_STALL_MS,
   ROTOR_STALL_RETRIES,
   ROTOR_POLL_MS,
+  ROTOR_LEAD_DEG,
   DEFAULT_SAT,
   MIN_EL,
   TRAIL_MINUTES,

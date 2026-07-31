@@ -14,6 +14,7 @@ const {
 const { fetchTLE, cacheSatrec } = require("./tle");
 const {
   lookAngles,
+  lookAnglesLead,
   rangeRateKmS,
   groundPoint,
   buildTrail,
@@ -153,6 +154,11 @@ function computeTick() {
   const look = lookAngles(satrec, observer, now);
   if (!look) return null;
 
+  // Leapfrog target for rotor (actual look still used for UI / Doppler / log)
+  const leadDeg = config.ROTOR_LEAD_DEG || 0;
+  const leadLook =
+    leadDeg > 0 ? lookAnglesLead(satrec, observer, now, leadDeg) : look;
+
   const rr = rangeRateKmS(satrec, observer, now);
   const info = getCatalog()[currentSatKey] || {};
   const activeMode = getActiveMode(info);
@@ -194,12 +200,14 @@ function computeTick() {
 
   tci.pushFrequencies();
 
-  // Match Python: command the current satellite position (no lead)
-  rotor.updateTracking(look, lastAosAz);
+  // Rotor gets leapfrog target; park still uses current el gate
+  const trackLook = leadLook || look;
+  rotor.updateTracking(trackLook, lastAosAz);
 
   const r = rotor.getRotorState();
 
   if (r.antennaOn) {
+    // Log true sat position (not the lead point)
     rotor.logSample(look.az, look.el);
   }
 
@@ -211,6 +219,7 @@ function computeTick() {
     modes,
     time: now.toISOString(),
     look: { az: look.az, el: look.el, rangeKm: look.rangeKm },
+    leadLook: leadLook ? { az: leadLook.az, el: leadLook.el } : null,
     rangeRateKmS: rr,
     uplink,
     downlink,
