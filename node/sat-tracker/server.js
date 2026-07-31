@@ -82,13 +82,17 @@ function broadcastSats() {
 
 function setRadio(on) {
   if (config.useFlexCat()) {
-    // Ensure TCI is off when using Flex
     if (tci.getRadioState().radioOn) tci.setRadio(false);
     flex.setRadio(!!on);
   } else {
     if (flex.getRadioState().radioOn) flex.setRadio(false);
     tci.setRadio(!!on);
   }
+}
+
+function setLock(on) {
+  if (config.useFlexCat()) flex.setLock(!!on);
+  else tci.setLock(!!on);
 }
 
 wss.on("connection", (ws) => {
@@ -136,6 +140,10 @@ wss.on("connection", (ws) => {
 
       if (msg.type === "radio") {
         setRadio(!!msg.on);
+      }
+
+      if (msg.type === "lock") {
+        setLock(!!msg.on);
       }
 
       if (msg.type === "antenna") {
@@ -194,7 +202,6 @@ wss.on("connection", (ws) => {
         if (flexChanged || radioSelChanged) flex.applyEndpointChange();
         if (rotorChanged) rotor.applyEndpointChange();
 
-        // If radio selection changed while radio was on, re-route
         if (radioSelChanged) {
           const tciOn = tci.getRadioState().radioOn;
           const flexOn = flex.getRadioState().radioOn;
