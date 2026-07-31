@@ -18,9 +18,9 @@ const CATALOG_URL =
   "https://raw.githubusercontent.com/palewire/amateur-satellite-database/main/data/amsat-all-frequencies.json";
 const AMSAT_STATUS = "https://www.amsat.org/status/";
 
-let RADIO_TRANSPORT = process.env.RADIO_TRANSPORT || "tcp"; // tcp | serial
+let RADIO_TRANSPORT = process.env.RADIO_TRANSPORT || "tcp";
 let RADIO_TYPE = process.env.RADIO_TYPE || "smartsdr";
-let RADIO_PROTOCOL = process.env.RADIO_PROTOCOL || "cat"; // cat | tci
+let RADIO_PROTOCOL = process.env.RADIO_PROTOCOL || "cat";
 
 if (RADIO_TYPE === "flex") RADIO_TYPE = "smartsdr";
 
@@ -76,6 +76,11 @@ let FLEX_DL_HOST =
   process.env.FLEX_DL_HOST || process.env.FLEX_HOST || "172.17.18.229";
 let FLEX_DL_PORT = parseInt(process.env.FLEX_DL_PORT || "60001", 10);
 
+// SmartSDR API lives on the *radio* (not the Windows CAT host).
+// Empty = disabled until user sets the radio LAN IP.
+let FLEX_API_HOST = process.env.FLEX_API_HOST || "";
+let FLEX_API_PORT = parseInt(process.env.FLEX_API_PORT || "4992", 10);
+
 let FLEX_HOST = FLEX_UL_HOST;
 let FLEX_PORT = FLEX_UL_PORT;
 
@@ -130,18 +135,15 @@ function useTci() {
   );
 }
 
-/** True when serial transport is selected (any make/model). */
 function useSerialCat() {
   return RADIO_TRANSPORT === "serial";
 }
 
-/** True when the active serial model is the Icom IC-705 (or compatible CI-V). */
 function useIcomSerial() {
   if (RADIO_TRANSPORT !== "serial") return false;
   const make = String(SERIAL_MAKE || "").toLowerCase();
   const model = String(SERIAL_MODEL || "").toLowerCase();
   if (make && make !== "icom") return false;
-  // Default / unknown model → IC-705 path (only supported Icom so far)
   if (!model || model === "ic-705" || model === "ic705") return true;
   const m = findModel(make || "icom", model);
   return !!(m && m.supported && m.driver === "icom");
@@ -171,6 +173,8 @@ function getEndpoints() {
     flexDlPort: FLEX_DL_PORT,
     flexHost: FLEX_UL_HOST,
     flexPort: FLEX_UL_PORT,
+    flexApiHost: FLEX_API_HOST,
+    flexApiPort: FLEX_API_PORT,
     rotorHost: ROTOR_AZ_HOST,
     rotorAzPort: ROTOR_AZ_PORT,
     rotorElPort: ROTOR_EL_PORT,
@@ -225,7 +229,6 @@ function applyEndpoints(ep) {
     radioSelChanged = true;
   }
 
-  // Serial make / model
   if (typeof ep.serialMake === "string" && ep.serialMake.trim()) {
     const v = ep.serialMake.trim().toLowerCase();
     if (v !== SERIAL_MAKE) {
@@ -240,14 +243,6 @@ function applyEndpoints(ep) {
       SERIAL_MODEL = v;
       radioSelChanged = true;
       catChanged = true;
-    }
-  }
-
-  // Apply model defaults (baud / CIV) when known
-  const minfo = findModel(SERIAL_MAKE, SERIAL_MODEL);
-  if (minfo) {
-    if (minfo.defaultBaud && !ep.serialBaud) {
-      // keep user baud if provided; otherwise leave existing
     }
   }
 
@@ -341,6 +336,22 @@ function applyEndpoints(ep) {
     if (p > 0 && p < 65536 && p !== FLEX_UL_PORT) {
       FLEX_UL_PORT = p;
       FLEX_PORT = p;
+      flexChanged = true;
+    }
+  }
+
+  // Radio API (CTCSS) — host may be empty to disable
+  if (typeof ep.flexApiHost === "string") {
+    const h = ep.flexApiHost.trim();
+    if (h !== FLEX_API_HOST) {
+      FLEX_API_HOST = h;
+      flexChanged = true;
+    }
+  }
+  if (ep.flexApiPort != null && Number.isFinite(Number(ep.flexApiPort))) {
+    const p = parseInt(ep.flexApiPort, 10);
+    if (p > 0 && p < 65536 && p !== FLEX_API_PORT) {
+      FLEX_API_PORT = p;
       flexChanged = true;
     }
   }
@@ -447,6 +458,12 @@ module.exports = {
   },
   get FLEX_DL_PORT() {
     return FLEX_DL_PORT;
+  },
+  get FLEX_API_HOST() {
+    return FLEX_API_HOST;
+  },
+  get FLEX_API_PORT() {
+    return FLEX_API_PORT;
   },
   DEFAULT_SAT,
   MIN_EL,
