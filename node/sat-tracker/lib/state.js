@@ -55,11 +55,10 @@ function radio() {
 
 function applyLockDefaultForMode(modeStr) {
   const fm = isFmMode(modeStr);
-  // Apply to all drivers so switching radio paths keeps lock defaults
-  for (const d of radios.all()) {
-    if (typeof d.applyDefaultLock === "function") d.applyDefaultLock(fm);
-    else if (typeof d.setLock === "function") d.setLock(fm);
-  }
+  // Only the active path — avoids side effects on Flex API while on TCI
+  const r = radio();
+  if (typeof r.applyDefaultLock === "function") r.applyDefaultLock(fm);
+  else if (typeof r.setLock === "function") r.setLock(fm);
 }
 
 function applyUlFixedDefaultForMode(active) {
@@ -88,13 +87,20 @@ function applyCtcssDefaultForMode(info, active) {
     access = tones.access;
     activation = tones.activation;
   }
-  // All drivers — so Flex has tones even if TCI was active when sat loaded
-  for (const d of radios.all()) {
-    if (typeof d.applyDefaultCtcss === "function") {
-      d.applyDefaultCtcss(access, activation);
-    }
+  // Active radio only — Flex must not open :4992 while TCI is selected
+  const r = radio();
+  if (typeof r.applyDefaultCtcss === "function") {
+    r.applyDefaultCtcss(access, activation);
   }
-  console.log("CTCSS defaults → access", access, "activation", activation);
+  console.log(
+    "CTCSS defaults → access",
+    access,
+    "activation",
+    activation,
+    "(via",
+    r.meta && r.meta.id,
+    ")",
+  );
 }
 
 function setObserver(lat, lon, elevM) {
@@ -211,7 +217,6 @@ function modesPayload(info) {
       },
     ];
   }
-  // Ensure SO-50 / ISS overrides show even if mode object was stale
   for (const m of modes) {
     if (m.ctcssAccess == null && m.ctcssActivation == null && m.isFm) {
       const tones = parseCtcss(
@@ -245,7 +250,6 @@ function computeTick() {
   const rState = radio().getRadioState();
   const modes = modesPayload(info);
 
-  // Prefer driver tones; fall back to mode payload so UI always has Hz
   let ctcssAccessHz =
     rState.ctcssAccessHz != null
       ? rState.ctcssAccessHz
@@ -255,7 +259,8 @@ function computeTick() {
   let ctcssActivationHz =
     rState.ctcssActivationHz != null
       ? rState.ctcssActivationHz
-      : modes[currentModeIndex] && modes[currentModeIndex].ctcssActivation != null
+      : modes[currentModeIndex] &&
+          modes[currentModeIndex].ctcssActivation != null
         ? modes[currentModeIndex].ctcssActivation
         : null;
 
@@ -281,6 +286,7 @@ function computeTick() {
     if (freqs.ulMHz != null) {
       const f0 = freqs.ulMHz * 1e6;
       if (ulFixed) {
+        // Published uplink only (+ fine) — no Doppler (SO-50 SOP)
         const fTx = f0 + (rState.ulFineOffset || 0);
         ulDopplerHz = 0;
         ulHz = Math.round(fTx);
@@ -312,6 +318,7 @@ function computeTick() {
   }
 
   try {
+    // Always pass computed Hz — drivers must use these (incl. Fix UL)
     const p = radio().pushFrequencies(ulHz, dlHz);
     if (p && typeof p.catch === "function") {
       p.catch((e) => console.warn("Radio push:", e.message));
