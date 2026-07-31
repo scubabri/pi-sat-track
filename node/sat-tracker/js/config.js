@@ -43,6 +43,7 @@ function setVal(id, v) {
 
 function readFormConfig() {
   const elevRaw = document.getElementById("cfg-elev");
+  const prev = Object.assign(defaultsEndpoints(), loadConfig());
   return {
     callsign: val("cfg-callsign").trim().toUpperCase(),
     grid: val("cfg-grid").trim().toUpperCase(),
@@ -63,9 +64,10 @@ function readFormConfig() {
     serialDevice: val("cfg-serial-device").trim() || "/dev/ttyACM0",
     serialBaud: parseInt(val("cfg-serial-baud"), 10) || 19200,
 
-    rotorHost: val("cfg-rotor-host").trim() || "127.0.0.1",
-    rotorAzPort: parseInt(val("cfg-rotor-az-port"), 10) || 4535,
-    rotorElPort: parseInt(val("cfg-rotor-el-port"), 10) || 4536,
+    // Rotor fields removed from UI; keep last saved / defaults
+    rotorHost: prev.rotorHost,
+    rotorAzPort: prev.rotorAzPort,
+    rotorElPort: prev.rotorElPort,
   };
 }
 
@@ -89,10 +91,6 @@ function fillForm(cfg) {
 
   setVal("cfg-serial-device", d.serialDevice);
   setVal("cfg-serial-baud", d.serialBaud);
-
-  setVal("cfg-rotor-host", d.rotorHost);
-  setVal("cfg-rotor-az-port", d.rotorAzPort);
-  setVal("cfg-rotor-el-port", d.rotorElPort);
 
   updateRadioFormVisibility();
 }
