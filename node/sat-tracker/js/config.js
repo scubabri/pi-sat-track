@@ -2,7 +2,10 @@ const CONFIG_KEY = "satTrackerConfig";
 
 function loadConfig() {
   try {
-    return JSON.parse(localStorage.getItem(CONFIG_KEY)) || {};
+    const cfg = JSON.parse(localStorage.getItem(CONFIG_KEY)) || {};
+    // Migrate older "flex" radio type → smartsdr
+    if (cfg.radioType === "flex") cfg.radioType = "smartsdr";
+    return cfg;
   } catch {
     return {};
   }
@@ -15,8 +18,8 @@ function saveConfig(cfg) {
 function defaultsEndpoints() {
   return {
     radioTransport: "tcp", // tcp | serial
-    radioType: "flex", // flex (tcp) — more later
-    radioProtocol: "cat", // cat | tci
+    radioType: "smartsdr", // smartsdr | aethersdr
+    radioProtocol: "cat", // cat | tci (tci only valid for aethersdr)
     tciHost: "127.0.0.1",
     tciPort: 50001,
     flexUlHost: "172.17.18.229",
@@ -44,14 +47,20 @@ function setVal(id, v) {
 function readFormConfig() {
   const elevRaw = document.getElementById("cfg-elev");
   const prev = Object.assign(defaultsEndpoints(), loadConfig());
+  let radioType = val("cfg-radio-type") || "smartsdr";
+  if (radioType === "flex") radioType = "smartsdr";
+  let radioProtocol = val("cfg-radio-protocol") || "cat";
+  // SmartSDR has no TCI
+  if (radioType === "smartsdr") radioProtocol = "cat";
+
   return {
     callsign: val("cfg-callsign").trim().toUpperCase(),
     grid: val("cfg-grid").trim().toUpperCase(),
     elevation: elevRaw ? parseInt(elevRaw.value, 10) || 0 : 0,
 
     radioTransport: val("cfg-radio-transport") || "tcp",
-    radioType: val("cfg-radio-type") || "flex",
-    radioProtocol: val("cfg-radio-protocol") || "cat",
+    radioType,
+    radioProtocol,
 
     tciHost: val("cfg-tci-host").trim() || "127.0.0.1",
     tciPort: parseInt(val("cfg-tci-port"), 10) || 50001,
@@ -64,7 +73,6 @@ function readFormConfig() {
     serialDevice: val("cfg-serial-device").trim() || "/dev/ttyACM0",
     serialBaud: parseInt(val("cfg-serial-baud"), 10) || 19200,
 
-    // Rotor fields removed from UI; keep last saved / defaults
     rotorHost: prev.rotorHost,
     rotorAzPort: prev.rotorAzPort,
     rotorElPort: prev.rotorElPort,
@@ -73,6 +81,8 @@ function readFormConfig() {
 
 function fillForm(cfg) {
   const d = Object.assign(defaultsEndpoints(), cfg || {});
+  if (d.radioType === "flex") d.radioType = "smartsdr";
+
   setVal("cfg-callsign", d.callsign || "");
   setVal("cfg-grid", d.grid || "");
   setVal("cfg-elev", d.elevation != null ? d.elevation : "");
@@ -95,10 +105,43 @@ function fillForm(cfg) {
   updateRadioFormVisibility();
 }
 
+function updateProtocolOptions() {
+  const radioType = val("cfg-radio-type") || "smartsdr";
+  const proto = document.getElementById("cfg-radio-protocol");
+  if (!proto) return;
+
+  const current = proto.value;
+  proto.innerHTML = "";
+
+  const add = (value, label) => {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = label;
+    proto.appendChild(opt);
+  };
+
+  // SmartSDR: CAT only
+  // AetherSDR: CAT + TCI
+  add("cat", "CAT");
+  if (radioType === "aethersdr") {
+    add("tci", "TCI");
+  }
+
+  if (radioType === "smartsdr") {
+    proto.value = "cat";
+  } else if (current === "tci" || current === "cat") {
+    proto.value = current;
+  } else {
+    proto.value = "cat";
+  }
+}
+
 function updateRadioFormVisibility() {
   const transport = val("cfg-radio-transport") || "tcp";
+  const radioType = val("cfg-radio-type") || "smartsdr";
+
+  updateProtocolOptions();
   const protocol = val("cfg-radio-protocol") || "cat";
-  const radioType = val("cfg-radio-type") || "flex";
 
   const tcpBlock = document.getElementById("cfg-tcp-block");
   const serialBlock = document.getElementById("cfg-serial-block");
@@ -109,10 +152,16 @@ function updateRadioFormVisibility() {
   if (serialBlock) serialBlock.hidden = transport !== "serial";
 
   if (transport === "tcp") {
-    const isTci = protocol === "tci";
-    const isFlexCat = protocol === "cat" && radioType === "flex";
+    // TCI only on AetherSDR
+    const isTci = protocol === "tci" && radioType === "aethersdr";
+    // CAT over TCP: SmartSDR always, or AetherSDR when CAT selected
+    const isCatTcp =
+      protocol === "cat" &&
+      (radioType === "smartsdr" ||
+        radioType === "aethersdr" ||
+        radioType === "flex");
     if (tciBlock) tciBlock.hidden = !isTci;
-    if (flexCatBlock) flexCatBlock.hidden = !isFlexCat;
+    if (flexCatBlock) flexCatBlock.hidden = !isCatTcp;
   } else {
     if (tciBlock) tciBlock.hidden = true;
     if (flexCatBlock) flexCatBlock.hidden = true;
@@ -202,5 +251,6 @@ function applySavedGrid() {
 /** Call after WebSocket opens so server gets saved endpoints */
 function pushSavedEndpoints() {
   const cfg = Object.assign(defaultsEndpoints(), loadConfig());
+  if (cfg.radioType === "flex") cfg.radioType = "smartsdr";
   sendEndpointsToServer(cfg);
 }
