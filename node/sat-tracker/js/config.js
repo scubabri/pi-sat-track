@@ -52,6 +52,8 @@ function defaultsEndpoints() {
     flexUlPort: 60002,
     flexDlHost: "172.17.18.229",
     flexDlPort: 60001,
+    flexApiHost: "172.17.18.46",
+    flexApiPort: 4992,
     serialDevice: "/dev/ttyACM0",
     serialBaud: 19200,
     rotorHost: "127.0.0.1",
@@ -164,7 +166,6 @@ function populateSerialModels(makeId, selected) {
     hint.textContent = info && info.hint ? info.hint : "";
   }
 
-  // Apply model defaults for device/baud if fields still at generic defaults
   if (info) {
     const dev = document.getElementById("cfg-serial-device");
     const baud = document.getElementById("cfg-serial-baud");
@@ -217,6 +218,11 @@ function readFormConfig() {
     prev.flexDlHost || "172.17.18.229",
     prev.flexDlPort || 60001,
   );
+  const api = parseEndpoint(
+    val("cfg-flex-api-endpoint"),
+    prev.flexApiHost || "",
+    prev.flexApiPort || 4992,
+  );
 
   return {
     callsign: val("cfg-callsign").trim().toUpperCase(),
@@ -237,6 +243,8 @@ function readFormConfig() {
     flexUlPort: ul.port,
     flexDlHost: dl.host,
     flexDlPort: dl.port,
+    flexApiHost: api.host,
+    flexApiPort: api.port,
 
     serialDevice: val("cfg-serial-device").trim() || "/dev/ttyACM0",
     serialBaud: parseInt(val("cfg-serial-baud"), 10) || 19200,
@@ -262,6 +270,10 @@ function fillForm(cfg) {
   setVal("cfg-tci-endpoint", formatEndpoint(d.tciHost, d.tciPort));
   setVal("cfg-flex-ul-endpoint", formatEndpoint(d.flexUlHost, d.flexUlPort));
   setVal("cfg-flex-dl-endpoint", formatEndpoint(d.flexDlHost, d.flexDlPort));
+  setVal(
+    "cfg-flex-api-endpoint",
+    formatEndpoint(d.flexApiHost, d.flexApiPort || 4992),
+  );
 
   setVal("cfg-serial-device", d.serialDevice);
   setVal("cfg-serial-baud", d.serialBaud);
@@ -349,6 +361,8 @@ function sendEndpointsToServer(cfg) {
       flexUlPort: cfg.flexUlPort,
       flexDlHost: cfg.flexDlHost,
       flexDlPort: cfg.flexDlPort,
+      flexApiHost: cfg.flexApiHost,
+      flexApiPort: cfg.flexApiPort,
       serialDevice: cfg.serialDevice,
       serialBaud: cfg.serialBaud,
       rotorHost: cfg.rotorHost,
