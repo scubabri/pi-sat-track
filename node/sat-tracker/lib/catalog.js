@@ -15,6 +15,12 @@ let catalogNote = "not loaded";
 let ACTIVE = new Set();
 let statusNote = "not loaded";
 
+/** Known dual-tone FM sats (Hz). Access is normal ops; activation arms timer. */
+const CTCSS_OVERRIDES = {
+  "SO-50": { access: 67.0, activation: 74.4 },
+  SO50: { access: 67.0, activation: 74.4 },
+};
+
 function ensureCacheDir() {
   if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 }
@@ -25,14 +31,12 @@ function norm(s) {
     .replace(/[^A-Z0-9]/g, "");
 }
 
-/** RS-44, AO-7, FO-29 from spaced/hyphenated names */
 function designator(name) {
   const m = String(name || "").match(/\b([A-Z]{1,4})[\s-]?(\d{1,3}[A-Z]?)\b/i);
   if (!m) return null;
   return (m[1] + "-" + m[2]).toUpperCase();
 }
 
-/** RS44 / AO7 callsigns → RS-44 / AO-7 */
 function callsignDesignator(cs) {
   if (!cs) return null;
   const s = String(cs).trim().toUpperCase();
@@ -48,7 +52,6 @@ function makeKey(name, norad, callsign) {
   return norm(name).slice(0, 16) || "UNKNOWN";
 }
 
-/** Prefer clean designator names (RS-44) over project names (DOSAAF-85) */
 function betterName(a, b) {
   if (!a) return b;
   if (!b) return a;
@@ -101,6 +104,62 @@ function isInverting(mode) {
   if (/INVERT/.test(m)) return true;
   if (/\bSSB\b|\bCW\b|\bLINEAR\b|\bA\b|\bB\b/.test(m)) return true;
   return true;
+}
+
+/**
+ * Extract CTCSS tones from mode text + known sat overrides.
+ * Returns { access, activation } in Hz (or null).
+ * SO-50 style: activation arms timer; access is talk tone.
+ */
+function parseCtcss(modeStr, satKey, satName) {
+  const result = { access: null, activation: null };
+  const m = String(modeStr || "");
+
+  // "CTCSS 67.0" / "67.0 Hz CTCSS" / "PL 67"
+  const tones = [];
+  const re =
+    /(?:CTCSS|PL|TONE)\s*[:=]?\s*(\d{2,3}(?:\.\d)?)|(\d{2,3}\.\d)\s*(?:Hz)?\s*(?:CTCSS|PL)/gi;
+  let match;
+  while ((match = re.exec(m)) !== null) {
+    const v = parseFloat(match[1] || match[2]);
+    if (Number.isFinite(v) && v >= 67 && v <= 254.1) tones.push(v);
+  }
+  // bare "67.0" near CTCSS word
+  if (!tones.length && /CTCSS|\bPL\b/i.test(m)) {
+    const bare = m.match(/\b(6[7-9]|[7-9]\d|1\d{2}|2[0-4]\d)(?:\.\d)?\b/);
+    if (bare) {
+      const v = parseFloat(bare[0]);
+      if (v >= 67 && v <= 254.1) tones.push(v);
+    }
+  }
+
+  if (tones.length >= 2) {
+    // Convention: lower or first listed often access; activation often 74.4
+    const act = tones.find((t) => Math.abs(t - 74.4) < 0.05);
+    if (act != null) {
+      result.activation = act;
+      result.access = tones.find((t) => t !== act) || tones[0];
+    } else {
+      result.access = tones[0];
+      result.activation = tones[1];
+    }
+  } else if (tones.length === 1) {
+    result.access = tones[0];
+  }
+
+  const keys = [satKey, satName, designator(satName), designator(satKey)]
+    .filter(Boolean)
+    .map((k) => String(k).toUpperCase());
+  for (const k of keys) {
+    const o = CTCSS_OVERRIDES[k] || CTCSS_OVERRIDES[norm(k)];
+    if (o) {
+      if (o.access != null) result.access = o.access;
+      if (o.activation != null) result.activation = o.activation;
+      break;
+    }
+  }
+
+  return result;
 }
 
 function scoreRow(row) {
@@ -197,7 +256,6 @@ function parseAmsatJson(arr) {
       continue;
     }
 
-    // Prefer RS-44 over DOSAAF-85
     prev.name = betterName(prev.name, entry.name);
 
     if (entry.callsign && !prev.callsign) {
@@ -252,6 +310,14 @@ function parseAmsatJson(arr) {
     entry.key = key;
     entry.display = clean;
     entry.trackable = !!entry.norad;
+
+    // Attach CTCSS to each mode
+    for (const mo of entry.modes) {
+      const tones = parseCtcss(mo.mode, key, entry.name);
+      mo.ctcssAccess = tones.access;
+      mo.ctcssActivation = tones.activation;
+    }
+
     catalog[key] = entry;
   }
   return catalog;
@@ -515,6 +581,7 @@ module.exports = {
   centerFreqMHz,
   isFmMode,
   isInverting,
+  parseCtcss,
   formatFreqDisplay,
   formatFreqDisplayFromMode,
   isHeard,
