@@ -13,6 +13,7 @@
     />
     <link rel="stylesheet" href="css/style.css" />
     <link rel="stylesheet" href="css/lock.css" />
+    <link rel="stylesheet" href="css/fine-ctcss.css" />
   </head>
   <body>
     <header id="topbar">
@@ -240,44 +241,48 @@
             <div class="freq-value downlink" id="freq-dl">-</div>
             <div class="freq-doppler" id="freq-dl-doppler"></div>
           </div>
-          <div class="fine-tune">
-            <button
-              type="button"
-              id="btn-fine-minus"
-              class="btn-icon"
-              title="UL fine −"
-            >
-              −
-            </button>
-            <button
-              type="button"
-              id="btn-fine-plus"
-              class="btn-icon"
-              title="UL fine +"
-            >
-              +
-            </button>
-            <input
-              type="number"
-              id="fine-step"
-              value="100"
-              min="1"
-              step="1"
-              title="UL fine step (Hz). Double-click to reset."
-            />
-            <span class="unit">Hz</span>
-            <span id="fine-offset" class="fine-offset" title="UL fine offset"
-              >0 Hz</span
-            >
-            <button
-              type="button"
-              id="btn-lock"
-              class="btn-lock"
-              title="Lock VFO — ignore operator DL tunes (FM default ON)"
-            >
-              LOCK
-            </button>
+
+          <div class="fine-tune-block">
+            <div class="fine-row">
+              <span class="fine-side">UL</span>
+              <button type="button" id="btn-fine-ul-minus" class="btn-icon" title="UL −">−</button>
+              <button type="button" id="btn-fine-ul-plus" class="btn-icon" title="UL +">+</button>
+              <span id="fine-offset-ul" class="fine-offset">0 Hz</span>
+            </div>
+            <div class="fine-row">
+              <span class="fine-side">DL</span>
+              <button type="button" id="btn-fine-dl-minus" class="btn-icon" title="DL −">−</button>
+              <button type="button" id="btn-fine-dl-plus" class="btn-icon" title="DL +">+</button>
+              <span id="fine-offset-dl" class="fine-offset">0 Hz</span>
+            </div>
+            <div class="fine-row">
+              <input
+                type="number"
+                id="fine-step"
+                value="100"
+                min="1"
+                step="1"
+                title="Fine step (Hz). Double-click to center."
+              />
+              <span class="unit">Hz</span>
+              <button type="button" id="btn-fine-center" class="btn-icon" title="Center offsets">⌖</button>
+              <button
+                type="button"
+                id="btn-lock"
+                class="btn-lock"
+                title="Lock VFO — ignore operator DL tunes (FM default ON)"
+              >
+                LOCK
+              </button>
+            </div>
+            <div id="ctcss-row" class="ctcss-row" hidden>
+              <span class="ctcss-label">CTCSS</span>
+              <button type="button" id="btn-ctcss-access" class="btn-ctcss">Access</button>
+              <button type="button" id="btn-ctcss-activation" class="btn-ctcss">Activate</button>
+              <button type="button" id="btn-ctcss-off" class="btn-ctcss">Off</button>
+            </div>
           </div>
+
           <div class="passband" id="passband">
             <div class="passband-row">
               <span class="passband-label">UL passband</span>
@@ -381,6 +386,7 @@
     <script src="js/config.js"></script>
     <script src="js/tracker.js"></script>
     <script src="js/lock-ui.js"></script>
+    <script src="js/fine-ctcss.js"></script>
     <script src="js/app.js"></script>
   </body>
 </html>
