@@ -16,12 +16,17 @@ let connecting = false;
 let locked = false;
 let manualDlOffset = 0;
 let ulFineOffset = 0;
+let dlFineOffset = 0;
 let lastCmdDl = 0;
 let lastCmdUl = 0;
 let lastModDl = "";
 let lastModUl = "";
 let digitStep = 100;
 let reconnectTimer = null;
+/** 'off' | 'access' | 'activation' */
+let ctcssMode = "off";
+let ctcssAccessHz = null;
+let ctcssActivationHz = null;
 
 let getCtx = () => ({
   satrec: null,
@@ -48,11 +53,15 @@ function statusPayload() {
     uri: config.TCI_URI,
     manualDlOffset,
     ulFineOffset,
+    dlFineOffset,
     step: digitStep,
     lastCmdDl,
     lastCmdUl,
     lastModDl,
     lastModUl,
+    ctcssMode,
+    ctcssAccessHz,
+    ctcssActivationHz,
   };
 }
 
@@ -202,6 +211,7 @@ async function connect() {
     radioOn = true;
     manualDlOffset = 0;
     ulFineOffset = 0;
+    dlFineOffset = 0;
     lastCmdDl = 0;
     lastCmdUl = 0;
     lastModDl = "";
@@ -239,7 +249,7 @@ async function connect() {
             if (rr != null) {
               const f0 = freqs.dlMHz * 1e6;
               const df = 1 - rr / config.C_MS;
-              manualDlOffset = freq - f0 * df;
+              manualDlOffset = freq - f0 * df - dlFineOffset;
               broadcastStatus();
             }
           }
@@ -341,8 +351,11 @@ function applyEndpointChange() {
   }
 }
 
-function adjustFine(delta) {
-  if (typeof delta === "number") ulFineOffset += delta;
+/** side: 'ul' | 'dl' (default ul) */
+function adjustFine(delta, side) {
+  if (typeof delta !== "number") return;
+  if (side === "dl") dlFineOffset += delta;
+  else ulFineOffset += delta;
   broadcastStatus();
 }
 
@@ -354,16 +367,55 @@ function setStep(step) {
 function center() {
   manualDlOffset = 0;
   ulFineOffset = 0;
+  dlFineOffset = 0;
   broadcastStatus();
 }
 
 function resetOffsets() {
   manualDlOffset = 0;
   ulFineOffset = 0;
+  dlFineOffset = 0;
   lastCmdDl = 0;
   lastCmdUl = 0;
   lastModDl = "";
   lastModUl = "";
+}
+
+/**
+ * which: 'off' | 'access' | 'activation'
+ * Mutually exclusive — only one active at a time.
+ */
+function setCtcss(which) {
+  if (which === "access" && ctcssAccessHz != null) ctcssMode = "access";
+  else if (which === "activation" && ctcssActivationHz != null)
+    ctcssMode = "activation";
+  else ctcssMode = "off";
+  console.log("TCI CTCSS", ctcssMode, activeCtcssHz());
+  // TCI tone encode depends on AetherSDR support — frequency tracking still applies;
+  // UI state is authoritative for operator.
+  broadcastStatus();
+}
+
+function applyDefaultCtcss(accessHz, activationHz) {
+  ctcssAccessHz = accessHz != null ? accessHz : null;
+  ctcssActivationHz = activationHz != null ? activationHz : null;
+  if (ctcssAccessHz != null) ctcssMode = "access";
+  else ctcssMode = "off";
+  console.log(
+    "TCI CTCSS default",
+    ctcssMode,
+    "access",
+    ctcssAccessHz,
+    "act",
+    ctcssActivationHz,
+  );
+  broadcastStatus();
+}
+
+function activeCtcssHz() {
+  if (ctcssMode === "access") return ctcssAccessHz;
+  if (ctcssMode === "activation") return ctcssActivationHz;
+  return null;
 }
 
 function pushFrequencies() {
@@ -389,7 +441,9 @@ function pushFrequencies() {
   let desiredUl = null;
 
   if (freqs.dlMHz != null) {
-    desiredDl = Math.round(freqs.dlMHz * 1e6 * df + manualDlOffset);
+    desiredDl = Math.round(
+      freqs.dlMHz * 1e6 * df + manualDlOffset + dlFineOffset,
+    );
   }
   if (freqs.ulMHz != null) {
     const f0 = freqs.ulMHz * 1e6;
@@ -416,11 +470,15 @@ function getRadioState() {
     connecting,
     manualDlOffset,
     ulFineOffset,
+    dlFineOffset,
     lastCmdDl,
     lastCmdUl,
     lastModDl,
     lastModUl,
     step: digitStep,
+    ctcssMode,
+    ctcssAccessHz,
+    ctcssActivationHz,
   };
 }
 
@@ -433,6 +491,8 @@ module.exports = {
   setStep,
   center,
   resetOffsets,
+  setCtcss,
+  applyDefaultCtcss,
   pushFrequencies,
   getRadioState,
   statusPayload,
