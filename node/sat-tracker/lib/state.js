@@ -23,6 +23,7 @@ const {
   passSkyPath,
 } = require("./orbit");
 const tci = require("./tci");
+const flex = require("./radios/flex");
 const rotor = require("./rotor");
 
 let currentSatKey = null;
@@ -46,6 +47,7 @@ function init(opts) {
     getContext: () => ({ satrec, observer, currentSatKey, currentModeIndex }),
     broadcast: broadcastFn,
   });
+  flex.init({ broadcast: broadcastFn });
   rotor.init({
     broadcast: broadcastFn,
   });
@@ -98,6 +100,7 @@ async function loadSatellite(key) {
   currentNorad = info.norad;
   lastAosAz = null;
   tci.resetOffsets();
+  flex.resetOffsets();
   const modes = info.modes || [];
   console.log(
     "Catalog freqs for",
@@ -148,13 +151,17 @@ function modesPayload(info) {
   return modes;
 }
 
+function activeRadioState() {
+  if (config.useFlexCat()) return flex.getRadioState();
+  return tci.getRadioState();
+}
+
 function computeTick() {
   if (!satrec) return null;
   const now = new Date();
   const look = lookAngles(satrec, observer, now);
   if (!look) return null;
 
-  // Leapfrog target for rotor (actual look still used for UI / Doppler / log)
   const leadDeg = config.ROTOR_LEAD_DEG || 0;
   const leadLook =
     leadDeg > 0 ? lookAnglesLead(satrec, observer, now, leadDeg) : look;
@@ -164,7 +171,7 @@ function computeTick() {
   const activeMode = getActiveMode(info);
   const freqs = formatFreqDisplayFromMode(activeMode);
   const inverting = isInverting(activeMode && activeMode.mode);
-  const radio = tci.getRadioState();
+  const radio = activeRadioState();
   const modes = modesPayload(info);
 
   let ulDopplerHz = null;
@@ -178,7 +185,7 @@ function computeTick() {
     const df = 1 - rr / C_MS;
     if (freqs.dlMHz != null) {
       const f0 = freqs.dlMHz * 1e6;
-      const fRx = f0 * df + radio.manualDlOffset;
+      const fRx = f0 * df + (radio.manualDlOffset || 0);
       dlDopplerHz = f0 * df - f0;
       dlHz = Math.round(fRx);
       downlink = (fRx / 1e6).toFixed(6);
@@ -187,10 +194,14 @@ function computeTick() {
       const f0 = freqs.ulMHz * 1e6;
       let fTx;
       if (inverting) {
-        fTx = f0 * (2 - df) - radio.manualDlOffset + radio.ulFineOffset;
+        fTx =
+          f0 * (2 - df) -
+          (radio.manualDlOffset || 0) +
+          (radio.ulFineOffset || 0);
         ulDopplerHz = f0 * (2 - df) - f0;
       } else {
-        fTx = f0 * df + radio.manualDlOffset + radio.ulFineOffset;
+        fTx =
+          f0 * df + (radio.manualDlOffset || 0) + (radio.ulFineOffset || 0);
         ulDopplerHz = f0 * df - f0;
       }
       ulHz = Math.round(fTx);
@@ -198,16 +209,20 @@ function computeTick() {
     }
   }
 
-  tci.pushFrequencies();
+  if (config.useFlexCat()) {
+    flex.pushFrequencies(ulHz, dlHz).catch((e) =>
+      console.warn("Flex push:", e.message),
+    );
+  } else {
+    tci.pushFrequencies();
+  }
 
-  // Rotor gets leapfrog target; park still uses current el gate
   const trackLook = leadLook || look;
   rotor.updateTracking(trackLook, lastAosAz);
 
   const r = rotor.getRotorState();
 
   if (r.antennaOn) {
-    // Log true sat position (not the lead point)
     rotor.logSample(look.az, look.el);
   }
 
@@ -236,9 +251,9 @@ function computeTick() {
     passbandDl:
       activeMode && activeMode.downlink ? String(activeMode.downlink) : "-",
     radioOn: radio.radioOn,
-    tciConnected: radio.tciConnected,
-    manualDlOffset: radio.manualDlOffset,
-    ulFineOffset: radio.ulFineOffset,
+    tciConnected: radio.tciConnected || radio.connected,
+    manualDlOffset: radio.manualDlOffset || 0,
+    ulFineOffset: radio.ulFineOffset || 0,
     antennaOn: r.antennaOn,
     rotorAz: r.az,
     rotorEl: r.el,
@@ -271,7 +286,7 @@ function computeState() {
 
   const info = getCatalog()[currentSatKey] || {};
   const tick = computeTick();
-  const radio = tci.getRadioState();
+  const radio = activeRadioState();
   const r = rotor.getRotorState();
 
   return {
@@ -304,9 +319,9 @@ function computeState() {
     forward,
     passes,
     radioOn: radio.radioOn,
-    tciConnected: radio.tciConnected,
-    manualDlOffset: radio.manualDlOffset,
-    ulFineOffset: radio.ulFineOffset,
+    tciConnected: radio.tciConnected || radio.connected,
+    manualDlOffset: radio.manualDlOffset || 0,
+    ulFineOffset: radio.ulFineOffset || 0,
     antennaOn: r.antennaOn,
     rotorAz: r.az,
     rotorEl: r.el,

@@ -8,10 +8,6 @@ const {
   PORT,
   MIME,
   TCI_URI,
-  ROTOR_AZ_HOST,
-  ROTOR_AZ_PORT,
-  ROTOR_EL_HOST,
-  ROTOR_EL_PORT,
   REFRESH_MS,
   SATS_BROADCAST_MS,
   TICK_MS,
@@ -21,6 +17,7 @@ const {
 const catalog = require("./lib/catalog");
 const state = require("./lib/state");
 const tci = require("./lib/tci");
+const flex = require("./lib/radios/flex");
 const rotor = require("./lib/rotor");
 const config = require("./lib/config");
 
@@ -83,10 +80,22 @@ function broadcastSats() {
   broadcast({ type: "sats", ...state.satsPayload("trackable") });
 }
 
+function setRadio(on) {
+  if (config.useFlexCat()) {
+    // Ensure TCI is off when using Flex
+    if (tci.getRadioState().radioOn) tci.setRadio(false);
+    flex.setRadio(!!on);
+  } else {
+    if (flex.getRadioState().radioOn) flex.setRadio(false);
+    tci.setRadio(!!on);
+  }
+}
+
 wss.on("connection", (ws) => {
   console.log("Client connected");
   ws.send(JSON.stringify({ type: "sats", ...state.satsPayload("trackable") }));
   tci.broadcastStatus();
+  flex.broadcastStatus();
   rotor.broadcastStatus();
 
   const s = state.computeState();
@@ -126,7 +135,7 @@ wss.on("connection", (ws) => {
       }
 
       if (msg.type === "radio") {
-        tci.setRadio(!!msg.on);
+        setRadio(!!msg.on);
       }
 
       if (msg.type === "antenna") {
@@ -134,33 +143,71 @@ wss.on("connection", (ws) => {
       }
 
       if (msg.type === "fine") {
-        if (typeof msg.delta === "number") tci.adjustFine(msg.delta);
-        if (typeof msg.step === "number") tci.setStep(msg.step);
+        if (config.useFlexCat()) {
+          if (typeof msg.delta === "number") flex.adjustFine(msg.delta);
+          if (typeof msg.step === "number") flex.setStep(msg.step);
+        } else {
+          if (typeof msg.delta === "number") tci.adjustFine(msg.delta);
+          if (typeof msg.step === "number") tci.setStep(msg.step);
+        }
       }
 
       if (msg.type === "center") {
-        tci.center();
+        if (config.useFlexCat()) flex.center();
+        else tci.center();
       }
+
       if (msg.type === "endpoints") {
-        const prev = catalog; // silence unused if any
-        const { tciChanged, rotorChanged } =
-          require("./lib/config").applyEndpoints({
-            tciHost: msg.tciHost,
-            tciPort: msg.tciPort,
-            rotorHost: msg.rotorHost,
-            rotorAzPort: msg.rotorAzPort,
-            rotorElPort: msg.rotorElPort,
-          });
+        const {
+          tciChanged,
+          rotorChanged,
+          flexChanged,
+          radioSelChanged,
+        } = config.applyEndpoints({
+          radioTransport: msg.radioTransport,
+          radioType: msg.radioType,
+          radioProtocol: msg.radioProtocol,
+          tciHost: msg.tciHost,
+          tciPort: msg.tciPort,
+          flexUlHost: msg.flexUlHost,
+          flexUlPort: msg.flexUlPort,
+          flexDlHost: msg.flexDlHost,
+          flexDlPort: msg.flexDlPort,
+          flexHost: msg.flexHost,
+          flexPort: msg.flexPort,
+          serialDevice: msg.serialDevice,
+          rotorHost: msg.rotorHost,
+          rotorAzPort: msg.rotorAzPort,
+          rotorElPort: msg.rotorElPort,
+        });
+        console.log("Endpoints updated", config.getEndpoints());
         console.log(
-          "Endpoints updated",
-          require("./lib/config").getEndpoints(),
+          "Radio path:",
+          config.useFlexCat()
+            ? "Flex CAT"
+            : config.useTci()
+              ? "TCI"
+              : config.RADIO_TRANSPORT + "/" + config.RADIO_PROTOCOL,
         );
+
         if (tciChanged) tci.applyEndpointChange();
+        if (flexChanged || radioSelChanged) flex.applyEndpointChange();
         if (rotorChanged) rotor.applyEndpointChange();
-        // Echo current endpoints to all clients
+
+        // If radio selection changed while radio was on, re-route
+        if (radioSelChanged) {
+          const tciOn = tci.getRadioState().radioOn;
+          const flexOn = flex.getRadioState().radioOn;
+          if (tciOn || flexOn) {
+            tci.setRadio(false);
+            flex.setRadio(false);
+            setRadio(true);
+          }
+        }
+
         broadcast({
           type: "endpoints",
-          ...require("./lib/config").getEndpoints(),
+          ...config.getEndpoints(),
         });
       }
     } catch (e) {
@@ -202,8 +249,18 @@ setInterval(() => {
   server.listen(PORT, "0.0.0.0", () => {
     console.log("Sat Tracker  http://127.0.0.1:" + PORT);
     console.log("TCI target   " + TCI_URI);
-    console.log("Rotor AZ     " + ROTOR_AZ_HOST + ":" + ROTOR_AZ_PORT);
-    console.log("Rotor EL     " + ROTOR_EL_HOST + ":" + ROTOR_EL_PORT);
+    console.log(
+      "Flex UL      " +
+        config.FLEX_UL_HOST +
+        ":" +
+        config.FLEX_UL_PORT,
+    );
+    console.log(
+      "Flex DL      " +
+        config.FLEX_DL_HOST +
+        ":" +
+        config.FLEX_DL_PORT,
+    );
     console.log(
       "Tick " + TICK_MS + "ms (Doppler), state " + STATE_MS + "ms (map)",
     );
