@@ -88,9 +88,14 @@ function activeDriver() {
   return "none";
 }
 
+function activeRadio() {
+  if (config.useSerialCat()) return icom;
+  if (config.useFlexCat()) return flex;
+  return tci;
+}
+
 function setRadio(on) {
   const want = !!on;
-  // Turn off all others first
   if (tci.getRadioState().radioOn) tci.setRadio(false);
   if (flex.getRadioState().radioOn) flex.setRadio(false);
   if (icom.getRadioState().radioOn) icom.setRadio(false);
@@ -170,23 +175,25 @@ wss.on("connection", (ws) => {
       }
 
       if (msg.type === "fine") {
-        if (config.useSerialCat()) {
-          if (typeof msg.step === "number") icom.setStep(msg.step);
-          if (typeof msg.delta === "number") icom.adjustFine(msg.delta);
-        } else if (config.useFlexCat()) {
-          if (typeof msg.step === "number") flex.setStep(msg.step);
-          if (typeof msg.delta === "number") flex.adjustFine(msg.delta);
-        } else {
-          if (typeof msg.step === "number") tci.setStep(msg.step);
-          if (typeof msg.delta === "number") tci.adjustFine(msg.delta);
-        }
+        const radio = activeRadio();
+        const side = msg.side === "dl" ? "dl" : "ul";
+        if (typeof msg.step === "number" && radio.setStep) radio.setStep(msg.step);
+        if (typeof msg.delta === "number" && radio.adjustFine)
+          radio.adjustFine(msg.delta, side);
         pushNow();
       }
 
       if (msg.type === "center") {
-        if (config.useSerialCat()) icom.center();
-        else if (config.useFlexCat()) flex.center();
-        else tci.center();
+        activeRadio().center();
+        pushNow();
+      }
+
+      if (msg.type === "ctcss") {
+        const which = msg.which === "access" || msg.which === "activation"
+          ? msg.which
+          : "off";
+        const radio = activeRadio();
+        if (typeof radio.setCtcss === "function") radio.setCtcss(which);
         pushNow();
       }
 
