@@ -275,6 +275,7 @@ function openLink(link) {
       console.log("Flex", link.name.toUpperCase(), "connected", host + ":" + port);
       broadcastStatus();
       if (link.name === "dl") startVfoPoll();
+      if (link.name === "ul") applyCtcssToRadio().catch(() => {});
       done(true);
     });
     s.once("timeout", () => {
@@ -395,6 +396,7 @@ function applyDefaultCtcss(accessHz, activationHz) {
     "act",
     ctcssActivationHz,
   );
+  applyCtcssToRadio().catch(() => {});
   broadcastStatus();
 }
 
