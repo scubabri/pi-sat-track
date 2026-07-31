@@ -14,7 +14,6 @@ const {
 const { fetchTLE, cacheSatrec } = require("./tle");
 const {
   lookAngles,
-  lookAnglesLead,
   rangeRateKmS,
   groundPoint,
   buildTrail,
@@ -195,18 +194,13 @@ function computeTick() {
 
   tci.pushFrequencies();
 
-  // Drive rotors with angular lead; interval adapts to angular rate
-  const leadLook =
-    config.ROTOR_LEAD_DEG > 0
-      ? lookAnglesLead(satrec, observer, now, config.ROTOR_LEAD_DEG)
-      : look;
-  rotor.updateTracking(leadLook || look, lastAosAz);
+  // Match Python: command the current satellite position (no lead)
+  rotor.updateTracking(look, lastAosAz);
 
   const r = rotor.getRotorState();
 
-  // Log live sat + rotor + adaptive metrics
   if (r.antennaOn) {
-    rotor.logSample(look.az, look.el, r.rate, r.intervalMs);
+    rotor.logSample(look.az, look.el);
   }
 
   return {

@@ -22,30 +22,20 @@ let ROTOR_EL_HOST =
   process.env.ROTOR_EL_HOST || process.env.ROTOR_AZ_HOST || "127.0.0.1";
 let ROTOR_EL_PORT = parseInt(process.env.ROTOR_EL_PORT || "4536", 10);
 
+// Match Python: MIN_EL = 10, park at same elevation when below horizon
 const ROTOR_MIN_EL = parseFloat(process.env.ROTOR_MIN_EL || "10");
-const ROTOR_PARK_EL = parseFloat(process.env.ROTOR_PARK_EL || "0");
-
-// --- Rate-adaptive move control ---
-// Desired angular step (degrees) between successive P commands.
-// Interval is derived as: step / angular_rate, then clamped.
-const ROTOR_STEP_DEG = parseFloat(process.env.ROTOR_STEP_DEG || "1.5");
-const ROTOR_MIN_INTERVAL_MS = parseInt(
-  process.env.ROTOR_MIN_INTERVAL_MS || "500",
-  10,
-);
-const ROTOR_MAX_INTERVAL_MS = parseInt(
-  process.env.ROTOR_MAX_INTERVAL_MS || "6000",
-  10,
+const ROTOR_PARK_EL = parseFloat(
+  process.env.ROTOR_PARK_EL || String(ROTOR_MIN_EL),
 );
 
-// Angular lead (degrees). Rotor is commanded this far ahead along the track.
-const ROTOR_LEAD_DEG = parseFloat(process.env.ROTOR_LEAD_DEG || "2.5");
-
-// Legacy fixed interval (unused when adaptive is active; kept for reference)
+// Match Python: fixed 30 s between rotor commands
 const ROTOR_MOVE_INTERVAL_MS = parseInt(
-  process.env.ROTOR_MOVE_INTERVAL_MS || "1500",
+  process.env.ROTOR_MOVE_INTERVAL_MS || "30000",
   10,
 );
+
+// Match Python: no lead — command the current satellite position
+const ROTOR_LEAD_DEG = parseFloat(process.env.ROTOR_LEAD_DEG || "0");
 
 const DEFAULT_SAT = "RS-44";
 const MIN_EL = 0.0;
@@ -85,10 +75,6 @@ function getEndpoints() {
   };
 }
 
-/**
- * Apply endpoint overrides from the UI.
- * Returns { tciChanged, rotorChanged }.
- */
 function applyEndpoints(ep) {
   let tciChanged = false;
   let rotorChanged = false;
@@ -166,11 +152,8 @@ module.exports = {
   },
   ROTOR_MIN_EL,
   ROTOR_PARK_EL,
-  ROTOR_STEP_DEG,
-  ROTOR_MIN_INTERVAL_MS,
-  ROTOR_MAX_INTERVAL_MS,
-  ROTOR_LEAD_DEG,
   ROTOR_MOVE_INTERVAL_MS,
+  ROTOR_LEAD_DEG,
   DEFAULT_SAT,
   MIN_EL,
   TRAIL_MINUTES,
