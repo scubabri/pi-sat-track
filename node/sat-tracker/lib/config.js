@@ -25,14 +25,27 @@ let ROTOR_EL_PORT = parseInt(process.env.ROTOR_EL_PORT || "4536", 10);
 const ROTOR_MIN_EL = parseFloat(process.env.ROTOR_MIN_EL || "10");
 const ROTOR_PARK_EL = parseFloat(process.env.ROTOR_PARK_EL || "0");
 
-// Send a move command at most this often (ms)
-const ROTOR_MOVE_INTERVAL_MS = parseInt(
-  process.env.ROTOR_MOVE_INTERVAL_MS || "10000",
+// --- Rate-adaptive move control ---
+// Desired angular step (degrees) between successive P commands.
+// Interval is derived as: step / angular_rate, then clamped.
+const ROTOR_STEP_DEG = parseFloat(process.env.ROTOR_STEP_DEG || "1.5");
+const ROTOR_MIN_INTERVAL_MS = parseInt(
+  process.env.ROTOR_MIN_INTERVAL_MS || "500",
+  10,
+);
+const ROTOR_MAX_INTERVAL_MS = parseInt(
+  process.env.ROTOR_MAX_INTERVAL_MS || "6000",
   10,
 );
 
-// Angular lead (degrees). Rotor is commanded ~this far ahead along the track.
-const ROTOR_LEAD_DEG = parseFloat(process.env.ROTOR_LEAD_DEG || "5");
+// Angular lead (degrees). Rotor is commanded this far ahead along the track.
+const ROTOR_LEAD_DEG = parseFloat(process.env.ROTOR_LEAD_DEG || "2.5");
+
+// Legacy fixed interval (unused when adaptive is active; kept for reference)
+const ROTOR_MOVE_INTERVAL_MS = parseInt(
+  process.env.ROTOR_MOVE_INTERVAL_MS || "1500",
+  10,
+);
 
 const DEFAULT_SAT = "RS-44";
 const MIN_EL = 0.0;
@@ -96,7 +109,6 @@ function applyEndpoints(ep) {
     }
   }
 
-  // One host for both rotctld instances (AZ + EL ports)
   if (typeof ep.rotorHost === "string" && ep.rotorHost.trim()) {
     const h = ep.rotorHost.trim();
     if (h !== ROTOR_AZ_HOST || h !== ROTOR_EL_HOST) {
@@ -123,7 +135,6 @@ function applyEndpoints(ep) {
   return { tciChanged, rotorChanged };
 }
 
-// Export live getters so modules always see current values
 module.exports = {
   ROOT,
   CACHE_DIR,
@@ -155,8 +166,11 @@ module.exports = {
   },
   ROTOR_MIN_EL,
   ROTOR_PARK_EL,
-  ROTOR_MOVE_INTERVAL_MS,
+  ROTOR_STEP_DEG,
+  ROTOR_MIN_INTERVAL_MS,
+  ROTOR_MAX_INTERVAL_MS,
   ROTOR_LEAD_DEG,
+  ROTOR_MOVE_INTERVAL_MS,
   DEFAULT_SAT,
   MIN_EL,
   TRAIL_MINUTES,

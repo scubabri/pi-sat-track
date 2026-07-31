@@ -195,7 +195,7 @@ function computeTick() {
 
   tci.pushFrequencies();
 
-  // Drive rotors with ~ROTOR_LEAD_DEG angular lead
+  // Drive rotors with angular lead; interval adapts to angular rate
   const leadLook =
     config.ROTOR_LEAD_DEG > 0
       ? lookAnglesLead(satrec, observer, now, config.ROTOR_LEAD_DEG)
@@ -204,9 +204,9 @@ function computeTick() {
 
   const r = rotor.getRotorState();
 
-  // Log live sat + rotor positions while antenna is enabled
+  // Log live sat + rotor + adaptive metrics
   if (r.antennaOn) {
-    rotor.logSample(look.az, look.el);
+    rotor.logSample(look.az, look.el, r.rate, r.intervalMs);
   }
 
   return {

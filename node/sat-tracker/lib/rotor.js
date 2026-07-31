@@ -2,6 +2,7 @@ const net = require("net");
 const fs = require("fs");
 const path = require("path");
 const config = require("./config");
+const { angularDistanceDeg } = require("./orbit");
 
 const LOG_PATH = path.join(config.CACHE_DIR, "rotor_track.log");
 
@@ -12,15 +13,20 @@ let azConnected = false;
 let elConnected = false;
 let azBuf = "";
 let elBuf = "";
-let lastAz = null; // hardware only
-let lastEl = null; // hardware only
+let lastAz = null;
+let lastEl = null;
 let lastCmdAz = null;
 let lastCmdEl = null;
-let lastMoveAt = 0;
+let lastMoveAzAt = 0;
+let lastMoveElAt = 0;
 let reconnectTimer = null;
 let pollTimer = null;
 let nextAosAz = null;
 let logging = false;
+
+// Recent look samples for angular-rate estimation
+let lookHistory = [];
+const HISTORY_MS = 2500;
 
 let broadcastFn = () => {};
 
@@ -79,11 +85,6 @@ function startPoll() {
   }, 250);
 }
 
-/**
- * Extract numbers from a rotctld reply buffer.
- * Model 405 single-axis: the axis value is ALWAYS the first number
- * (matches rt21_rotctld.py status / pi_sat_track.py).
- */
 function extractFirstNumber(buf) {
   const lines = buf.split(/\r?\n/);
   for (const line of lines) {
@@ -96,14 +97,12 @@ function extractFirstNumber(buf) {
 }
 
 function replyComplete(buf) {
-  // Complete when we have RPRT, or at least 2 lines of content
   if (/RPRT\s+-?\d+/i.test(buf)) return true;
   const lines = buf.split(/\r?\n/).filter((l) => l.trim().length > 0);
   return lines.length >= 2;
 }
 
 function isAckOnly(buf) {
-  // set_pos replies are just "RPRT 0"
   const lines = buf
     .split(/\r?\n/)
     .map((s) => s.trim())
@@ -248,6 +247,7 @@ function disconnect() {
   stopPoll();
   antennaOn = false;
   logging = false;
+  lookHistory = [];
 
   if (azSock) {
     try {
@@ -274,10 +274,9 @@ function startLog() {
     if (!fs.existsSync(config.CACHE_DIR)) {
       fs.mkdirSync(config.CACHE_DIR, { recursive: true });
     }
-    // Overwrite existing log each time antenna is enabled
     fs.writeFileSync(
       LOG_PATH,
-      "timestamp,sat_az,sat_el,rotor_az,rotor_el,cmd_az,cmd_el\n",
+      "timestamp,sat_az,sat_el,rotor_az,rotor_el,cmd_az,cmd_el,rate_deg_s,interval_ms\n",
     );
     logging = true;
     console.log("Rotor log started →", LOG_PATH);
@@ -287,11 +286,7 @@ function startLog() {
   }
 }
 
-/**
- * Append one sample. Called from state.computeTick while antenna is on.
- * satAz/satEl = live calculated position; rotor values come from hardware + lastCmd.
- */
-function logSample(satAz, satEl) {
+function logSample(satAz, satEl, rate, intervalMs) {
   if (!logging || !antennaOn) return;
   try {
     const ts = new Date().toISOString();
@@ -304,6 +299,10 @@ function logSample(satAz, satEl) {
         lastEl != null ? lastEl.toFixed(2) : "",
         lastCmdAz != null ? lastCmdAz.toFixed(2) : "",
         lastCmdEl != null ? lastCmdEl.toFixed(2) : "",
+        rate != null && Number.isFinite(rate) ? rate.toFixed(3) : "",
+        intervalMs != null && Number.isFinite(intervalMs)
+          ? Math.round(intervalMs)
+          : "",
       ].join(",") + "\n";
     fs.appendFileSync(LOG_PATH, line);
   } catch (e) {
@@ -315,6 +314,7 @@ function setAntenna(on) {
   console.log("Rotor setAntenna(" + on + ")");
   if (on) {
     antennaOn = true;
+    lookHistory = [];
     startLog();
     connect();
   } else {
@@ -332,6 +332,7 @@ function applyEndpointChange() {
   if (antennaOn) {
     disconnect();
     antennaOn = true;
+    lookHistory = [];
     startLog();
     connect();
   } else {
@@ -340,18 +341,48 @@ function applyEndpointChange() {
 }
 
 /**
- * Dual model-405 (same as Python):
- *   AZ: P <az> 0.0
- *   EL: P <el> 0.0
- * Never write lastAz/lastEl here — only hardware poll does.
+ * Estimate satellite angular rate (°/s) from recent look samples.
  */
-let lastMoveAzAt = 0;
-let lastMoveElAt = 0;
+function estimateAngularRate(look) {
+  const now = Date.now();
+  if (!look || !Number.isFinite(look.az) || !Number.isFinite(look.el)) {
+    return 0.3;
+  }
 
-function commandPosition(az, el) {
+  lookHistory.push({ t: now, az: look.az, el: look.el });
+  lookHistory = lookHistory.filter((h) => now - h.t <= HISTORY_MS);
+
+  if (lookHistory.length < 2) return 0.3;
+
+  const a = lookHistory[0];
+  const b = lookHistory[lookHistory.length - 1];
+  const dt = (b.t - a.t) / 1000;
+  if (dt < 0.3) return 0.3;
+
+  const dang = angularDistanceDeg(a, b);
+  const rate = dang / dt;
+  return Number.isFinite(rate) && rate > 0 ? rate : 0.3;
+}
+
+/**
+ * Adaptive interval from angular rate and desired step size.
+ */
+function adaptiveIntervalMs(rate) {
+  const step = config.ROTOR_STEP_DEG || 1.5;
+  const r = Math.max(rate || 0.05, 0.05);
+  let ms = (step / r) * 1000;
+  ms = Math.max(
+    config.ROTOR_MIN_INTERVAL_MS,
+    Math.min(config.ROTOR_MAX_INTERVAL_MS, ms),
+  );
+  return ms;
+}
+
+function commandPosition(az, el, intervalMs) {
   if (!antennaOn) return;
   const now = Date.now();
-  const interval = config.ROTOR_MOVE_INTERVAL_MS;
+  const interval =
+    intervalMs != null ? intervalMs : config.ROTOR_MIN_INTERVAL_MS;
 
   if (az != null && Number.isFinite(az) && azConnected) {
     if (now - lastMoveAzAt >= interval) {
@@ -360,7 +391,12 @@ function commandPosition(az, el) {
         if (send("az", "P " + a.toFixed(1) + " 0.0")) {
           lastCmdAz = a;
           lastMoveAzAt = now;
-          console.log("Rotor CMD AZ", a.toFixed(1));
+          console.log(
+            "Rotor CMD AZ",
+            a.toFixed(1),
+            "interval",
+            Math.round(interval) + "ms",
+          );
         }
       }
     }
@@ -373,7 +409,12 @@ function commandPosition(az, el) {
         if (send("el", "P " + e.toFixed(1) + " 0.0")) {
           lastCmdEl = e;
           lastMoveElAt = now;
-          console.log("Rotor CMD EL", e.toFixed(1));
+          console.log(
+            "Rotor CMD EL",
+            e.toFixed(1),
+            "interval",
+            Math.round(interval) + "ms",
+          );
         }
       }
     }
@@ -389,13 +430,20 @@ function updateTracking(look, aosAz) {
     return;
   }
 
+  const rate = estimateAngularRate(look);
+  const intervalMs = adaptiveIntervalMs(rate);
+
   if (look.el >= config.ROTOR_MIN_EL) {
-    commandPosition(look.az, look.el);
+    commandPosition(look.az, look.el, intervalMs);
   } else {
     const parkAz =
       nextAosAz != null && Number.isFinite(nextAosAz) ? nextAosAz : look.az;
-    commandPosition(parkAz, config.ROTOR_PARK_EL);
+    commandPosition(parkAz, config.ROTOR_PARK_EL, intervalMs);
   }
+
+  // Stash for logging (state.js will call logSample with sat position)
+  updateTracking._lastRate = rate;
+  updateTracking._lastInterval = intervalMs;
 }
 
 function pollPositions() {
@@ -413,6 +461,8 @@ function getRotorState() {
     lastCmdAz,
     lastCmdEl,
     minEl: config.ROTOR_MIN_EL,
+    rate: updateTracking._lastRate,
+    intervalMs: updateTracking._lastInterval,
   };
 }
 

@@ -43,7 +43,7 @@ function lookAngles(satrec, observer, date) {
 function angularDistanceDeg(a, b) {
   if (!a || !b) return 0;
   let daz = b.az - a.az;
-  daz = ((daz + 540) % 360) - 180; // shortest angle
+  daz = ((daz + 540) % 360) - 180;
   const meanElRad = ((a.el + b.el) / 2) * (Math.PI / 180);
   const cosEl = Math.cos(meanElRad);
   return Math.sqrt((daz * cosEl) ** 2 + (b.el - a.el) ** 2);
@@ -51,7 +51,7 @@ function angularDistanceDeg(a, b) {
 
 /**
  * Return look angles approximately `leadDeg` ahead of `now` along the track.
- * Iteratively finds a future time that yields ~leadDeg of angular travel.
+ * Binary-searches time so angular distance is close to leadDeg.
  */
 function lookAnglesLead(satrec, observer, now, leadDeg) {
   if (!leadDeg || leadDeg <= 0) return lookAngles(satrec, observer, now);
@@ -59,39 +59,52 @@ function lookAnglesLead(satrec, observer, now, leadDeg) {
   const current = lookAngles(satrec, observer, now);
   if (!current) return null;
 
-  // Initial guess: assume ~0.3–0.5 °/s typical LEO near mid-pass
-  let dtSec = leadDeg / 0.4;
-  const maxDt = 90; // safety
-  const minDt = 0.5;
+  let lo = 0.5;
+  let hi = 30;
+  let best = null;
+  let bestErr = Infinity;
 
-  for (let i = 0; i < 12; i++) {
-    dtSec = Math.max(minDt, Math.min(maxDt, dtSec));
+  for (let i = 0; i < 14; i++) {
+    const mid = (lo + hi) / 2;
     const future = lookAngles(
       satrec,
       observer,
-      new Date(now.getTime() + dtSec * 1000),
+      new Date(now.getTime() + mid * 1000),
     );
-    if (!future) break;
+    if (!future) {
+      hi = mid;
+      continue;
+    }
 
     const dang = angularDistanceDeg(current, future);
-    if (Math.abs(dang - leadDeg) < 0.3) return future; // close enough
-    if (dang < 0.05) {
-      // almost stationary – just return a modest fixed lead
+    const err = Math.abs(dang - leadDeg);
+
+    if (err < bestErr) {
+      bestErr = err;
+      best = future;
+    }
+
+    if (dang < leadDeg) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+
+    if (err < 0.25) break;
+  }
+
+  if (best) {
+    const finalDang = angularDistanceDeg(current, best);
+    if (finalDang > leadDeg * 1.6) {
       return lookAngles(
         satrec,
         observer,
-        new Date(now.getTime() + Math.min(15, leadDeg / 0.2) * 1000),
+        new Date(now.getTime() + Math.min(12, leadDeg / 0.35) * 1000),
       );
     }
-    // scale time proportionally
-    dtSec = dtSec * (leadDeg / dang);
   }
 
-  return lookAngles(
-    satrec,
-    observer,
-    new Date(now.getTime() + Math.max(minDt, Math.min(maxDt, dtSec)) * 1000),
-  );
+  return best || lookAngles(satrec, observer, now);
 }
 
 function rangeRateKmS(satrec, observer, date) {
