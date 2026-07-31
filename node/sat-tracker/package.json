@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "satellite.js": "^5.0.0",
+    "serialport": "^12.0.0",
     "ws": "^8.18.0"
   }
 }

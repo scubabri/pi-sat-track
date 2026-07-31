@@ -16,33 +16,39 @@ const AMSAT_STATUS = "https://www.amsat.org/status/";
 let TCI_HOST = process.env.TCI_HOST || "127.0.0.1";
 let TCI_PORT = parseInt(process.env.TCI_PORT || "50001", 10);
 
+// Direct RT-21 serial (no rotctld)
+// Confirmed mapping: AZ = ttyUSB0, EL = ttyUSB1
+let ROTOR_AZ_DEVICE = process.env.ROTOR_AZ_DEVICE || "/dev/ttyUSB0";
+let ROTOR_EL_DEVICE = process.env.ROTOR_EL_DEVICE || "/dev/ttyUSB1";
+const ROTOR_BAUD = parseInt(process.env.ROTOR_BAUD || "4800", 10);
+
+// Legacy rotctld fields kept so old UI payloads don't crash; unused by driver
 let ROTOR_AZ_HOST = process.env.ROTOR_AZ_HOST || "127.0.0.1";
 let ROTOR_AZ_PORT = parseInt(process.env.ROTOR_AZ_PORT || "4535", 10);
 let ROTOR_EL_HOST =
   process.env.ROTOR_EL_HOST || process.env.ROTOR_AZ_HOST || "127.0.0.1";
 let ROTOR_EL_PORT = parseInt(process.env.ROTOR_EL_PORT || "4536", 10);
 
-// Match Python: MIN_EL = 10, park at same elevation when below horizon
 const ROTOR_MIN_EL = parseFloat(process.env.ROTOR_MIN_EL || "10");
 const ROTOR_PARK_EL = parseFloat(
   process.env.ROTOR_PARK_EL || String(ROTOR_MIN_EL),
 );
 
-// Match Python: fixed 30 s between rotor commands
-const ROTOR_MOVE_INTERVAL_MS = parseInt(
-  process.env.ROTOR_MOVE_INTERVAL_MS || "30000",
+// Tracking gate (from RT-21 direct testing)
+const ROTOR_SETTLE_DEG = parseFloat(process.env.ROTOR_SETTLE_DEG || "3");
+const ROTOR_STILL_DEG = parseFloat(process.env.ROTOR_STILL_DEG || "0.25");
+const ROTOR_STILL_COUNT = parseInt(process.env.ROTOR_STILL_COUNT || "5", 10);
+const ROTOR_SETTLE_BUFFER_MS = parseInt(
+  process.env.ROTOR_SETTLE_BUFFER_MS || "1500",
   10,
 );
-
-// Match Python: no lead — command the current satellite position
-const ROTOR_LEAD_DEG = parseFloat(process.env.ROTOR_LEAD_DEG || "0");
-
-// Position poll interval (Python never polled; keep this slow so it
-// does not interrupt set_pos on the RT-21)
-const ROTOR_POLL_INTERVAL_MS = parseInt(
-  process.env.ROTOR_POLL_INTERVAL_MS || "5000",
+const ROTOR_DEADBAND_DEG = parseFloat(process.env.ROTOR_DEADBAND_DEG || "2.5");
+const ROTOR_STALL_MS = parseInt(process.env.ROTOR_STALL_MS || "5000", 10);
+const ROTOR_STALL_RETRIES = parseInt(
+  process.env.ROTOR_STALL_RETRIES || "2",
   10,
 );
+const ROTOR_POLL_MS = parseInt(process.env.ROTOR_POLL_MS || "250", 10);
 
 const DEFAULT_SAT = "RS-44";
 const MIN_EL = 0.0;
@@ -76,6 +82,9 @@ function getEndpoints() {
   return {
     tciHost: TCI_HOST,
     tciPort: TCI_PORT,
+    rotorAzDevice: ROTOR_AZ_DEVICE,
+    rotorElDevice: ROTOR_EL_DEVICE,
+    // legacy fields for older UI
     rotorHost: ROTOR_AZ_HOST,
     rotorAzPort: ROTOR_AZ_PORT,
     rotorElPort: ROTOR_EL_PORT,
@@ -102,27 +111,31 @@ function applyEndpoints(ep) {
     }
   }
 
-  if (typeof ep.rotorHost === "string" && ep.rotorHost.trim()) {
-    const h = ep.rotorHost.trim();
-    if (h !== ROTOR_AZ_HOST || h !== ROTOR_EL_HOST) {
-      ROTOR_AZ_HOST = h;
-      ROTOR_EL_HOST = h;
+  if (typeof ep.rotorAzDevice === "string" && ep.rotorAzDevice.trim()) {
+    const d = ep.rotorAzDevice.trim();
+    if (d !== ROTOR_AZ_DEVICE) {
+      ROTOR_AZ_DEVICE = d;
       rotorChanged = true;
     }
+  }
+  if (typeof ep.rotorElDevice === "string" && ep.rotorElDevice.trim()) {
+    const d = ep.rotorElDevice.trim();
+    if (d !== ROTOR_EL_DEVICE) {
+      ROTOR_EL_DEVICE = d;
+      rotorChanged = true;
+    }
+  }
+
+  // Legacy host/port (ignored by serial driver, stored for UI compatibility)
+  if (typeof ep.rotorHost === "string" && ep.rotorHost.trim()) {
+    ROTOR_AZ_HOST = ep.rotorHost.trim();
+    ROTOR_EL_HOST = ep.rotorHost.trim();
   }
   if (ep.rotorAzPort != null && Number.isFinite(Number(ep.rotorAzPort))) {
-    const p = parseInt(ep.rotorAzPort, 10);
-    if (p > 0 && p < 65536 && p !== ROTOR_AZ_PORT) {
-      ROTOR_AZ_PORT = p;
-      rotorChanged = true;
-    }
+    ROTOR_AZ_PORT = parseInt(ep.rotorAzPort, 10);
   }
   if (ep.rotorElPort != null && Number.isFinite(Number(ep.rotorElPort))) {
-    const p = parseInt(ep.rotorElPort, 10);
-    if (p > 0 && p < 65536 && p !== ROTOR_EL_PORT) {
-      ROTOR_EL_PORT = p;
-      rotorChanged = true;
-    }
+    ROTOR_EL_PORT = parseInt(ep.rotorElPort, 10);
   }
 
   return { tciChanged, rotorChanged };
@@ -145,6 +158,13 @@ module.exports = {
   get TCI_URI() {
     return tciUri();
   },
+  get ROTOR_AZ_DEVICE() {
+    return ROTOR_AZ_DEVICE;
+  },
+  get ROTOR_EL_DEVICE() {
+    return ROTOR_EL_DEVICE;
+  },
+  ROTOR_BAUD,
   get ROTOR_AZ_HOST() {
     return ROTOR_AZ_HOST;
   },
@@ -159,9 +179,14 @@ module.exports = {
   },
   ROTOR_MIN_EL,
   ROTOR_PARK_EL,
-  ROTOR_MOVE_INTERVAL_MS,
-  ROTOR_LEAD_DEG,
-  ROTOR_POLL_INTERVAL_MS,
+  ROTOR_SETTLE_DEG,
+  ROTOR_STILL_DEG,
+  ROTOR_STILL_COUNT,
+  ROTOR_SETTLE_BUFFER_MS,
+  ROTOR_DEADBAND_DEG,
+  ROTOR_STALL_MS,
+  ROTOR_STALL_RETRIES,
+  ROTOR_POLL_MS,
   DEFAULT_SAT,
   MIN_EL,
   TRAIL_MINUTES,

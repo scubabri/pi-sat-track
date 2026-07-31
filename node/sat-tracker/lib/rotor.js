@@ -1,29 +1,52 @@
-const net = require("net");
+/**
+ * Green Heron RT-21 direct serial driver (no hamlib/rotctld).
+ *
+ * Protocol (confirmed):
+ *   Read:  AI1;
+ *   Go-to: AP1nnn\r   (no semicolon)
+ *
+ * State machine per axis:
+ *   IDLE → MOVING → SETTLING → IDLE
+ *   Command only when IDLE; stall → re-CMD.
+ */
+
 const fs = require("fs");
 const path = require("path");
+const { SerialPort } = require("serialport");
 const config = require("./config");
 
 const LOG_PATH = path.join(config.CACHE_DIR, "rotor_track.log");
 
 let antennaOn = false;
-let azSock = null;
-let elSock = null;
-let azConnected = false;
-let elConnected = false;
-let azBuf = "";
-let elBuf = "";
-let lastAz = null;
-let lastEl = null;
-let lastCmdAz = null;
-let lastCmdEl = null;
-let lastRotorAt = 0; // single timer, matches Python last_rotor
-let reconnectTimer = null;
 let pollTimer = null;
 let nextAosAz = null;
 let logging = false;
-let quietUntil = 0; // suppress polls briefly after a P command
-
 let broadcastFn = () => {};
+
+// Desired target from tracking (updated every tick; sent only when IDLE)
+let desiredAz = null;
+let desiredEl = null;
+
+function makeAxis(name) {
+  return {
+    name,
+    port: null,
+    connected: false,
+    buf: "",
+    pos: null,
+    lastPos: null,
+    lastCmd: null,
+    state: "IDLE", // IDLE | MOVING | SETTLING
+    stillCount: 0,
+    settleUntil: 0,
+    moveStartedAt: 0,
+    stallRetries: 0,
+    busy: false, // serial txn in flight
+  };
+}
+
+const az = makeAxis("az");
+const el = makeAxis("el");
 
 function init(opts) {
   if (opts && opts.broadcast) broadcastFn = opts.broadcast;
@@ -33,15 +56,17 @@ function statusPayload() {
   return {
     type: "rotor",
     antennaOn,
-    azConnected,
-    elConnected,
-    az: lastAz,
-    el: lastEl,
-    lastCmdAz,
-    lastCmdEl,
+    azConnected: az.connected,
+    elConnected: el.connected,
+    az: az.pos,
+    el: el.pos,
+    lastCmdAz: az.lastCmd,
+    lastCmdEl: el.lastCmd,
+    azState: az.state,
+    elState: el.state,
     minEl: config.ROTOR_MIN_EL,
-    hostAz: config.ROTOR_AZ_HOST + ":" + config.ROTOR_AZ_PORT,
-    hostEl: config.ROTOR_EL_HOST + ":" + config.ROTOR_EL_PORT,
+    azDevice: config.ROTOR_AZ_DEVICE,
+    elDevice: config.ROTOR_EL_DEVICE,
   };
 }
 
@@ -49,20 +74,327 @@ function broadcastStatus() {
   broadcastFn(statusPayload());
 }
 
-function clearReconnect() {
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
+function shortestDelta(a, b) {
+  return ((((b - a) % 360) + 540) % 360) - 180;
+}
+
+function absErr(a, b) {
+  if (a == null || b == null || !Number.isFinite(a) || !Number.isFinite(b)) {
+    return Infinity;
+  }
+  return Math.abs(shortestDelta(a, b));
+}
+
+function parseHeading(text) {
+  if (!text) return null;
+  const cleaned = String(text)
+    .replace(/[,;>\r\n]/g, " ")
+    .trim();
+  for (const tok of cleaned.split(/\s+/)) {
+    const v = parseFloat(tok);
+    if (Number.isFinite(v) && v >= -5 && v <= 360) return v;
+  }
+  return null;
+}
+
+function axisDevice(axis) {
+  return axis.name === "az" ? config.ROTOR_AZ_DEVICE : config.ROTOR_EL_DEVICE;
+}
+
+function openAxis(axis) {
+  return new Promise((resolve) => {
+    if (axis.port && axis.connected) {
+      resolve(true);
+      return;
+    }
+    const device = axisDevice(axis);
+    let settled = false;
+    const done = (ok) => {
+      if (settled) return;
+      settled = true;
+      resolve(ok);
+    };
+
+    try {
+      const port = new SerialPort({
+        path: device,
+        baudRate: config.ROTOR_BAUD,
+        dataBits: 8,
+        parity: "none",
+        stopBits: 1,
+        autoOpen: false,
+      });
+
+      const timer = setTimeout(() => {
+        try {
+          port.close();
+        } catch (_) {}
+        console.warn("Rotor", axis.name.toUpperCase(), "open timeout", device);
+        done(false);
+      }, 3000);
+
+      port.open((err) => {
+        if (err) {
+          clearTimeout(timer);
+          console.warn(
+            "Rotor",
+            axis.name.toUpperCase(),
+            "open failed:",
+            err.message,
+          );
+          done(false);
+          return;
+        }
+        clearTimeout(timer);
+        axis.port = port;
+        axis.connected = true;
+        axis.buf = "";
+        axis.state = "IDLE";
+        axis.stillCount = 0;
+        axis.stallRetries = 0;
+
+        port.on("data", (chunk) => {
+          axis.buf += chunk.toString("ascii");
+          if (axis.buf.length > 4096) axis.buf = axis.buf.slice(-1024);
+        });
+        port.on("close", () => {
+          console.log("Rotor", axis.name.toUpperCase(), "closed");
+          axis.connected = false;
+          axis.port = null;
+          axis.buf = "";
+          broadcastStatus();
+          if (antennaOn) scheduleReconnect();
+        });
+        port.on("error", (e) => {
+          console.warn("Rotor", axis.name.toUpperCase(), "error:", e.message);
+        });
+
+        console.log(
+          "Rotor",
+          axis.name.toUpperCase(),
+          "open",
+          device,
+          config.ROTOR_BAUD,
+        );
+        done(true);
+      });
+    } catch (e) {
+      console.warn("Rotor", axis.name.toUpperCase(), "exception:", e.message);
+      done(false);
+    }
+  });
+}
+
+function closeAxis(axis) {
+  if (axis.port) {
+    try {
+      axis.port.close();
+    } catch (_) {}
+    axis.port = null;
+  }
+  axis.connected = false;
+  axis.buf = "";
+  axis.state = "IDLE";
+  axis.busy = false;
+}
+
+let reconnectTimer = null;
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(async () => {
     reconnectTimer = null;
+    if (!antennaOn) return;
+    if (!az.connected) await openAxis(az);
+    if (!el.connected) await openAxis(el);
+    broadcastStatus();
+    if (antennaOn && (!az.connected || !el.connected)) scheduleReconnect();
+  }, 3000);
+}
+
+function writeRaw(axis, data) {
+  return new Promise((resolve) => {
+    if (!axis.port || !axis.connected) {
+      resolve(false);
+      return;
+    }
+    axis.port.write(data, (err) => {
+      if (err) {
+        console.warn("Rotor", axis.name, "write failed:", err.message);
+        resolve(false);
+        return;
+      }
+      axis.port.drain(() => resolve(true));
+    });
+  });
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function queryPos(axis) {
+  if (!axis.connected || axis.busy) return axis.pos;
+  axis.busy = true;
+  try {
+    axis.buf = "";
+    const ok = await writeRaw(axis, Buffer.from("AI1;", "ascii"));
+    if (!ok) return axis.pos;
+    await sleep(80);
+    const tEnd = Date.now() + 350;
+    while (Date.now() < tEnd) {
+      if (axis.buf.length) break;
+      await sleep(20);
+    }
+    // brief extra for trailing bytes
+    await sleep(40);
+    const raw = axis.buf;
+    axis.buf = "";
+    const pos = parseHeading(raw);
+    if (pos != null) {
+      axis.lastPos = axis.pos;
+      axis.pos = pos;
+    }
+    return axis.pos;
+  } finally {
+    axis.busy = false;
   }
 }
 
-function scheduleReconnect() {
-  clearReconnect();
+async function commandPos(axis, degrees) {
+  if (!axis.connected || axis.busy) return false;
+  let nnn = Math.round(Number(degrees));
+  if (!Number.isFinite(nnn)) return false;
+  if (nnn < 0) nnn = 0;
+  if (nnn > 360) nnn = 360;
+
+  axis.busy = true;
+  try {
+    axis.buf = "";
+    const cmd = "AP1" + String(nnn).padStart(3, "0") + "\r";
+    const ok = await writeRaw(axis, Buffer.from(cmd, "ascii"));
+    if (!ok) return false;
+    axis.lastCmd = nnn;
+    axis.state = "MOVING";
+    axis.stillCount = 0;
+    axis.settleUntil = 0;
+    axis.moveStartedAt = Date.now();
+    axis.stallRetries = axis.stallRetries || 0;
+    console.log("Rotor CMD", axis.name.toUpperCase(), nnn);
+    await sleep(60);
+    return true;
+  } finally {
+    axis.busy = false;
+  }
+}
+
+/**
+ * Advance one axis state machine. desired is the latest sat/park target.
+ */
+async function tickAxis(axis, desired) {
+  if (!axis.connected || desired == null || !Number.isFinite(desired)) return;
+
+  const pos = await queryPos(axis);
+  if (pos == null) return;
+
+  const dpos =
+    axis.lastPos != null ? Math.abs(shortestDelta(axis.lastPos, pos)) : 0;
+  const still = dpos < config.ROTOR_STILL_DEG;
+  if (still) axis.stillCount += 1;
+  else axis.stillCount = 0;
+
+  const now = Date.now();
+  const toCmd = axis.lastCmd != null ? absErr(pos, axis.lastCmd) : Infinity;
+
+  if (axis.state === "MOVING") {
+    // Stall: no motion for too long while still far from command
+    if (
+      still &&
+      axis.stillCount * config.ROTOR_POLL_MS >= config.ROTOR_STALL_MS &&
+      toCmd > config.ROTOR_SETTLE_DEG
+    ) {
+      if (axis.stallRetries < config.ROTOR_STALL_RETRIES) {
+        axis.stallRetries += 1;
+        console.warn(
+          "Rotor",
+          axis.name.toUpperCase(),
+          "STALL → re-CMD",
+          desired.toFixed(1),
+          "retry",
+          axis.stallRetries,
+        );
+        await commandPos(axis, desired);
+        return;
+      }
+      console.warn(
+        "Rotor",
+        axis.name.toUpperCase(),
+        "STALL retries exhausted at",
+        pos,
+      );
+      axis.state = "IDLE";
+      axis.stallRetries = 0;
+      return;
+    }
+
+    if (
+      toCmd <= config.ROTOR_SETTLE_DEG &&
+      axis.stillCount >= config.ROTOR_STILL_COUNT
+    ) {
+      axis.state = "SETTLING";
+      axis.settleUntil = now + config.ROTOR_SETTLE_BUFFER_MS;
+    }
+    return;
+  }
+
+  if (axis.state === "SETTLING") {
+    if (!still) {
+      axis.state = "MOVING";
+      axis.settleUntil = 0;
+      return;
+    }
+    if (now >= axis.settleUntil) {
+      axis.state = "IDLE";
+      axis.stallRetries = 0;
+      console.log(
+        "Rotor",
+        axis.name.toUpperCase(),
+        "IDLE at",
+        pos.toFixed(1),
+        "cmd was",
+        axis.lastCmd,
+      );
+    }
+    return;
+  }
+
+  // IDLE — command if deadband exceeded
+  if (axis.state === "IDLE") {
+    const need =
+      axis.lastCmd == null
+        ? absErr(desired, pos) >= config.ROTOR_DEADBAND_DEG
+        : absErr(desired, axis.lastCmd) >= config.ROTOR_DEADBAND_DEG;
+    if (need) {
+      axis.stallRetries = 0;
+      await commandPos(axis, desired);
+    }
+  }
+}
+
+async function pollLoop() {
   if (!antennaOn) return;
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    if (antennaOn) connect();
-  }, 3000);
+
+  // Park / track selection uses desired* set by updateTracking
+  if (az.connected) await tickAxis(az, desiredAz);
+  if (el.connected) await tickAxis(el, desiredEl);
+
+  broadcastStatus();
+}
+
+function startPoll() {
+  stopPoll();
+  pollTimer = setInterval(() => {
+    pollLoop().catch((e) => console.warn("Rotor poll:", e.message));
+  }, config.ROTOR_POLL_MS);
 }
 
 function stopPoll() {
@@ -72,197 +404,27 @@ function stopPoll() {
   }
 }
 
-function startPoll() {
-  stopPoll();
-  // Slow poll — Python never polled. Fast get_pos can interrupt set_pos
-  // on the RT-21 controller display / motion.
-  const interval = config.ROTOR_POLL_INTERVAL_MS || 5000;
-  pollTimer = setInterval(() => {
-    if (!antennaOn) return;
-    if (Date.now() < quietUntil) return; // stay quiet after a P command
-    pollPositions();
-  }, interval);
-}
-
-function extractFirstNumber(buf) {
-  const lines = buf.split(/\r?\n/);
-  for (const line of lines) {
-    const t = line.trim();
-    if (!t || /^RPRT/i.test(t)) continue;
-    const n = parseFloat(t);
-    if (Number.isFinite(n)) return n;
-  }
-  return null;
-}
-
-function replyComplete(buf) {
-  if (/RPRT\s+-?\d+/i.test(buf)) return true;
-  const lines = buf.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  return lines.length >= 2;
-}
-
-function isAckOnly(buf) {
-  const lines = buf
-    .split(/\r?\n/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  return lines.length > 0 && lines.every((l) => /^RPRT\s+-?\d+/i.test(l));
-}
-
-function onPosUpdate(kind, value) {
-  if (value == null || !Number.isFinite(value)) return;
-  let changed = false;
-  if (kind === "az") {
-    const a = ((value % 360) + 360) % 360;
-    if (lastAz == null || Math.abs(a - lastAz) >= 0.05) {
-      lastAz = a;
-      changed = true;
-    }
-  } else {
-    if (lastEl == null || Math.abs(value - lastEl) >= 0.05) {
-      lastEl = value;
-      changed = true;
-    }
-  }
-  if (changed) {
-    console.log(
-      "Rotor pos",
-      kind.toUpperCase(),
-      kind === "az" ? lastAz.toFixed(1) : lastEl.toFixed(1),
-    );
-    broadcastStatus();
-  }
-}
-
-function handleData(kind, chunk) {
-  if (kind === "az") {
-    azBuf += chunk;
-    if (azBuf.length > 8192) azBuf = azBuf.slice(-2048);
-    if (!replyComplete(azBuf)) return;
-    const buf = azBuf;
-    azBuf = "";
-    if (isAckOnly(buf)) return;
-    const n = extractFirstNumber(buf);
-    if (n != null) onPosUpdate("az", n);
-  } else {
-    elBuf += chunk;
-    if (elBuf.length > 8192) elBuf = elBuf.slice(-2048);
-    if (!replyComplete(elBuf)) return;
-    const buf = elBuf;
-    elBuf = "";
-    if (isAckOnly(buf)) return;
-    const n = extractFirstNumber(buf);
-    if (n != null) onPosUpdate("el", n);
-  }
-}
-
-function attachSocket(kind, sock) {
-  sock.setEncoding("utf8");
-  sock.on("data", (chunk) => handleData(kind, chunk));
-  sock.on("close", () => {
-    console.log("Rotor", kind.toUpperCase(), "closed");
-    if (kind === "az") {
-      azConnected = false;
-      azSock = null;
-      azBuf = "";
-    } else {
-      elConnected = false;
-      elSock = null;
-      elBuf = "";
-    }
-    broadcastStatus();
-    if (antennaOn) scheduleReconnect();
-  });
-  sock.on("error", (err) => {
-    console.warn("Rotor", kind.toUpperCase(), "error:", err.message);
-  });
-}
-
-function send(kind, cmd) {
-  const sock = kind === "az" ? azSock : elSock;
-  const ok = kind === "az" ? azConnected : elConnected;
-  if (!sock || !ok) return false;
-  try {
-    sock.write(cmd.endsWith("\n") ? cmd : cmd + "\n");
-    return true;
-  } catch (e) {
-    console.warn("Rotor", kind, "send failed:", e.message);
-    return false;
-  }
-}
-
-function connectOne(kind) {
-  return new Promise((resolve) => {
-    const host = kind === "az" ? config.ROTOR_AZ_HOST : config.ROTOR_EL_HOST;
-    const port = kind === "az" ? config.ROTOR_AZ_PORT : config.ROTOR_EL_PORT;
-    const sock = net.connect({ host, port });
-
-    const timer = setTimeout(() => {
-      sock.destroy();
-      resolve(false);
-    }, 2500);
-
-    sock.once("connect", () => {
-      clearTimeout(timer);
-      attachSocket(kind, sock);
-      if (kind === "az") {
-        azSock = sock;
-        azConnected = true;
-      } else {
-        elSock = sock;
-        elConnected = true;
-      }
-      console.log("Rotor", kind.toUpperCase(), "connected", host + ":" + port);
-      send(kind, "p");
-      resolve(true);
-    });
-
-    sock.once("error", (err) => {
-      clearTimeout(timer);
-      console.warn("Rotor", kind.toUpperCase(), "connect failed:", err.message);
-      resolve(false);
-    });
-  });
-}
-
 async function connect() {
   if (!antennaOn) return;
-  clearReconnect();
-
-  if (!azConnected) await connectOne("az");
-  if (!elConnected) await connectOne("el");
-
+  await openAxis(az);
+  await openAxis(el);
   broadcastStatus();
   startPoll();
-
-  if (antennaOn && (!azConnected || !elConnected)) {
-    scheduleReconnect();
-  }
+  if (antennaOn && (!az.connected || !el.connected)) scheduleReconnect();
 }
 
 function disconnect() {
-  clearReconnect();
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   stopPoll();
   antennaOn = false;
   logging = false;
-  quietUntil = 0;
-
-  if (azSock) {
-    try {
-      azSock.destroy();
-    } catch (_) {}
-    azSock = null;
-  }
-  if (elSock) {
-    try {
-      elSock.destroy();
-    } catch (_) {}
-    elSock = null;
-  }
-  azConnected = false;
-  elConnected = false;
-  azBuf = "";
-  elBuf = "";
+  closeAxis(az);
+  closeAxis(el);
+  desiredAz = null;
+  desiredEl = null;
   broadcastStatus();
   console.log("Rotor disconnected");
 }
@@ -274,10 +436,10 @@ function startLog() {
     }
     fs.writeFileSync(
       LOG_PATH,
-      "timestamp,sat_az,sat_el,rotor_az,rotor_el,cmd_az,cmd_el\n",
+      "timestamp,sat_az,sat_el,rotor_az,rotor_el,cmd_az,cmd_el,az_state,el_state\n",
     );
     logging = true;
-    console.log("Rotor log started →", LOG_PATH);
+    console.log("Rotor log →", LOG_PATH);
   } catch (e) {
     console.warn("Rotor log open failed:", e.message);
     logging = false;
@@ -293,10 +455,12 @@ function logSample(satAz, satEl) {
         ts,
         satAz != null && Number.isFinite(satAz) ? satAz.toFixed(2) : "",
         satEl != null && Number.isFinite(satEl) ? satEl.toFixed(2) : "",
-        lastAz != null ? lastAz.toFixed(2) : "",
-        lastEl != null ? lastEl.toFixed(2) : "",
-        lastCmdAz != null ? lastCmdAz.toFixed(2) : "",
-        lastCmdEl != null ? lastCmdEl.toFixed(2) : "",
+        az.pos != null ? az.pos.toFixed(2) : "",
+        el.pos != null ? el.pos.toFixed(2) : "",
+        az.lastCmd != null ? az.lastCmd.toFixed(2) : "",
+        el.lastCmd != null ? el.lastCmd.toFixed(2) : "",
+        az.state,
+        el.state,
       ].join(",") + "\n";
     fs.appendFileSync(LOG_PATH, line);
   } catch (e) {
@@ -308,7 +472,10 @@ function setAntenna(on) {
   console.log("Rotor setAntenna(" + on + ")");
   if (on) {
     antennaOn = true;
-    lastRotorAt = 0; // force immediate command on enable (matches Python)
+    az.lastCmd = null;
+    el.lastCmd = null;
+    az.state = "IDLE";
+    el.state = "IDLE";
     startLog();
     connect();
   } else {
@@ -319,14 +486,13 @@ function setAntenna(on) {
 
 function applyEndpointChange() {
   console.log(
-    "Rotor endpoints →",
-    config.ROTOR_AZ_HOST + ":" + config.ROTOR_AZ_PORT,
-    config.ROTOR_EL_HOST + ":" + config.ROTOR_EL_PORT,
+    "Rotor devices →",
+    config.ROTOR_AZ_DEVICE,
+    config.ROTOR_EL_DEVICE,
   );
   if (antennaOn) {
     disconnect();
     antennaOn = true;
-    lastRotorAt = 0;
     startLog();
     connect();
   } else {
@@ -335,82 +501,37 @@ function applyEndpointChange() {
 }
 
 /**
- * Match Python set_rotor:
- *   - single shared 30 s timer
- *   - always send both axes when timer fires (no deadband)
- *   - command is absolute P <val> 0.0 on each axis
- *   - brief quiet window so get_pos does not immediately follow
- */
-function setRotor(az, el) {
-  if (!antennaOn) return;
-
-  const now = Date.now();
-  if (now - lastRotorAt < config.ROTOR_MOVE_INTERVAL_MS) return;
-
-  let sent = false;
-
-  if (az != null && Number.isFinite(az) && azConnected) {
-    const a = ((az % 360) + 360) % 360;
-    if (send("az", "P " + a.toFixed(1) + " 0.0")) {
-      lastCmdAz = a;
-      sent = true;
-      console.log("Rotor CMD AZ", a.toFixed(1));
-    }
-  }
-
-  if (el != null && Number.isFinite(el) && elConnected) {
-    const e = Math.max(-5, Math.min(90, el));
-    if (send("el", "P " + e.toFixed(1) + " 0.0")) {
-      lastCmdEl = e;
-      sent = true;
-      console.log("Rotor CMD EL", e.toFixed(1));
-    }
-  }
-
-  if (sent) {
-    lastRotorAt = now;
-    // Keep get_pos off the wire for a couple of seconds after set_pos
-    quietUntil = now + 2500;
-  }
-}
-
-/**
- * Match Python tracking branch:
- *   el >= MIN_EL  → current sat az/el
- *   el <  MIN_EL  → park at next AOS az, elevation = PARK_EL (default = MIN_EL)
+ * Called every computeTick with current look angles.
+ * Only updates desired targets; serial commands happen in pollLoop when IDLE.
  */
 function updateTracking(look, aosAz) {
   if (aosAz != null && Number.isFinite(aosAz)) nextAosAz = aosAz;
-
   if (!antennaOn) return;
-  if (!azConnected && !elConnected) return;
   if (!look || typeof look.el !== "number" || typeof look.az !== "number") {
     return;
   }
 
   if (look.el >= config.ROTOR_MIN_EL) {
-    setRotor(look.az, look.el);
+    desiredAz = look.az;
+    desiredEl = look.el;
   } else {
-    const parkAz =
+    desiredAz =
       nextAosAz != null && Number.isFinite(nextAosAz) ? nextAosAz : look.az;
-    setRotor(parkAz, config.ROTOR_PARK_EL);
+    desiredEl = config.ROTOR_PARK_EL;
   }
-}
-
-function pollPositions() {
-  if (azConnected) send("az", "p");
-  if (elConnected) send("el", "p");
 }
 
 function getRotorState() {
   return {
     antennaOn,
-    azConnected,
-    elConnected,
-    az: lastAz,
-    el: lastEl,
-    lastCmdAz,
-    lastCmdEl,
+    azConnected: az.connected,
+    elConnected: el.connected,
+    az: az.pos,
+    el: el.pos,
+    lastCmdAz: az.lastCmd,
+    lastCmdEl: el.lastCmd,
+    azState: az.state,
+    elState: el.state,
     minEl: config.ROTOR_MIN_EL,
   };
 }
@@ -419,7 +540,6 @@ module.exports = {
   init,
   setAntenna,
   updateTracking,
-  pollPositions,
   getRotorState,
   statusPayload,
   broadcastStatus,
