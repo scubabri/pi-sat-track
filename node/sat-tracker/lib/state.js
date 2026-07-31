@@ -10,6 +10,7 @@ const {
   isFmMode,
   centerFreqMHz,
   listSatsPayload,
+  parseCtcss,
 } = require("./catalog");
 const { fetchTLE, cacheSatrec } = require("./tle");
 const {
@@ -70,6 +71,28 @@ function applyLockDefaultForMode(modeStr) {
   else if (typeof tci.setLock === "function") tci.setLock(fm);
 }
 
+function applyCtcssDefaultForMode(info, active) {
+  let access = active && active.ctcssAccess;
+  let activation = active && active.ctcssActivation;
+  if (access == null && activation == null) {
+    const tones = parseCtcss(
+      active && active.mode,
+      currentSatKey,
+      info && (info.display || info.name),
+    );
+    access = tones.access;
+    activation = tones.activation;
+  }
+  const apply = (driver) => {
+    if (typeof driver.applyDefaultCtcss === "function") {
+      driver.applyDefaultCtcss(access, activation);
+    }
+  };
+  if (config.useSerialCat()) apply(icom);
+  else if (config.useFlexCat()) apply(flex);
+  else apply(tci);
+}
+
 function setObserver(lat, lon, elevM) {
   observer = {
     latitude: satellite.degreesToRadians(lat),
@@ -95,6 +118,8 @@ function getActiveMode(info) {
       uplink: info.uplink || "",
       downlink: info.downlink || "",
       beacon: info.beacon || "",
+      ctcssAccess: null,
+      ctcssActivation: null,
     };
   }
   const idx = Math.max(0, Math.min(currentModeIndex, modes.length - 1));
@@ -107,6 +132,7 @@ function setModeIndex(index) {
   currentModeIndex = Math.max(0, Math.min(Math.floor(index), max));
   const active = getActiveMode(info);
   applyLockDefaultForMode(active && active.mode);
+  applyCtcssDefaultForMode(info, active);
   return currentModeIndex;
 }
 
@@ -149,6 +175,7 @@ async function loadSatellite(key) {
   );
   const active = getActiveMode(info);
   applyLockDefaultForMode(active && active.mode);
+  applyCtcssDefaultForMode(info, active);
 }
 
 function modesPayload(info) {
@@ -158,8 +185,11 @@ function modesPayload(info) {
     uplink: centerFreqMHz(m.uplink) || "-",
     downlink: centerFreqMHz(m.downlink) || "-",
     isFm: isFmMode(m.mode),
+    ctcssAccess: m.ctcssAccess != null ? m.ctcssAccess : null,
+    ctcssActivation: m.ctcssActivation != null ? m.ctcssActivation : null,
   }));
   if (!modes.length) {
+    const tones = parseCtcss(info.mode, currentSatKey, info.display || info.name);
     modes = [
       {
         index: 0,
@@ -167,6 +197,8 @@ function modesPayload(info) {
         uplink: centerFreqMHz(info.uplink) || "-",
         downlink: centerFreqMHz(info.downlink) || "-",
         isFm: isFmMode(info.mode),
+        ctcssAccess: tones.access,
+        ctcssActivation: tones.activation,
       },
     ];
   }
@@ -208,7 +240,10 @@ function computeTick() {
     const df = 1 - rr / C_MS;
     if (freqs.dlMHz != null) {
       const f0 = freqs.dlMHz * 1e6;
-      const fRx = f0 * df + (radio.manualDlOffset || 0);
+      const fRx =
+        f0 * df +
+        (radio.manualDlOffset || 0) +
+        (radio.dlFineOffset || 0);
       dlDopplerHz = f0 * df - f0;
       dlHz = Math.round(fRx);
       downlink = (fRx / 1e6).toFixed(6);
@@ -282,6 +317,11 @@ function computeTick() {
     tciConnected: radio.tciConnected || radio.connected,
     manualDlOffset: radio.manualDlOffset || 0,
     ulFineOffset: radio.ulFineOffset || 0,
+    dlFineOffset: radio.dlFineOffset || 0,
+    ctcssMode: radio.ctcssMode || "off",
+    ctcssAccessHz: radio.ctcssAccessHz != null ? radio.ctcssAccessHz : null,
+    ctcssActivationHz:
+      radio.ctcssActivationHz != null ? radio.ctcssActivationHz : null,
     antennaOn: r.antennaOn,
     rotorAz: r.az,
     rotorEl: r.el,
@@ -351,6 +391,11 @@ function computeState() {
     tciConnected: radio.tciConnected || radio.connected,
     manualDlOffset: radio.manualDlOffset || 0,
     ulFineOffset: radio.ulFineOffset || 0,
+    dlFineOffset: radio.dlFineOffset || 0,
+    ctcssMode: radio.ctcssMode || "off",
+    ctcssAccessHz: radio.ctcssAccessHz != null ? radio.ctcssAccessHz : null,
+    ctcssActivationHz:
+      radio.ctcssActivationHz != null ? radio.ctcssActivationHz : null,
     antennaOn: r.antennaOn,
     rotorAz: r.az,
     rotorEl: r.el,
