@@ -1,10 +1,18 @@
 /**
  * Icom CI-V driver (IC-705 and similar).
- * Single VFO: tracks downlink when available, else uplink.
- * Same radio API surface as flex.js / tci.js for state + server routing.
  *
- * Frame: FE FE <to> <from> <cmd> [data...] FD
- *   03 read freq · 05 set freq (5 BCD LSB-first) · 06 set mode
+ * Cross-band split for satellite work:
+ *   VFO A (main / selected)  = downlink (RX)
+ *   VFO B (unselected)       = uplink (TX)
+ *   Split ON so PTT transmits on B
+ *
+ * Modern Icom (705/7300/9700):
+ *   0x25 00 + BCD  = set selected VFO frequency
+ *   0x25 01 + BCD  = set unselected VFO frequency
+ *   0x26 00 + mode + fil = mode on selected
+ *   0x26 01 + mode + fil = mode on unselected
+ *   0x07 00 / 01   = select VFO A / B (ensure A is main)
+ *   0x0F 01        = split ON
  */
 
 const { SerialPort } = require("serialport");
@@ -23,8 +31,11 @@ let radioOn = false;
 let locked = false;
 let busy = false;
 let buf = Buffer.alloc(0);
-let lastFreqHz = null;
-let lastMode = null;
+let lastDlHz = null;
+let lastUlHz = null;
+let lastDlMode = null;
+let lastUlMode = null;
+let splitOn = false;
 let manualDlOffset = 0;
 let ulFineOffset = 0;
 let digitStep = 100;
@@ -57,8 +68,11 @@ function statusPayload() {
     device: config.CAT_DEVICE,
     baud: config.CAT_BAUD,
     civAddr: config.CAT_CIV_ADDR,
-    lastFreqHz,
-    lastMode,
+    lastDlHz,
+    lastUlHz,
+    lastDlMode,
+    lastUlMode,
+    splitOn,
     manualDlOffset,
     ulFineOffset,
     step: digitStep,
@@ -67,7 +81,6 @@ function statusPayload() {
 
 function broadcastStatus() {
   broadcastFn(statusPayload());
-  // Same shape as TCI status so the UI radio indicator works
   broadcastFn({
     type: "tci",
     radioOn,
@@ -79,8 +92,8 @@ function broadcastStatus() {
     manualDlOffset,
     ulFineOffset,
     step: digitStep,
-    lastCmdDl: lastFreqHz,
-    lastCmdUl: lastFreqHz,
+    lastCmdDl: lastDlHz,
+    lastCmdUl: lastUlHz,
   });
 }
 
@@ -114,17 +127,17 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** CI-V mode: 00 LSB, 01 USB, 03 CW, 05 FM */
+/** CI-V mode codes: 00 LSB, 01 USB, 03 CW, 05 FM */
 function modesForCatalogMode(modeStr) {
   const m = (modeStr || "").toUpperCase();
   if (isFmMode(modeStr) || /\bFM\b|NFM|GFSK|CTCSS|C4FM|DSTAR|DMR/.test(m)) {
-    return { code: 0x05, name: "FM" };
+    return { ul: 0x05, dl: 0x05, ulName: "FM", dlName: "FM" };
   }
   if (/\bCW\b/.test(m) && !/\bSSB\b/.test(m)) {
-    return { code: 0x03, name: "CW" };
+    return { ul: 0x03, dl: 0x03, ulName: "CW", dlName: "CW" };
   }
-  // Single VFO: USB for RX-oriented linear (DL usually USB)
-  return { code: 0x01, name: "USB" };
+  // Linear: UL LSB (TX), DL USB (RX)
+  return { ul: 0x00, dl: 0x01, ulName: "LSB", dlName: "USB" };
 }
 
 function writeRaw(data) {
@@ -239,7 +252,11 @@ async function open() {
         port = p;
         connected = true;
         buf = Buffer.alloc(0);
-        lastMode = null;
+        lastDlHz = null;
+        lastUlHz = null;
+        lastDlMode = null;
+        lastUlMode = null;
+        splitOn = false;
         clearReconnect();
 
         p.on("data", (chunk) => {
@@ -291,8 +308,11 @@ function close() {
   connecting = false;
   busy = false;
   buf = Buffer.alloc(0);
-  lastFreqHz = null;
-  lastMode = null;
+  lastDlHz = null;
+  lastUlHz = null;
+  lastDlMode = null;
+  lastUlMode = null;
+  splitOn = false;
   broadcastStatus();
   console.log("Icom disconnected");
 }
@@ -322,58 +342,111 @@ function applyDefaultLock(isFm) {
   broadcastStatus();
 }
 
-async function setFrequency(freqHz) {
+/** Ensure main display is VFO A */
+async function selectVfoA() {
+  try {
+    await sendCiv(Buffer.from([0x07, 0x00]));
+    return true;
+  } catch (e) {
+    console.warn("Icom select VFO A:", e.message);
+    return false;
+  }
+}
+
+/** Enable split (TX on VFO B) */
+async function ensureSplit() {
+  if (splitOn) return true;
+  try {
+    const reply = await sendCiv(Buffer.from([0x0f, 0x01]));
+    if (reply.includes(0xfa)) {
+      console.warn("Icom NG on split ON");
+      return false;
+    }
+    splitOn = true;
+    console.log("Icom SPLIT ON (TX = VFO B)");
+    return true;
+  } catch (e) {
+    console.warn("Icom split:", e.message);
+    return false;
+  }
+}
+
+/**
+ * Set frequency on selected (0x00) or unselected (0x01) VFO via cmd 0x25.
+ * Falls back to classic 0x05 on the currently selected VFO.
+ */
+async function setVfoFrequency(which, freqHz) {
   if (!Number.isFinite(freqHz) || freqHz < 1e5 || freqHz > 5e8) return false;
   if (!connected) return false;
   const bcd = freqToBcd(freqHz);
+  const sub = which === "B" ? 0x01 : 0x00;
   try {
-    const reply = await sendCiv(Buffer.concat([Buffer.from([0x05]), bcd]));
-    if (reply.includes(0xfb) || reply.includes(0x05)) {
-      lastFreqHz = Math.round(freqHz);
-      return true;
-    }
+    const reply = await sendCiv(
+      Buffer.concat([Buffer.from([0x25, sub]), bcd]),
+    );
     if (reply.includes(0xfa)) {
-      console.warn("Icom NG on setFrequency");
-      return false;
+      // Fallback: select VFO then classic 0x05
+      await sendCiv(Buffer.from([0x07, sub]));
+      const r2 = await sendCiv(Buffer.concat([Buffer.from([0x05]), bcd]));
+      if (r2.includes(0xfa)) {
+        console.warn("Icom NG set freq", which);
+        return false;
+      }
+      // Return to VFO A as main
+      if (which === "B") await selectVfoA();
     }
-    lastFreqHz = Math.round(freqHz);
     return true;
   } catch (e) {
-    console.warn("Icom setFrequency:", e.message);
+    console.warn("Icom setVfoFrequency", which, e.message);
     return false;
   }
 }
 
-async function getFrequency() {
+/** Mode on selected/unselected VFO via 0x26 */
+async function setVfoMode(which, modeCode, modeName) {
+  if (!connected) return false;
+  const sub = which === "B" ? 0x01 : 0x00;
+  const prev = which === "B" ? lastUlMode : lastDlMode;
+  if (prev === modeCode) return true;
+  try {
+    const reply = await sendCiv(
+      Buffer.from([0x26, sub, modeCode, 0x01]),
+    );
+    if (reply.includes(0xfa)) {
+      // Fallback classic 0x06 on selected VFO
+      await sendCiv(Buffer.from([0x07, sub]));
+      await sendCiv(Buffer.from([0x06, modeCode, 0x01]));
+      if (which === "B") await selectVfoA();
+    }
+    if (which === "B") lastUlMode = modeCode;
+    else lastDlMode = modeCode;
+    console.log("Icom VFO", which, "mode →", modeName);
+    return true;
+  } catch (e) {
+    console.warn("Icom setVfoMode", which, e.message);
+    return false;
+  }
+}
+
+async function getSelectedFrequency() {
   if (!connected) return null;
   try {
-    const reply = await sendCiv(Buffer.from([0x03]));
-    const idx = reply.indexOf(0x03);
-    if (idx < 0 || reply.length < idx + 6) return null;
-    const freq = bcdToFreq(reply.slice(idx + 1, idx + 6));
-    return freq;
-  } catch (e) {
-    console.warn("Icom getFrequency:", e.message);
-    return null;
-  }
-}
-
-async function setMode(modeCode, modeName) {
-  if (!connected) return false;
-  if (lastMode === modeCode) return true;
-  try {
-    // 06 <mode> <filter> — filter 0x01 = FIL1
-    const reply = await sendCiv(Buffer.from([0x06, modeCode, 0x01]));
-    if (reply.includes(0xfa)) {
-      console.warn("Icom NG on setMode");
-      return false;
+    // 0x25 00 with no data = read selected VFO freq (modern)
+    let reply = await sendCiv(Buffer.from([0x25, 0x00]));
+    let idx = reply.indexOf(0x25);
+    if (idx >= 0 && reply.length >= idx + 7) {
+      return bcdToFreq(reply.slice(idx + 2, idx + 7));
     }
-    lastMode = modeCode;
-    console.log("Icom mode →", modeName, "(0x" + modeCode.toString(16) + ")");
-    return true;
+    // Classic 0x03
+    reply = await sendCiv(Buffer.from([0x03]));
+    idx = reply.indexOf(0x03);
+    if (idx >= 0 && reply.length >= idx + 6) {
+      return bcdToFreq(reply.slice(idx + 1, idx + 6));
+    }
+    return null;
   } catch (e) {
-    console.warn("Icom setMode:", e.message);
-    return false;
+    console.warn("Icom getSelectedFrequency:", e.message);
+    return null;
   }
 }
 
@@ -393,8 +466,10 @@ function getActiveModeObj(info, modeIndex) {
 }
 
 /**
- * Single VFO: prefer downlink (RX track), else uplink.
- * Fine offset applies to the commanded frequency.
+ * Push Doppler freqs:
+ *   VFO A = downlink (RX)
+ *   VFO B = uplink (TX) + fine offset
+ *   Split ON
  */
 async function pushFrequencies(ulHz, dlHz) {
   if (!radioOn) return;
@@ -404,36 +479,55 @@ async function pushFrequencies(ulHz, dlHz) {
     if (!ok) return;
   }
 
+  await selectVfoA();
+
   const { currentSatKey, currentModeIndex } = getCtx();
   const info = getCatalog()[currentSatKey] || {};
   const active = getActiveModeObj(info, currentModeIndex);
-  const mod = modesForCatalogMode(active && active.mode);
-  await setMode(mod.code, mod.name);
+  const mods = modesForCatalogMode(active && active.mode);
 
-  // Prefer DL for single-VFO sat tracking; fall back to UL
-  let target = null;
-  if (dlHz != null && Number.isFinite(dlHz)) {
-    target = Math.round(dlHz);
-  } else if (ulHz != null && Number.isFinite(ulHz)) {
-    target = Math.round(ulHz);
+  const hasUl = ulHz != null && Number.isFinite(ulHz);
+  const hasDl = dlHz != null && Number.isFinite(dlHz);
+
+  if (hasUl && hasDl) {
+    await ensureSplit();
   }
-  if (target == null) return;
 
-  if (lastFreqHz == null || Math.abs(target - lastFreqHz) >= 1) {
-    const ok = await setFrequency(target);
-    if (ok) {
-      console.log("Icom VFO", (target / 1e6).toFixed(6), "MHz");
+  // --- VFO A = downlink ---
+  if (hasDl) {
+    const target = Math.round(dlHz);
+    await setVfoMode("A", mods.dl, mods.dlName);
+    if (lastDlHz == null || Math.abs(target - lastDlHz) >= 1) {
+      if (await setVfoFrequency("A", target)) {
+        lastDlHz = target;
+        console.log("Icom VFO A (DL)", (target / 1e6).toFixed(6), "MHz");
+      }
     }
   }
+
+  // --- VFO B = uplink ---
+  if (hasUl) {
+    const target = Math.round(ulHz);
+    await setVfoMode("B", mods.ul, mods.ulName);
+    if (lastUlHz == null || Math.abs(target - lastUlHz) >= 1) {
+      if (await setVfoFrequency("B", target)) {
+        lastUlHz = target;
+        console.log("Icom VFO B (UL)", (target / 1e6).toFixed(6), "MHz");
+      }
+    }
+  }
+
+  // Keep main display on A (RX)
+  await selectVfoA();
 }
 
 async function pollVfo() {
   if (!radioOn || !connected || busy || locked) return;
-  if (lastFreqHz == null || lastFreqHz <= 0) return;
+  if (lastDlHz == null || lastDlHz <= 0) return;
 
-  const freq = await getFrequency();
+  const freq = await getSelectedFrequency();
   if (freq == null) return;
-  if (Math.abs(freq - lastFreqHz) <= VFO_THRESH_HZ) return;
+  if (Math.abs(freq - lastDlHz) <= VFO_THRESH_HZ) return;
 
   const { satrec, observer, currentSatKey, currentModeIndex } = getCtx();
   if (!satrec) return;
@@ -441,22 +535,20 @@ async function pollVfo() {
   const info = getCatalog()[currentSatKey] || {};
   const active = getActiveModeObj(info, currentModeIndex);
   const freqs = formatFreqDisplayFromMode(active);
-  // Offset relative to DL if we have one, else UL
-  const baseMHz = freqs.dlMHz != null ? freqs.dlMHz : freqs.ulMHz;
-  if (baseMHz == null) return;
+  if (freqs.dlMHz == null) return;
 
   const rr = rangeRateKmS(satrec, observer, new Date());
   if (rr == null || !Number.isFinite(rr)) return;
 
-  const f0 = baseMHz * 1e6;
+  const f0 = freqs.dlMHz * 1e6;
   const df = 1 - rr / config.C_MS;
   const prev = manualDlOffset;
   manualDlOffset = freq - f0 * df;
-  lastFreqHz = freq;
+  lastDlHz = freq;
 
   if (Math.abs(manualDlOffset - prev) >= 1) {
     console.log(
-      "Icom VFO",
+      "Icom VFO A tune",
       (freq / 1e6).toFixed(6),
       "MHz → manualDlOffset",
       Math.round(manualDlOffset),
@@ -483,7 +575,7 @@ function stopVfoPoll() {
 function adjustFine(delta) {
   if (typeof delta === "number") {
     ulFineOffset += delta;
-    lastFreqHz = null; // force re-push
+    lastUlHz = null; // force VFO B re-push
     console.log("Icom fine", delta >= 0 ? "+" + delta : delta, "→", ulFineOffset, "Hz");
   }
   broadcastStatus();
@@ -497,7 +589,8 @@ function setStep(step) {
 function center() {
   manualDlOffset = 0;
   ulFineOffset = 0;
-  lastFreqHz = null;
+  lastDlHz = null;
+  lastUlHz = null;
   console.log("Icom center offsets");
   broadcastStatus();
 }
@@ -505,8 +598,10 @@ function center() {
 function resetOffsets() {
   manualDlOffset = 0;
   ulFineOffset = 0;
-  lastFreqHz = null;
-  lastMode = null;
+  lastDlHz = null;
+  lastUlHz = null;
+  lastDlMode = null;
+  lastUlMode = null;
 }
 
 function getRadioState() {
@@ -518,8 +613,8 @@ function getRadioState() {
     connecting,
     manualDlOffset,
     ulFineOffset,
-    lastCmdDl: lastFreqHz,
-    lastCmdUl: lastFreqHz,
+    lastCmdDl: lastDlHz,
+    lastCmdUl: lastUlHz,
     step: digitStep,
   };
 }
@@ -553,8 +648,6 @@ module.exports = {
   center,
   resetOffsets,
   getRadioState,
-  setFrequency,
-  getFrequency,
   statusPayload,
   broadcastStatus,
   applyEndpointChange,
