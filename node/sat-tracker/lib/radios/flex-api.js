@@ -13,6 +13,8 @@ const config = require("../config");
 const CONNECT_TIMEOUT_MS = 4000;
 const SLICE_WAIT_MS = 800;
 const MAX_DEBUG_LINES = 50;
+/** Match UL freq within this many Hz when selecting tone slice. */
+const UL_FREQ_MATCH_HZ = 100000; // 100 kHz
 
 function createApiClient() {
   let socket = null;
@@ -162,11 +164,12 @@ function createApiClient() {
     return parts.length ? parts.join(", ") : "(none yet)";
   }
 
+  /**
+   * Choose the uplink / tone slice.
+   * Prefer frequency match to commanded UL (AetherSDR often marks the DL
+   * slice as tx=1 while UL sits on the other VFO at 2m).
+   */
   function findUlSlice(ulHz) {
-    for (const [idx, s] of slices) {
-      if (s.tx) return idx;
-    }
-
     if (ulHz != null && Number.isFinite(ulHz) && ulHz > 0 && slices.size) {
       let best = null;
       let bestDiff = Infinity;
@@ -178,7 +181,13 @@ function createApiClient() {
           best = idx;
         }
       }
-      if (best != null && bestDiff < 50000) return best;
+      if (best != null && bestDiff <= UL_FREQ_MATCH_HZ) {
+        return best;
+      }
+    }
+
+    for (const [idx, s] of slices) {
+      if (s.tx) return idx;
     }
 
     if (slices.has(0)) return 0;
@@ -309,7 +318,7 @@ function createApiClient() {
       sliceIdx,
       "among",
       dumpSlices(),
-      ulHz != null ? "(CAT UL " + (ulHz / 1e6).toFixed(3) + " MHz)" : "",
+      ulHz != null ? "(UL " + (ulHz / 1e6).toFixed(3) + " MHz)" : "",
     );
 
     if (hz != null && Number.isFinite(hz) && hz > 0) {
