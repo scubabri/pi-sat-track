@@ -1,7 +1,7 @@
 /**
  * FlexRadio SmartSDR driver.
  * - CAT TCP (UL/DL ports on SmartSDR PC): frequency + mode
- * - SmartSDR API (radio LAN IP:4992): FM CTCSS
+ * - SmartSDR API (radio LAN IP:4992): FM CTCSS on UL/TX slice only
  *
  * CAT never supports TN/TO. 4992 is on the radio, not the Windows PC.
  */
@@ -450,6 +450,7 @@ async function applyCtcssToRadio(force) {
   const key = hz != null ? String(hz) : "off";
   if (!force && key === lastCtcssApplied) return;
 
+  // CAT mode only on UL port (encode path)
   if (ul.connected) {
     try {
       await sendCmd(ul, "MD4;", false);
@@ -481,7 +482,8 @@ async function applyCtcssToRadio(force) {
   }
 
   try {
-    await api.setCtcss(hz);
+    // Prefer TX slice; else match CAT UL frequency
+    await api.setCtcss(hz, ul.lastFreqHz);
     lastCtcssApplied = key;
   } catch (e) {
     console.warn("Flex CTCSS API:", e.message);
