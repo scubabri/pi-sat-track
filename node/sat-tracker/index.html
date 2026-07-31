@@ -123,70 +123,40 @@
                   </select>
                 </div>
 
-                <!-- TCI: single host/port (AetherSDR) -->
+                <!-- TCI: single host:port (AetherSDR) -->
                 <div id="cfg-tci-block">
                   <div class="form-row">
-                    <label for="cfg-tci-host">TCI host</label>
+                    <label for="cfg-tci-endpoint">TCI endpoint</label>
                     <input
                       type="text"
-                      id="cfg-tci-host"
-                      placeholder="127.0.0.1"
+                      id="cfg-tci-endpoint"
+                      placeholder="127.0.0.1:50001"
                       autocomplete="off"
-                    />
-                  </div>
-                  <div class="form-row">
-                    <label for="cfg-tci-port">TCI port</label>
-                    <input
-                      type="number"
-                      id="cfg-tci-port"
-                      placeholder="50001"
-                      min="1"
-                      max="65535"
-                      step="1"
+                      spellcheck="false"
                     />
                   </div>
                 </div>
 
-                <!-- CAT over TCP: UL + DL ports (SmartSDR slices or dual CAT) -->
+                <!-- CAT over TCP: UL + DL as host:port -->
                 <div id="cfg-flex-cat-block">
                   <div class="form-row">
-                    <label for="cfg-flex-ul-host">Uplink (TX) host</label>
+                    <label for="cfg-flex-ul-endpoint">Uplink (TX)</label>
                     <input
                       type="text"
-                      id="cfg-flex-ul-host"
-                      placeholder="172.17.18.229"
+                      id="cfg-flex-ul-endpoint"
+                      placeholder="172.17.18.229:60002"
                       autocomplete="off"
+                      spellcheck="false"
                     />
                   </div>
                   <div class="form-row">
-                    <label for="cfg-flex-ul-port">Uplink (TX) CAT port</label>
-                    <input
-                      type="number"
-                      id="cfg-flex-ul-port"
-                      placeholder="60002"
-                      min="1"
-                      max="65535"
-                      step="1"
-                    />
-                  </div>
-                  <div class="form-row">
-                    <label for="cfg-flex-dl-host">Downlink (RX) host</label>
+                    <label for="cfg-flex-dl-endpoint">Downlink (RX)</label>
                     <input
                       type="text"
-                      id="cfg-flex-dl-host"
-                      placeholder="172.17.18.229"
+                      id="cfg-flex-dl-endpoint"
+                      placeholder="172.17.18.229:60001"
                       autocomplete="off"
-                    />
-                  </div>
-                  <div class="form-row">
-                    <label for="cfg-flex-dl-port">Downlink (RX) CAT port</label>
-                    <input
-                      type="number"
-                      id="cfg-flex-dl-port"
-                      placeholder="60001"
-                      min="1"
-                      max="65535"
-                      step="1"
+                      spellcheck="false"
                     />
                   </div>
                 </div>
