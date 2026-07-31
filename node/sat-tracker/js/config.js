@@ -324,6 +324,7 @@ function updateRadioFormVisibility() {
   const serialBlock = document.getElementById("cfg-serial-block");
   const tciBlock = document.getElementById("cfg-tci-block");
   const flexCatBlock = document.getElementById("cfg-flex-cat-block");
+  const apiBlock = document.getElementById("cfg-flex-api-block");
 
   if (tcpBlock) tcpBlock.hidden = transport !== "tcp";
   if (serialBlock) serialBlock.hidden = transport !== "serial";
@@ -335,11 +336,17 @@ function updateRadioFormVisibility() {
       (radioType === "smartsdr" ||
         radioType === "aethersdr" ||
         radioType === "flex");
+    const needsApi =
+      radioType === "smartsdr" ||
+      radioType === "aethersdr" ||
+      radioType === "flex";
     if (tciBlock) tciBlock.hidden = !isTci;
     if (flexCatBlock) flexCatBlock.hidden = !isCatTcp;
+    if (apiBlock) apiBlock.hidden = !needsApi;
   } else {
     if (tciBlock) tciBlock.hidden = true;
     if (flexCatBlock) flexCatBlock.hidden = true;
+    if (apiBlock) apiBlock.hidden = true;
   }
 }
 
@@ -382,8 +389,6 @@ function initConfig() {
 
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
-    // Reload form from last *saved* config so unsaved edits are discarded
-    // if the panel was closed without Save.
     if (!panel.classList.contains("open")) {
       fillForm(loadConfig());
     }
