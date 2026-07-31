@@ -27,7 +27,7 @@ const ROTOR_PARK_EL = parseFloat(process.env.ROTOR_PARK_EL || "0");
 
 // Send a move command at most this often (ms)
 const ROTOR_MOVE_INTERVAL_MS = parseInt(
-  process.env.ROTOR_MOVE_INTERVAL_MS || "30000",
+  process.env.ROTOR_MOVE_INTERVAL_MS || "10000",
   10,
 );
 
