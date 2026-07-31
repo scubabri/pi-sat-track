@@ -95,6 +95,12 @@ function setLock(on) {
   else tci.setLock(!!on);
 }
 
+/** Push Doppler immediately so fine/center show up without waiting for tick */
+function pushNow() {
+  const tk = state.computeTick();
+  if (tk) broadcast(tk);
+}
+
 wss.on("connection", (ws) => {
   console.log("Client connected");
   ws.send(JSON.stringify({ type: "sats", ...state.satsPayload("trackable") }));
@@ -152,17 +158,19 @@ wss.on("connection", (ws) => {
 
       if (msg.type === "fine") {
         if (config.useFlexCat()) {
-          if (typeof msg.delta === "number") flex.adjustFine(msg.delta);
           if (typeof msg.step === "number") flex.setStep(msg.step);
+          if (typeof msg.delta === "number") flex.adjustFine(msg.delta);
         } else {
-          if (typeof msg.delta === "number") tci.adjustFine(msg.delta);
           if (typeof msg.step === "number") tci.setStep(msg.step);
+          if (typeof msg.delta === "number") tci.adjustFine(msg.delta);
         }
+        pushNow();
       }
 
       if (msg.type === "center") {
         if (config.useFlexCat()) flex.center();
         else tci.center();
+        pushNow();
       }
 
       if (msg.type === "endpoints") {
