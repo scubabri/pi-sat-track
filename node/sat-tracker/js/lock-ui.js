@@ -1,7 +1,10 @@
-/** LOCK button — VFO lock UI + WS status sync */
+/**
+ * LOCK button UI.
+ * Server drives locked via tick/state/tci messages (field: locked).
+ * This module wires the button and keeps the green active state in sync.
+ */
 (function () {
   let locked = false;
-  let patched = false;
 
   function updateLockUi(on) {
     locked = !!on;
@@ -14,40 +17,65 @@
   }
 
   function sendLock(on) {
-    if (typeof ws !== "undefined" && ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "lock", on: !!on }));
+    // tracker.js exposes ws as a top-level binding; also try window.ws
+    const sock =
+      typeof window !== "undefined" && window.ws
+        ? window.ws
+        : typeof ws !== "undefined"
+          ? ws
+          : null;
+    if (sock && sock.readyState === WebSocket.OPEN) {
+      sock.send(JSON.stringify({ type: "lock", on: !!on }));
     }
     updateLockUi(on);
   }
 
-  function tryPatchWs() {
-    if (patched) return;
-    if (typeof ws === "undefined" || !ws || !ws.onmessage) return;
-    const prev = ws.onmessage.bind(ws);
-    ws.onmessage = function (ev) {
-      prev(ev);
-      try {
-        const msg = JSON.parse(ev.data);
-        if (typeof msg.locked === "boolean") updateLockUi(msg.locked);
-        if (msg.type === "tci" && typeof msg.locked === "boolean") {
-          updateLockUi(msg.locked);
-        }
-      } catch (_) {}
-    };
-    patched = true;
+  function handleMsg(msg) {
+    if (!msg || typeof msg !== "object") return;
+    if (typeof msg.locked === "boolean") updateLockUi(msg.locked);
   }
 
-  function initLockButton() {
+  function init() {
     const btn = document.getElementById("btn-lock");
-    if (!btn) return;
-    btn.addEventListener("click", () => sendLock(!locked));
+    if (btn) {
+      btn.addEventListener("click", () => sendLock(!locked));
+    }
+
+    // Hook native WebSocket so we see every server message
+    const OrigWS = window.WebSocket;
+    if (OrigWS && !OrigWS.__lockPatched) {
+      function PatchedWS(url, protocols) {
+        const sock = protocols
+          ? new OrigWS(url, protocols)
+          : new OrigWS(url);
+        const prev = sock.onmessage;
+        sock.addEventListener("message", (ev) => {
+          try {
+            handleMsg(JSON.parse(ev.data));
+          } catch (_) {}
+        });
+        if (url && String(url).indexOf("/ws") !== -1) {
+          window.ws = sock;
+        }
+        return sock;
+      }
+      PatchedWS.prototype = OrigWS.prototype;
+      PatchedWS.CONNECTING = OrigWS.CONNECTING;
+      PatchedWS.OPEN = OrigWS.OPEN;
+      PatchedWS.CLOSING = OrigWS.CLOSING;
+      PatchedWS.CLOSED = OrigWS.CLOSED;
+      PatchedWS.__lockPatched = true;
+      window.WebSocket = PatchedWS;
+    }
+
     updateLockUi(false);
-    setInterval(tryPatchWs, 500);
   }
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initLockButton);
+    document.addEventListener("DOMContentLoaded", init);
   } else {
-    initLockButton();
+    init();
   }
+
+  window.__updateLockUi = updateLockUi;
 })();

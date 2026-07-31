@@ -2,14 +2,16 @@
  * FlexRadio SmartSDR CAT driver (Kenwood-style over TCP).
  * Dual connections: uplink (TX slice) + downlink (RX slice).
  *
- * VFO follow: polls FA; on DL. When unlocked, operator tunes update
- * manualDlOffset (UL tracks). When locked (FM default), tunes are ignored.
+ * Sets mode via MD (Kenwood):
+ *   MD0 LSB, MD1 USB, MD2 CW, MD3 FM
+ * FM sats → FM both slices; linear → UL LSB / DL USB (or CW).
  */
 
 const net = require("net");
 const config = require("../config");
 const {
   formatFreqDisplayFromMode,
+  isFmMode,
   getCatalog,
 } = require("../catalog");
 const { rangeRateKmS } = require("../orbit");
@@ -23,6 +25,7 @@ function makeLink(name) {
     busy: false,
     buf: "",
     lastFreqHz: null,
+    lastMode: null,
     reconnectTimer: null,
     wanted: false,
   };
@@ -74,6 +77,8 @@ function statusPayload() {
     dlPort: config.FLEX_DL_PORT,
     lastUlHz: ul.lastFreqHz,
     lastDlHz: dl.lastFreqHz,
+    lastUlMode: ul.lastMode,
+    lastDlMode: dl.lastMode,
     manualDlOffset,
     ulFineOffset,
     step: digitStep,
@@ -109,6 +114,19 @@ function parseFa(reply) {
   const digits = s.slice(2, -1);
   if (!/^\d+$/.test(digits)) return null;
   return parseInt(digits, 10);
+}
+
+/** Kenwood MD codes used by SmartSDR CAT */
+function modesForCatalogMode(modeStr) {
+  const m = (modeStr || "").toUpperCase();
+  if (isFmMode(modeStr) || /\bFM\b|NFM|GFSK|CTCSS|C4FM|DSTAR|DMR/.test(m)) {
+    return { ul: "3", dl: "3", ulName: "FM", dlName: "FM" }; // MD3
+  }
+  if (/\bCW\b/.test(m) && !/\bSSB\b/.test(m)) {
+    return { ul: "2", dl: "2", ulName: "CW", dlName: "CW" }; // MD2
+  }
+  // Linear SSB: UL LSB, DL USB
+  return { ul: "0", dl: "1", ulName: "LSB", dlName: "USB" }; // MD0 / MD1
 }
 
 function linkHostPort(link) {
@@ -240,6 +258,7 @@ function openLink(link) {
       link.socket = s;
       link.connected = true;
       link.buf = "";
+      link.lastMode = null; // force mode push after reconnect
       clearReconnect(link);
       console.log("Flex", link.name.toUpperCase(), "connected", host + ":" + port);
       broadcastStatus();
@@ -294,6 +313,7 @@ function closeLink(link) {
   link.busy = false;
   link.buf = "";
   link.lastFreqHz = null;
+  link.lastMode = null;
 }
 
 function close() {
@@ -323,7 +343,6 @@ function setLock(on) {
   broadcastStatus();
 }
 
-/** FM → locked true, linear → locked false */
 function applyDefaultLock(isFm) {
   locked = !!isFm;
   console.log("Flex default LOCK", locked ? "ON (FM)" : "OFF (linear)");
@@ -341,6 +360,34 @@ async function setLinkFrequency(link, freqHz) {
   } catch (e) {
     console.warn("Flex", link.name, "set failed:", e.message);
     return false;
+  }
+}
+
+async function setLinkMode(link, mdCode, mdName) {
+  if (!link.connected) return false;
+  if (link.lastMode === mdCode) return true;
+  try {
+    await sendCmd(link, "MD" + mdCode + ";", false);
+    link.lastMode = mdCode;
+    console.log("Flex", link.name.toUpperCase(), "mode →", mdName, "(MD" + mdCode + ")");
+    return true;
+  } catch (e) {
+    console.warn("Flex", link.name, "mode failed:", e.message);
+    return false;
+  }
+}
+
+async function pushModulation() {
+  const { currentSatKey, currentModeIndex } = getCtx();
+  const info = getCatalog()[currentSatKey] || {};
+  const active = getActiveModeObj(info, currentModeIndex);
+  const mods = modesForCatalogMode(active && active.mode);
+
+  if (ul.connected && ul.wanted) {
+    await setLinkMode(ul, mods.ul, mods.ulName);
+  }
+  if (dl.connected && dl.wanted) {
+    await setLinkMode(dl, mods.dl, mods.dlName);
   }
 }
 
@@ -372,6 +419,7 @@ async function pushFrequencies(ulHz, dlHz) {
   if (!radioOn) return;
   await pushSide(ul, ulHz);
   await pushSide(dl, dlHz);
+  await pushModulation();
 }
 
 function getActiveModeObj(info, modeIndex) {
@@ -392,7 +440,6 @@ function getActiveModeObj(info, modeIndex) {
 async function pollDlVfo() {
   if (!radioOn || !dl.connected || !dl.wanted || dl.busy) return;
   if (dl.lastFreqHz == null || dl.lastFreqHz <= 0) return;
-  // Locked: ignore operator tunes (FM default)
   if (locked) return;
 
   let reply;
@@ -470,6 +517,8 @@ function resetOffsets() {
   ulFineOffset = 0;
   ul.lastFreqHz = null;
   dl.lastFreqHz = null;
+  ul.lastMode = null;
+  dl.lastMode = null;
 }
 
 function getRadioState() {
