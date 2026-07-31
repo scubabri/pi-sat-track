@@ -6,6 +6,8 @@
  *   CTCSS_TX_TONE:rx,hz;
  *   CTCSS_MODE:rx,mode;     // 0=off 1=rx 2=tx 3=rx/tx (TX Only for uplink)
  *   CTCSS_ENABLE:rx,true|false;
+ *
+ * Frequencies come from state.js (includes Fix UL / Doppler) — do not recompute.
  */
 
 const WebSocket = require("ws");
@@ -13,7 +15,6 @@ const net = require("net");
 const config = require("../config");
 const {
   formatFreqDisplayFromMode,
-  isInverting,
   isFmMode,
   getCatalog,
 } = require("../catalog");
@@ -51,9 +52,7 @@ let ctcssAccessHz = null;
 let ctcssActivationHz = null;
 let lastCtcssApplied = null;
 
-// UL receiver index in TCI (split: rx0 = DL, rx1 = UL)
 const UL_RX = 1;
-// CTCSS_MODE: 2 = TX Only (encode on uplink)
 const CTCSS_MODE_TX = 2;
 
 let getCtx = () => ({
@@ -187,10 +186,6 @@ function activeCtcssHz() {
   return null;
 }
 
-/**
- * Apply CTCSS on UL receiver (rx1) only — TX encode for satellite uplink.
- * Command set from ExpertSDR TCI protocol 1.6 (also listed in eesdr-tci).
- */
 function applyCtcssToRadio(force) {
   if (!tciConnected) {
     if (force) console.log("TCI CTCSS: not connected — will apply on connect");
@@ -202,7 +197,6 @@ function applyCtcssToRadio(force) {
 
   if (hz != null && Number.isFinite(hz) && hz > 0) {
     const tone = Number(hz).toFixed(1);
-    // Order: tone → mode (TX only) → enable
     const okTone = tciSend(`CTCSS_TX_TONE:${UL_RX},${tone};`);
     const okMode = tciSend(`CTCSS_MODE:${UL_RX},${CTCSS_MODE_TX};`);
     const okEn = tciSend(`CTCSS_ENABLE:${UL_RX},true;`);
@@ -287,13 +281,11 @@ async function connect() {
     const info = getCatalog()[currentSatKey] || {};
     const active = getActiveModeObj(info, currentModeIndex);
     pushModulation(active, true);
-    // Slight delay so Aether finishes init status dump before CTCSS
     setTimeout(() => applyCtcssToRadio(true), 300);
   });
 
   tciWs.on("message", (raw) => {
     const msg = raw.toString().trim();
-    // Log CTCSS-related status from server (helps verify support)
     if (/^ctcss_/i.test(msg)) {
       console.log("TCI <<", msg);
     }
@@ -456,49 +448,24 @@ function applyDefaultCtcss(accessHz, activationHz) {
   broadcastStatus();
 }
 
-/** TCI computes Doppler itself; args ignored. */
-function pushFrequencies() {
+/**
+ * Use frequencies from state.js (Doppler + Fix UL already applied).
+ * Do not recompute Doppler here — that broke Fix UL.
+ */
+function pushFrequencies(ulHz, dlHz) {
   if (!radioOn || !tciConnected) return;
 
-  const { satrec, observer, currentSatKey, currentModeIndex } = getCtx();
-  if (!satrec) return;
-
+  const { currentSatKey, currentModeIndex } = getCtx();
   const info = getCatalog()[currentSatKey] || {};
   const active = getActiveModeObj(info, currentModeIndex);
-  const freqs = formatFreqDisplayFromMode(active);
-  if (freqs.ulMHz == null && freqs.dlMHz == null) return;
-
   pushModulation(active, false);
   applyCtcssToRadio(false);
 
-  const rr = rangeRateKmS(satrec, observer, new Date());
-  if (rr == null || !Number.isFinite(rr)) return;
-
-  const df = 1 - rr / config.C_MS;
-  const inverting = isInverting(active && active.mode);
-
-  let desiredDl = null;
-  let desiredUl = null;
-
-  if (freqs.dlMHz != null) {
-    desiredDl = Math.round(
-      freqs.dlMHz * 1e6 * df + manualDlOffset + dlFineOffset,
-    );
+  if (dlHz != null && Number.isFinite(dlHz) && Math.abs(dlHz - lastCmdDl) >= 1) {
+    if (tciSend(`vfo:0,0,${Math.round(dlHz)};`)) lastCmdDl = Math.round(dlHz);
   }
-  if (freqs.ulMHz != null) {
-    const f0 = freqs.ulMHz * 1e6;
-    if (inverting) {
-      desiredUl = Math.round(f0 * (2 - df) - manualDlOffset + ulFineOffset);
-    } else {
-      desiredUl = Math.round(f0 * df + manualDlOffset + ulFineOffset);
-    }
-  }
-
-  if (desiredDl != null && Math.abs(desiredDl - lastCmdDl) >= 1) {
-    if (tciSend(`vfo:0,0,${desiredDl};`)) lastCmdDl = desiredDl;
-  }
-  if (desiredUl != null && Math.abs(desiredUl - lastCmdUl) >= 1) {
-    if (tciSend(`vfo:1,0,${desiredUl};`)) lastCmdUl = desiredUl;
+  if (ulHz != null && Number.isFinite(ulHz) && Math.abs(ulHz - lastCmdUl) >= 1) {
+    if (tciSend(`vfo:1,0,${Math.round(ulHz)};`)) lastCmdUl = Math.round(ulHz);
   }
 }
 
