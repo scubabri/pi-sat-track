@@ -1,0 +1,51 @@
+.fine-tune-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+.fine-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.fine-row .fine-side {
+  font-size: 0.75rem;
+  font-weight: 600;
+  min-width: 1.6rem;
+  color: #9ca3af;
+}
+.fine-row .fine-offset {
+  font-size: 0.8rem;
+  min-width: 4.5rem;
+}
+.fine-row .fine-offset.nonzero {
+  color: #34d399;
+}
+.ctcss-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+.ctcss-row .ctcss-label {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  margin-right: 4px;
+}
+.btn-ctcss {
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid #4b5563;
+  background: #1f2937;
+  color: #d1d5db;
+  cursor: pointer;
+}
+.btn-ctcss.active {
+  background: #065f46;
+  border-color: #10b981;
+  color: #ecfdf5;
+}
