@@ -58,6 +58,10 @@ let CAT_DEVICE = process.env.CAT_DEVICE || "/dev/ttyACM0";
 const CAT_BAUD = parseInt(process.env.CAT_BAUD || "19200", 10);
 const CAT_CIV_ADDR = parseInt(process.env.CAT_CIV_ADDR || "0xA4", 16);
 
+// FlexRadio SmartSDR CAT (Kenwood over TCP)
+let FLEX_HOST = process.env.FLEX_HOST || "172.17.18.229";
+let FLEX_PORT = parseInt(process.env.FLEX_PORT || "60002", 10);
+
 const DEFAULT_SAT = "RS-44";
 const MIN_EL = 0.0;
 const TRAIL_MINUTES = 30;
@@ -93,6 +97,8 @@ function getEndpoints() {
     rotorAzDevice: ROTOR_AZ_DEVICE,
     rotorElDevice: ROTOR_EL_DEVICE,
     catDevice: CAT_DEVICE,
+    flexHost: FLEX_HOST,
+    flexPort: FLEX_PORT,
     // legacy fields for older UI
     rotorHost: ROTOR_AZ_HOST,
     rotorAzPort: ROTOR_AZ_PORT,
@@ -104,8 +110,9 @@ function applyEndpoints(ep) {
   let tciChanged = false;
   let rotorChanged = false;
   let catChanged = false;
+  let flexChanged = false;
   if (!ep || typeof ep !== "object") {
-    return { tciChanged, rotorChanged, catChanged };
+    return { tciChanged, rotorChanged, catChanged, flexChanged };
   }
 
   if (typeof ep.tciHost === "string" && ep.tciHost.trim()) {
@@ -146,6 +153,21 @@ function applyEndpoints(ep) {
     }
   }
 
+  if (typeof ep.flexHost === "string" && ep.flexHost.trim()) {
+    const h = ep.flexHost.trim();
+    if (h !== FLEX_HOST) {
+      FLEX_HOST = h;
+      flexChanged = true;
+    }
+  }
+  if (ep.flexPort != null && Number.isFinite(Number(ep.flexPort))) {
+    const p = parseInt(ep.flexPort, 10);
+    if (p > 0 && p < 65536 && p !== FLEX_PORT) {
+      FLEX_PORT = p;
+      flexChanged = true;
+    }
+  }
+
   // Legacy host/port (ignored by serial driver, stored for UI compatibility)
   if (typeof ep.rotorHost === "string" && ep.rotorHost.trim()) {
     ROTOR_AZ_HOST = ep.rotorHost.trim();
@@ -158,7 +180,7 @@ function applyEndpoints(ep) {
     ROTOR_EL_PORT = parseInt(ep.rotorElPort, 10);
   }
 
-  return { tciChanged, rotorChanged, catChanged };
+  return { tciChanged, rotorChanged, catChanged, flexChanged };
 }
 
 module.exports = {
@@ -213,6 +235,12 @@ module.exports = {
   },
   CAT_BAUD,
   CAT_CIV_ADDR,
+  get FLEX_HOST() {
+    return FLEX_HOST;
+  },
+  get FLEX_PORT() {
+    return FLEX_PORT;
+  },
   DEFAULT_SAT,
   MIN_EL,
   TRAIL_MINUTES,
