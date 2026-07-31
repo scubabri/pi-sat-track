@@ -2,8 +2,8 @@
  * FlexRadio SmartSDR CAT driver (Kenwood-style over TCP).
  * Dual connections: uplink (TX slice) + downlink (RX slice).
  *
- * Sets mode via MD (Kenwood):
- *   MD0 LSB, MD1 USB, MD2 CW, MD3 FM
+ * Mode (SmartSDR CAT MD — PowerSDR numbering, NOT classic Kenwood):
+ *   MD1 LSB, MD2 USB, MD3 CW, MD4 FM
  * FM sats → FM both slices; linear → UL LSB / DL USB (or CW).
  */
 
@@ -116,17 +116,21 @@ function parseFa(reply) {
   return parseInt(digits, 10);
 }
 
-/** Kenwood MD codes used by SmartSDR CAT */
+/**
+ * SmartSDR CAT MD codes (PowerSDR-style):
+ *   1 = LSB, 2 = USB, 3 = CW, 4 = FM
+ * (Classic Kenwood uses 0/1/2/3 — wrong for Flex.)
+ */
 function modesForCatalogMode(modeStr) {
   const m = (modeStr || "").toUpperCase();
   if (isFmMode(modeStr) || /\bFM\b|NFM|GFSK|CTCSS|C4FM|DSTAR|DMR/.test(m)) {
-    return { ul: "3", dl: "3", ulName: "FM", dlName: "FM" }; // MD3
+    return { ul: "4", dl: "4", ulName: "FM", dlName: "FM" };
   }
   if (/\bCW\b/.test(m) && !/\bSSB\b/.test(m)) {
-    return { ul: "2", dl: "2", ulName: "CW", dlName: "CW" }; // MD2
+    return { ul: "3", dl: "3", ulName: "CW", dlName: "CW" };
   }
   // Linear SSB: UL LSB, DL USB
-  return { ul: "0", dl: "1", ulName: "LSB", dlName: "USB" }; // MD0 / MD1
+  return { ul: "1", dl: "2", ulName: "LSB", dlName: "USB" };
 }
 
 function linkHostPort(link) {
@@ -258,7 +262,7 @@ function openLink(link) {
       link.socket = s;
       link.connected = true;
       link.buf = "";
-      link.lastMode = null; // force mode push after reconnect
+      link.lastMode = null;
       clearReconnect(link);
       console.log("Flex", link.name.toUpperCase(), "connected", host + ":" + port);
       broadcastStatus();
