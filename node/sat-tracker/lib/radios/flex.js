@@ -2,9 +2,9 @@
  * FlexRadio SmartSDR CAT driver (Kenwood-style over TCP).
  * Dual connections: uplink (TX slice) + downlink (RX slice).
  *
- * Mode (SmartSDR CAT MD — PowerSDR numbering, NOT classic Kenwood):
+ * Mode (SmartSDR CAT MD — PowerSDR numbering):
  *   MD1 LSB, MD2 USB, MD3 CW, MD4 FM
- * FM sats → FM both slices; linear → UL LSB / DL USB (or CW).
+ * CTCSS: TN + TO on UL slice when supported.
  */
 
 const net = require("net");
@@ -38,11 +38,17 @@ let radioOn = false;
 let locked = false;
 let manualDlOffset = 0;
 let ulFineOffset = 0;
+let dlFineOffset = 0;
 let digitStep = 100;
 let broadcastFn = () => {};
 let vfoPollTimer = null;
 const VFO_POLL_MS = 400;
 const VFO_THRESH_HZ = 80;
+
+let ctcssMode = "off";
+let ctcssAccessHz = null;
+let ctcssActivationHz = null;
+let lastCtcssApplied = null;
 
 let getCtx = () => ({
   satrec: null,
@@ -81,7 +87,11 @@ function statusPayload() {
     lastDlMode: dl.lastMode,
     manualDlOffset,
     ulFineOffset,
+    dlFineOffset,
     step: digitStep,
+    ctcssMode,
+    ctcssAccessHz,
+    ctcssActivationHz,
   };
 }
 
@@ -97,9 +107,13 @@ function broadcastStatus() {
     port: config.FLEX_UL_PORT,
     manualDlOffset,
     ulFineOffset,
+    dlFineOffset,
     step: digitStep,
     lastCmdDl: dl.lastFreqHz,
     lastCmdUl: ul.lastFreqHz,
+    ctcssMode,
+    ctcssAccessHz,
+    ctcssActivationHz,
   });
 }
 
@@ -116,10 +130,6 @@ function parseFa(reply) {
   return parseInt(digits, 10);
 }
 
-/**
- * SmartSDR CAT MD codes (PowerSDR-style):
- *   1 = LSB, 2 = USB, 3 = CW, 4 = FM
- */
 function modesForCatalogMode(modeStr) {
   const m = (modeStr || "").toUpperCase();
   if (isFmMode(modeStr) || /\bFM\b|NFM|GFSK|CTCSS|C4FM|DSTAR|DMR/.test(m)) {
@@ -323,6 +333,7 @@ function close() {
   stopVfoPoll();
   closeLink(ul);
   closeLink(dl);
+  lastCtcssApplied = null;
   broadcastStatus();
   console.log("Flex disconnected");
 }
@@ -333,6 +344,8 @@ function setRadio(on) {
     radioOn = true;
     manualDlOffset = 0;
     ulFineOffset = 0;
+    dlFineOffset = 0;
+    lastCtcssApplied = null;
     broadcastStatus();
   } else {
     close();
@@ -349,6 +362,62 @@ function applyDefaultLock(isFm) {
   locked = !!isFm;
   console.log("Flex default LOCK", locked ? "ON (FM)" : "OFF (linear)");
   broadcastStatus();
+}
+
+function activeCtcssHz() {
+  if (ctcssMode === "access") return ctcssAccessHz;
+  if (ctcssMode === "activation") return ctcssActivationHz;
+  return null;
+}
+
+function setCtcss(which) {
+  if (which === "access" && ctcssAccessHz != null) ctcssMode = "access";
+  else if (which === "activation" && ctcssActivationHz != null)
+    ctcssMode = "activation";
+  else ctcssMode = "off";
+  lastCtcssApplied = null;
+  console.log("Flex CTCSS", ctcssMode, activeCtcssHz());
+  applyCtcssToRadio().catch(() => {});
+  broadcastStatus();
+}
+
+function applyDefaultCtcss(accessHz, activationHz) {
+  ctcssAccessHz = accessHz != null ? accessHz : null;
+  ctcssActivationHz = activationHz != null ? activationHz : null;
+  if (ctcssAccessHz != null) ctcssMode = "access";
+  else ctcssMode = "off";
+  lastCtcssApplied = null;
+  console.log(
+    "Flex CTCSS default",
+    ctcssMode,
+    "access",
+    ctcssAccessHz,
+    "act",
+    ctcssActivationHz,
+  );
+  broadcastStatus();
+}
+
+/** Kenwood-style TN (tone Hz*10) + TO1/0 on UL */
+async function applyCtcssToRadio() {
+  if (!ul.connected) return;
+  const hz = activeCtcssHz();
+  const key = hz != null ? String(hz) : "off";
+  if (key === lastCtcssApplied) return;
+  try {
+    if (hz != null) {
+      const tn = Math.round(hz * 10);
+      await sendCmd(ul, "TN" + String(tn).padStart(4, "0") + ";", false);
+      await sendCmd(ul, "TO1;", false);
+      console.log("Flex UL CTCSS", hz, "Hz ON");
+    } else {
+      await sendCmd(ul, "TO0;", false);
+      console.log("Flex UL CTCSS OFF");
+    }
+    lastCtcssApplied = key;
+  } catch (e) {
+    console.warn("Flex CTCSS:", e.message);
+  }
 }
 
 async function setLinkFrequency(link, freqHz) {
@@ -422,6 +491,7 @@ async function pushFrequencies(ulHz, dlHz) {
   await pushSide(ul, ulHz);
   await pushSide(dl, dlHz);
   await pushModulation();
+  await applyCtcssToRadio();
 }
 
 function getActiveModeObj(info, modeIndex) {
@@ -469,7 +539,7 @@ async function pollDlVfo() {
   const f0 = freqs.dlMHz * 1e6;
   const df = 1 - rr / config.C_MS;
   const prev = manualDlOffset;
-  manualDlOffset = freq - f0 * df;
+  manualDlOffset = freq - f0 * df - dlFineOffset;
   dl.lastFreqHz = freq;
 
   if (Math.abs(manualDlOffset - prev) >= 1) {
@@ -498,10 +568,14 @@ function stopVfoPoll() {
   }
 }
 
-function adjustFine(delta) {
-  if (typeof delta === "number") {
+function adjustFine(delta, side) {
+  if (typeof delta !== "number") return;
+  if (side === "dl") {
+    dlFineOffset += delta;
+    dl.lastFreqHz = null;
+    console.log("Flex DL fine", delta >= 0 ? "+" + delta : delta, "→", dlFineOffset, "Hz");
+  } else {
     ulFineOffset += delta;
-    // Force next pushFrequencies to resend FA on UL
     ul.lastFreqHz = null;
     console.log("Flex UL fine", delta >= 0 ? "+" + delta : delta, "→", ulFineOffset, "Hz");
   }
@@ -516,6 +590,7 @@ function setStep(step) {
 function center() {
   manualDlOffset = 0;
   ulFineOffset = 0;
+  dlFineOffset = 0;
   ul.lastFreqHz = null;
   dl.lastFreqHz = null;
   console.log("Flex center offsets");
@@ -525,6 +600,7 @@ function center() {
 function resetOffsets() {
   manualDlOffset = 0;
   ulFineOffset = 0;
+  dlFineOffset = 0;
   ul.lastFreqHz = null;
   dl.lastFreqHz = null;
   ul.lastMode = null;
@@ -542,9 +618,13 @@ function getRadioState() {
     connecting: ul.connecting || dl.connecting,
     manualDlOffset,
     ulFineOffset,
+    dlFineOffset,
     lastCmdDl: dl.lastFreqHz,
     lastCmdUl: ul.lastFreqHz,
     step: digitStep,
+    ctcssMode,
+    ctcssAccessHz,
+    ctcssActivationHz,
   };
 }
 
@@ -582,6 +662,8 @@ module.exports = {
   setStep,
   center,
   resetOffsets,
+  setCtcss,
+  applyDefaultCtcss,
   getRadioState,
   statusPayload,
   broadcastStatus,
