@@ -1,11 +1,10 @@
 /**
- * FlexRadio SmartSDR CAT driver (Kenwood-style over TCP).
- * Dual connections: uplink (TX slice) + downlink (RX slice).
+ * FlexRadio SmartSDR driver.
+ * - CAT TCP (UL/DL ports): frequency + mode (Kenwood FA/MD)
+ * - SmartSDR API :4992: FM CTCSS (CAT has NO tone commands)
  *
- * Mode (SmartSDR CAT MD — PowerSDR numbering):
- *   MD1 LSB, MD2 USB, MD3 CW, MD4 FM
- * CTCSS (best-effort on SmartSDR CAT):
- *   ensure FM, then TN (Hz*10) + TO1; also try CT1 / CN index.
+ * Mode MD: 1 LSB, 2 USB, 3 CW, 4 FM
+ * API: slice set N fm_tone_mode=CTCSS fm_tone_value=67.0
  */
 
 const net = require("net");
@@ -17,6 +16,7 @@ const {
   parseCtcss,
 } = require("../catalog");
 const { rangeRateKmS } = require("../orbit");
+const { createApiClient } = require("./flex-api");
 
 function makeLink(name) {
   return {
@@ -35,6 +35,7 @@ function makeLink(name) {
 
 const ul = makeLink("ul");
 const dl = makeLink("dl");
+const api = createApiClient();
 
 let radioOn = false;
 let locked = false;
@@ -51,29 +52,6 @@ let ctcssMode = "off";
 let ctcssAccessHz = null;
 let ctcssActivationHz = null;
 let lastCtcssApplied = null;
-
-/** Standard CTCSS table (Hz) used by many Kenwood-style CAT implementations. */
-const CTCSS_TABLE = [
-  67.0, 69.3, 71.9, 74.4, 77.0, 79.7, 82.5, 85.4, 88.5, 91.5, 94.8, 97.4, 100.0,
-  103.5, 107.2, 110.9, 114.8, 118.8, 123.0, 127.3, 131.8, 136.5, 141.3, 146.2,
-  151.4, 156.7, 159.8, 162.2, 165.5, 167.9, 171.3, 173.8, 177.3, 179.9, 183.5,
-  186.2, 189.9, 192.8, 196.6, 199.5, 203.5, 206.5, 210.7, 218.1, 225.7, 229.1,
-  233.6, 241.8, 250.3, 254.1,
-];
-
-function toneIndex(hz) {
-  if (hz == null || !Number.isFinite(hz)) return null;
-  let best = 0;
-  let bestDiff = Infinity;
-  for (let i = 0; i < CTCSS_TABLE.length; i++) {
-    const d = Math.abs(CTCSS_TABLE[i] - hz);
-    if (d < bestDiff) {
-      bestDiff = d;
-      best = i;
-    }
-  }
-  return bestDiff < 0.3 ? best : null;
-}
 
 let getCtx = () => ({
   satrec: null,
@@ -102,6 +80,7 @@ function statusPayload() {
     ulWanted: ul.wanted,
     dlWanted: dl.wanted,
     connecting: ul.connecting || dl.connecting,
+    apiConnected: api.isConnected(),
     ulHost: config.FLEX_UL_HOST,
     ulPort: config.FLEX_UL_PORT,
     dlHost: config.FLEX_DL_HOST,
@@ -186,7 +165,6 @@ function scheduleReconnect(link) {
   link.reconnectTimer = setTimeout(() => {
     link.reconnectTimer = null;
     if (radioOn && link.wanted && !link.connected && !link.connecting) {
-      console.log("Flex", link.name.toUpperCase(), "retry connect...");
       openLink(link).catch(() => {});
     }
   }, 3000);
@@ -362,6 +340,7 @@ function close() {
   stopVfoPoll();
   closeLink(ul);
   closeLink(dl);
+  api.close();
   lastCtcssApplied = null;
   broadcastStatus();
   console.log("Flex disconnected");
@@ -376,6 +355,10 @@ function setRadio(on) {
     dlFineOffset = 0;
     lastCtcssApplied = null;
     syncTonesFromCatalog();
+    // Open API for CTCSS (same radio IP as UL CAT host)
+    api.connect(config.FLEX_UL_HOST).then((ok) => {
+      if (ok) applyCtcssToRadio(true).catch(() => {});
+    });
     broadcastStatus();
   } else {
     close();
@@ -384,13 +367,11 @@ function setRadio(on) {
 
 function setLock(on) {
   locked = !!on;
-  console.log("Flex LOCK", locked ? "ON" : "OFF");
   broadcastStatus();
 }
 
 function applyDefaultLock(isFm) {
   locked = !!isFm;
-  console.log("Flex default LOCK", locked ? "ON (FM)" : "OFF (linear)");
   broadcastStatus();
 }
 
@@ -400,7 +381,6 @@ function activeCtcssHz() {
   return null;
 }
 
-/** Pull CTCSS Hz from current catalog mode so UI clicks always have values. */
 function syncTonesFromCatalog() {
   try {
     const { currentSatKey, currentModeIndex } = getCtx();
@@ -460,59 +440,47 @@ function applyDefaultCtcss(accessHz, activationHz) {
 }
 
 /**
- * Best-effort CTCSS over SmartSDR CAT.
- * CAT is limited on Flex — try several Kenwood-style encodings.
- * UI state is authoritative even if radio ignores commands.
+ * CTCSS via SmartSDR API port 4992 — NOT via CAT.
+ * Official CAT command list has no TN/TO/CT/CN.
  */
 async function applyCtcssToRadio(force) {
-  if (!ul.connected) {
-    console.log("Flex CTCSS deferred (UL not connected)", ctcssMode, activeCtcssHz());
-    return;
-  }
   const hz = activeCtcssHz();
   const key = hz != null ? String(hz) : "off";
   if (!force && key === lastCtcssApplied) return;
 
-  try {
-    // FM required for tone encode on most stacks
-    await sendCmd(ul, "MD4;", false);
-    ul.lastMode = "4";
+  // Ensure FM on UL CAT if connected (mode only)
+  if (ul.connected) {
+    try {
+      await sendCmd(ul, "MD4;", false);
+      ul.lastMode = "4";
+    } catch (_) {}
+  }
 
-    if (hz != null) {
-      const tn = Math.round(hz * 10);
-      const idx = toneIndex(hz);
-      // PowerSDR-style: frequency × 10
-      await sendCmd(ul, "TN" + String(tn).padStart(4, "0") + ";", false);
-      await sendCmd(ul, "TO1;", false);
-      // Alternate Kenwood: CT on, CN tone number
-      await sendCmd(ul, "CT1;", false);
-      if (idx != null) {
-        await sendCmd(ul, "CN" + String(idx).padStart(2, "0") + ";", false);
-      }
-      console.log(
-        "Flex UL CTCSS",
-        hz,
-        "Hz ON (TN" + tn + " TO1 CT1" +
-          (idx != null ? " CN" + idx : "") +
-          ")",
+  if (!api.isConnected()) {
+    const ok = await api.connect(config.FLEX_UL_HOST);
+    if (!ok) {
+      console.warn(
+        "Flex CTCSS: API :4992 unreachable at",
+        config.FLEX_UL_HOST,
+        "— tone not set on radio",
       );
-    } else {
-      await sendCmd(ul, "TO0;", false);
-      await sendCmd(ul, "CT0;", false);
-      console.log("Flex UL CTCSS OFF");
+      return;
     }
+  }
+
+  try {
+    await api.setCtcss(hz);
     lastCtcssApplied = key;
   } catch (e) {
-    console.warn("Flex CTCSS:", e.message);
+    console.warn("Flex CTCSS API:", e.message);
   }
 }
 
 async function setLinkFrequency(link, freqHz) {
   if (!Number.isFinite(freqHz) || freqHz < 1e5 || freqHz > 6e8) return false;
   if (!link.connected) return false;
-  const cmd = freqToFa(freqHz);
   try {
-    await sendCmd(link, cmd, false);
+    await sendCmd(link, freqToFa(freqHz), false);
     link.lastFreqHz = Math.round(freqHz);
     return true;
   } catch (e) {
@@ -527,10 +495,9 @@ async function setLinkMode(link, mdCode, mdName) {
   try {
     await sendCmd(link, "MD" + mdCode + ";", false);
     link.lastMode = mdCode;
-    console.log("Flex", link.name.toUpperCase(), "mode →", mdName, "(MD" + mdCode + ")");
+    console.log("Flex", link.name.toUpperCase(), "mode →", mdName);
     return true;
   } catch (e) {
-    console.warn("Flex", link.name, "mode failed:", e.message);
     return false;
   }
 }
@@ -540,34 +507,24 @@ async function pushModulation() {
   const info = getCatalog()[currentSatKey] || {};
   const active = getActiveModeObj(info, currentModeIndex);
   const mods = modesForCatalogMode(active && active.mode);
-
-  if (ul.connected && ul.wanted) {
-    await setLinkMode(ul, mods.ul, mods.ulName);
-  }
-  if (dl.connected && dl.wanted) {
-    await setLinkMode(dl, mods.dl, mods.dlName);
-  }
+  if (ul.connected && ul.wanted) await setLinkMode(ul, mods.ul, mods.ulName);
+  if (dl.connected && dl.wanted) await setLinkMode(dl, mods.dl, mods.dlName);
 }
 
 async function pushSide(link, freqHz) {
   const hasFreq = freqHz != null && Number.isFinite(freqHz);
-
   if (!hasFreq) {
     if (link.wanted || link.connected || link.connecting) {
-      console.log("Flex", link.name.toUpperCase(), "not needed — closing");
       closeLink(link);
       broadcastStatus();
     }
     return;
   }
-
   link.wanted = true;
-
   if (!link.connected) {
     const ok = await openLink(link);
     if (!ok) return;
   }
-
   if (link.lastFreqHz == null || Math.abs(freqHz - link.lastFreqHz) >= 1) {
     await setLinkFrequency(link, freqHz);
   }
@@ -602,45 +559,29 @@ async function pollDlVfo() {
   if (!radioOn || !dl.connected || !dl.wanted || dl.busy) return;
   if (dl.lastFreqHz == null || dl.lastFreqHz <= 0) return;
   if (locked) return;
-
   let reply;
   try {
     reply = await sendCmd(dl, "FA;", true);
   } catch (_) {
     return;
   }
-
   const freq = parseFa(reply);
   if (freq == null) return;
   if (Math.abs(freq - dl.lastFreqHz) <= VFO_THRESH_HZ) return;
-
   const { satrec, observer, currentSatKey, currentModeIndex } = getCtx();
   if (!satrec) return;
-
   const info = getCatalog()[currentSatKey] || {};
   const active = getActiveModeObj(info, currentModeIndex);
   const freqs = formatFreqDisplayFromMode(active);
   if (freqs.dlMHz == null) return;
-
   const rr = rangeRateKmS(satrec, observer, new Date());
   if (rr == null || !Number.isFinite(rr)) return;
-
   const f0 = freqs.dlMHz * 1e6;
   const df = 1 - rr / config.C_MS;
   const prev = manualDlOffset;
   manualDlOffset = freq - f0 * df - dlFineOffset;
   dl.lastFreqHz = freq;
-
-  if (Math.abs(manualDlOffset - prev) >= 1) {
-    console.log(
-      "Flex VFO DL",
-      (freq / 1e6).toFixed(6),
-      "MHz → manualDlOffset",
-      Math.round(manualDlOffset),
-      "Hz",
-    );
-    broadcastStatus();
-  }
+  if (Math.abs(manualDlOffset - prev) >= 1) broadcastStatus();
 }
 
 function startVfoPoll() {
@@ -715,21 +656,17 @@ function getRadioState() {
 }
 
 function applyEndpointChange() {
-  console.log(
-    "Flex endpoints → UL",
-    config.FLEX_UL_HOST + ":" + config.FLEX_UL_PORT,
-    "DL",
-    config.FLEX_DL_HOST + ":" + config.FLEX_DL_PORT,
-  );
   const wasOn = radioOn;
   const ulWanted = ul.wanted;
   const dlWanted = dl.wanted;
   closeLink(ul);
   closeLink(dl);
+  api.close();
   radioOn = wasOn;
   if (wasOn) {
     ul.wanted = ulWanted;
     dl.wanted = dlWanted;
+    api.connect(config.FLEX_UL_HOST).catch(() => {});
     if (ulWanted) openLink(ul).catch(() => {});
     if (dlWanted) openLink(dl).catch(() => {});
   }
