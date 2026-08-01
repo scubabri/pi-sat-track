@@ -38,6 +38,7 @@ body {
   font-size: 14px;
 }
 
+/* ========== TOP BAR ========== */
 #topbar {
   display: flex;
   align-items: center;
@@ -77,11 +78,13 @@ body {
   position: absolute;
   top: calc(100% + 10px);
   left: 0;
-  min-width: 280px;
+  /* Wide enough for ~4–5 chip columns so the full heard list fits without scrolling */
+  width: min(720px, 92vw);
+  min-width: 420px;
   max-width: min(920px, 92vw);
-  max-height: 70vh;
+  max-height: 80vh;
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: auto; /* fallback only on short viewports */
   z-index: 3000;
   padding: 12px;
   background: var(--bg-panel);
@@ -174,6 +177,7 @@ body {
   background: var(--bg-elevated);
 }
 
+/* Horizon colors — match top-bar status-dot */
 #sat-menu .sat-option.sat-up {
   color: var(--green);
   border-color: rgba(63, 185, 80, 0.35);
@@ -249,6 +253,7 @@ body {
 #sat-menu .sat-chip .sat-option {
   margin: 0;
 }
+
 
 #pass-status {
   display: flex;
@@ -492,6 +497,7 @@ body {
   flex: 1;
 }
 
+/* ========== MAIN LAYOUT ========== */
 #main {
   display: flex;
   height: calc(100% - var(--topbar-h));
@@ -518,6 +524,7 @@ body {
   background: #0a1628;
 }
 
+/* ========== RADAR + ROTOR GAUGES ========== */
 #radar {
   position: absolute;
   top: 12px;
@@ -570,6 +577,7 @@ body {
   pointer-events: none;
 }
 
+/* EL semicircle sits lower in the 220 canvas — tuck label down a bit */
 .rotor-gauge-wrap:has(#rotor-el-canvas) .rotor-gauge-label {
   top: 14px;
 }
@@ -587,6 +595,7 @@ body {
   display: block;
 }
 
+/* ========== SIDEBAR ========== */
 #sidebar {
   width: var(--sidebar-w);
   flex-shrink: 0;
@@ -643,6 +652,7 @@ body {
   text-underline-offset: 3px;
 }
 
+/* Frequencies */
 .freq-block {
   margin-bottom: 10px;
 }
@@ -674,6 +684,7 @@ body {
   min-height: 1em;
 }
 
+/* Fine-tune: match sidebar .btn look (no browser default chrome) */
 .fine-tune {
   display: flex;
   align-items: center;
@@ -763,6 +774,7 @@ body {
   font-weight: 600;
 }
 
+/* Toggles */
 .toggle-row {
   display: flex;
   justify-content: space-between;
@@ -820,6 +832,7 @@ body {
   background: var(--green);
 }
 
+/* Mode select */
 .mode-select {
   width: 100%;
   background: #161b22;
@@ -862,6 +875,7 @@ body {
   word-break: break-all;
 }
 
+/* Leaflet tweaks */
 .leaflet-container {
   background: #0a1628;
   font: inherit;
