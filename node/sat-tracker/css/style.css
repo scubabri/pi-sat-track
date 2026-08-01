@@ -491,14 +491,14 @@ body {
   border: 1px solid var(--border);
 }
 
-/* EL is a semicircle (0–180°); keep square canvas but no full-circle clip */
+/* EL semicircle — no border/box; face drawn in JS with same fill as the other radars */
 #rotor-el-canvas {
   display: block;
   width: 220px;
   height: 220px;
-  border-radius: 12px;
+  border-radius: 0;
   background: transparent;
-  border: 1px solid var(--border);
+  border: none;
 }
 
 .rotor-gauge-wrap {
