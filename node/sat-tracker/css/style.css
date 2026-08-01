@@ -522,6 +522,11 @@ body {
   pointer-events: none;
 }
 
+/* EL semicircle is drawn lower in the canvas — pull the label down onto the arc */
+.rotor-gauge-wrap:has(#rotor-el-canvas) .rotor-gauge-label {
+  top: 14px;
+}
+
 #pass-profile {
   height: 120px;
   flex-shrink: 0;
