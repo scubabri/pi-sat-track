@@ -9,6 +9,8 @@ let lastFavStructureKey = "";
 /** Frozen display order — only recomputed when the favorites set changes. */
 let lastFavOrderKeys = null;
 let lastFavOrderSet = "";
+/** Absolute AOS deadlines (ms epoch) for live HH:MM:SS countdown. */
+let favAosDeadline = {};
 
 function fmtDeg(v, digits) {
   if (v == null || !Number.isFinite(v)) return "\u2014";
@@ -43,18 +45,38 @@ function formatAosHms(sec) {
   );
 }
 
-function favNextLabel(s, multi) {
+function noteAosDeadline(key, secToAos) {
+  if (!key) return;
+  if (
+    typeof secToAos === "number" &&
+    Number.isFinite(secToAos) &&
+    secToAos >= 0
+  ) {
+    favAosDeadline[key] = Date.now() + secToAos * 1000;
+  }
+}
+
+function favNextLabel(s, multi, key) {
   if (multi && multi.look && typeof multi.look.el === "number") {
     if (multi.look.el >= 0) return "UP";
   }
   if (multi && multi.above) return "UP";
+  if (s && s.above) return "UP";
+
+  // Live countdown from absolute deadline (ticks every second client-side)
+  if (key && favAosDeadline[key] != null) {
+    const sec = (favAosDeadline[key] - Date.now()) / 1000;
+    if (sec <= 0) return "UP";
+    return formatAosHms(sec);
+  }
+
   if (!s) return "\u2014";
-  if (s.above) return "UP";
   if (
     typeof s.secToAos === "number" &&
     Number.isFinite(s.secToAos) &&
     s.secToAos >= 0
   ) {
+    noteAosDeadline(key || (s && s.key), s.secToAos);
     return formatAosHms(s.secToAos);
   }
   if (s.soon) return formatAosHms(15 * 60);
@@ -126,6 +148,7 @@ function resolveFavRows() {
 
   const rows = favs.map((key) => {
     const s = byKey[key] || { key: key, name: key, norad: "?" };
+    if (s && typeof s.secToAos === "number") noteAosDeadline(key, s.secToAos);
     const multi = lastMultiLooks[key] || null;
     // Prefer multi for the selected sat too so position/orbit stay filled;
     // live state still overlays when present via merge below.
@@ -281,7 +304,7 @@ function favRowValues(row) {
     lon: lon,
     alt: alt,
     orbit: orbit,
-    next: favNextLabel(s, multi || live),
+    next: favNextLabel(s, multi || live, row.key),
     active: row.key === currentSatKey,
   };
 }
@@ -438,4 +461,8 @@ function initFavPanel() {
   );
   lastFavStructureKey = "";
   renderFavPanel();
+  // Live AOS countdown — only re-paint cells while drawer is open
+  setInterval(function () {
+    if (favDrawerOpen) renderFavPanel();
+  }, 1000);
 }
