@@ -1,6 +1,8 @@
-/* Favorites telemetry strip (Gpredict-style table at top) */
+/* Favorites telemetry strip — collapsible drawer, sorted by AOS */
 let lastFavState = null;
 let lastMultiLooks = {}; // key -> snapshot from server
+let favDrawerOpen =
+  localStorage.getItem("satTrackerFavDrawer") === "1"; // default closed
 
 function fmtDeg(v, digits) {
   if (v == null || !Number.isFinite(v)) return "\u2014";
@@ -20,7 +22,12 @@ function fmtRate(v) {
   return sign + Number(v).toFixed(2) + " km/s";
 }
 
-function favNextLabel(s) {
+function favNextLabel(s, multi) {
+  // Prefer live multi-look for above
+  if (multi && multi.look && typeof multi.look.el === "number") {
+    if (multi.look.el >= 0) return "UP";
+  }
+  if (multi && multi.above) return "UP";
   if (!s) return "\u2014";
   if (s.above) return "UP";
   if (
@@ -36,6 +43,62 @@ function favNextLabel(s) {
   return "\u2014";
 }
 
+/** Sort key: above horizon first, then soonest AOS, then name */
+function favAosSortKey(row) {
+  const s = row.meta || {};
+  const multi = row.multi;
+  const live = row.live;
+
+  const el =
+    live && live.look && typeof live.look.el === "number"
+      ? live.look.el
+      : multi && multi.look && typeof multi.look.el === "number"
+        ? multi.look.el
+        : typeof s.el === "number"
+          ? s.el
+          : null;
+
+  const above =
+    (el != null && el >= 0) ||
+    !!(multi && multi.above) ||
+    !!(s && s.above);
+
+  if (above) return -1e12;
+
+  if (
+    typeof s.secToAos === "number" &&
+    Number.isFinite(s.secToAos) &&
+    s.secToAos >= 0
+  ) {
+    return s.secToAos;
+  }
+  if (s.soon) return 15 * 60;
+  return 1e12;
+}
+
+function sortFavRowsByAos(rows) {
+  return rows.slice().sort((a, b) => {
+    const ka = favAosSortKey(a);
+    const kb = favAosSortKey(b);
+    if (ka !== kb) return ka - kb;
+    const na =
+      (a.live && a.live.display) ||
+      (a.multi && a.multi.display) ||
+      (a.meta && a.meta.name) ||
+      a.key ||
+      "";
+    const nb =
+      (b.live && b.live.display) ||
+      (b.multi && b.multi.display) ||
+      (b.meta && b.meta.name) ||
+      b.key ||
+      "";
+    return String(na).localeCompare(String(nb), undefined, {
+      sensitivity: "base",
+    });
+  });
+}
+
 function resolveFavRows() {
   const favs = typeof loadFavorites === "function" ? loadFavorites() : [];
   const sats =
@@ -45,7 +108,7 @@ function resolveFavRows() {
     if (s && s.key) byKey[s.key] = s;
   });
 
-  return favs.map((key) => {
+  const rows = favs.map((key) => {
     const s = byKey[key] || { key: key, name: key, norad: "?" };
     const multi = lastMultiLooks[key] || null;
     const isLive = lastFavState && lastFavState.sat === key;
@@ -56,6 +119,41 @@ function resolveFavRows() {
       multi: multi,
     };
   });
+
+  return sortFavRowsByAos(rows);
+}
+
+function updateFavDrawerChrome(count) {
+  const panel = document.getElementById("fav-panel");
+  const btn = document.getElementById("fav-drawer-toggle");
+  const countEl = document.getElementById("fav-drawer-count");
+  if (countEl) {
+    countEl.textContent =
+      count === 0 ? "No favorites" : count === 1 ? "1 favorite" : count + " favorites";
+  }
+  if (panel) {
+    panel.classList.toggle("open", !!favDrawerOpen);
+  }
+  if (btn) {
+    btn.setAttribute("aria-expanded", favDrawerOpen ? "true" : "false");
+    const chev = btn.querySelector(".fav-drawer-chevron");
+    if (chev) chev.textContent = favDrawerOpen ? "\u25B4" : "\u25BE";
+  }
+}
+
+function setFavDrawerOpen(open) {
+  favDrawerOpen = !!open;
+  localStorage.setItem("satTrackerFavDrawer", favDrawerOpen ? "1" : "0");
+  const rows = resolveFavRows();
+  updateFavDrawerChrome(rows.length);
+}
+
+function toggleFavDrawer(e) {
+  if (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+  setFavDrawerOpen(!favDrawerOpen);
 }
 
 function renderFavPanel() {
@@ -63,12 +161,15 @@ function renderFavPanel() {
   if (!body) return;
 
   const rows = resolveFavRows();
+  updateFavDrawerChrome(rows.length);
+
   body.innerHTML = "";
 
   if (!rows.length) {
     const empty = document.createElement("div");
     empty.className = "fav-panel-empty";
-    empty.textContent = "No favorites yet — star sats in the picker or catalog";
+    empty.textContent =
+      "No favorites yet — star sats in the picker or catalog";
     body.appendChild(empty);
     return;
   }
@@ -90,7 +191,10 @@ function renderFavPanel() {
     el.dataset.sat = row.key;
 
     const name =
-      (live && live.display) || (multi && multi.display) || s.name || s.key;
+      (live && live.display) ||
+      (multi && multi.display) ||
+      s.name ||
+      s.key;
     const noradRaw =
       live && live.norad != null
         ? live.norad
@@ -166,7 +270,7 @@ function renderFavPanel() {
       orbit +
       "</span>" +
       '<span class="fav-cell fav-next">' +
-      favNextLabel(s) +
+      favNextLabel(s, multi || live) +
       "</span>";
 
     el.addEventListener("click", () => {
@@ -192,5 +296,12 @@ function updateFavPanelFromState(state) {
 }
 
 function initFavPanel() {
+  const btn = document.getElementById("fav-drawer-toggle");
+  if (btn) {
+    btn.addEventListener("click", toggleFavDrawer);
+  }
+  updateFavDrawerChrome(
+    typeof loadFavorites === "function" ? loadFavorites().length : 0,
+  );
   renderFavPanel();
 }
