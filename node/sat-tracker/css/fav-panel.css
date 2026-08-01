@@ -103,7 +103,7 @@
     80px                  /* lon */
     80px                  /* alt */
     56px                  /* orbit */
-    52px                  /* next */
+    72px                  /* AOS HH:MM:SS */
     1fr;                  /* spacer — keeps columns left-aligned */
   gap: 0 10px;
   align-items: center;

@@ -28,6 +28,21 @@ function fmtRate(v) {
   return sign + Number(v).toFixed(2) + " km/s";
 }
 
+function formatAosHms(sec) {
+  if (sec == null || !Number.isFinite(sec) || sec < 0) return "\u2014";
+  sec = Math.floor(sec);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return (
+    String(h).padStart(2, "0") +
+    ":" +
+    String(m).padStart(2, "0") +
+    ":" +
+    String(s).padStart(2, "0")
+  );
+}
+
 function favNextLabel(s, multi) {
   if (multi && multi.look && typeof multi.look.el === "number") {
     if (multi.look.el >= 0) return "UP";
@@ -40,11 +55,9 @@ function favNextLabel(s, multi) {
     Number.isFinite(s.secToAos) &&
     s.secToAos >= 0
   ) {
-    if (s.secToAos < 60) return "<1m";
-    if (s.secToAos < 3600) return Math.round(s.secToAos / 60) + "m";
-    return Math.floor(s.secToAos / 3600) + "h";
+    return formatAosHms(s.secToAos);
   }
-  if (s.soon) return "<15m";
+  if (s.soon) return formatAosHms(15 * 60);
   return "\u2014";
 }
 
@@ -114,10 +127,14 @@ function resolveFavRows() {
   const rows = favs.map((key) => {
     const s = byKey[key] || { key: key, name: key, norad: "?" };
     const multi = lastMultiLooks[key] || null;
+    // Prefer multi for the selected sat too so position/orbit stay filled;
+    // live state still overlays when present via merge below.
     let live = null;
     if (lastFavState && lastFavState.sat === key) {
       live = lastFavState;
     }
+    // If multi has data for this key, merge so we don't drop position when
+    // the selected-sat tick omits it.
     if (multi && live) {
       live = Object.assign({}, multi, live, {
         look: live.look || multi.look,
@@ -137,7 +154,8 @@ function resolveFavRows() {
     };
   });
 
-  // Only re-sort when the set of favorite keys changes.
+  // Only re-sort when the set of favorite keys changes. Live AOS jitter must
+  // not reshuffle rows every tick (that rebuilds the DOM and flashes).
   const setKey = favs.slice().sort().join("\0");
   if (setKey !== lastFavOrderSet || !lastFavOrderKeys) {
     const sorted = sortFavRowsByAos(rows);
@@ -193,10 +211,13 @@ function toggleFavDrawer(e) {
   setFavDrawerOpen(!favDrawerOpen);
 }
 
+/** Compute display values for one row (no DOM). */
 function favRowValues(row) {
   const s = row.meta;
   const live = row.live;
   const multi = row.multi;
+  // Prefer multi (server favorites payload) for live fields; overlay live
+  // selected-sat state when this row is the current sat.
   const src = live || multi;
 
   const visible = src
@@ -269,11 +290,13 @@ function setCellText(el, text) {
   if (el && el.textContent !== text) el.textContent = text;
 }
 
+/** Update an existing row element in place (no rebuild). */
 function patchFavRow(el, row) {
   const v = favRowValues(row);
   el.classList.toggle("active", !!v.active);
 
   const cells = el.children;
+  // order: name, norad, vis, az, el, range, rate, lat, lon, alt, orbit, next
   if (cells.length < 12) return;
 
   setCellText(cells[0], v.name);
@@ -319,7 +342,7 @@ function buildFavRowEl(row) {
   }
 
   numCell(v.norad, "fav-norad");
-  numCell(v.visText, "fav-vis " + (v.visible ? "yes" : "no"));
+  const vis = numCell(v.visText, "fav-vis " + (v.visible ? "yes" : "no"));
   numCell(v.az);
   numCell(v.elev);
   numCell(v.range);
@@ -370,10 +393,12 @@ function renderFavPanel() {
     return;
   }
 
+  // In-place update — no DOM wipe, no flicker
   const existing = body.querySelectorAll(".fav-row");
   for (let i = 0; i < rows.length; i++) {
     const el = existing[i];
     if (!el || el.dataset.sat !== rows[i].key) {
+      // Unexpected mismatch — force rebuild once
       lastFavStructureKey = "";
       renderFavPanel();
       return;
@@ -395,6 +420,7 @@ function updateFavPanelFromState(state) {
   renderFavPanel();
 }
 
+/** Call after favorites set changes so order/structure rebuilds cleanly. */
 function invalidateFavPanelStructure() {
   lastFavStructureKey = "";
   lastFavOrderKeys = null;
