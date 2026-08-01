@@ -28,7 +28,7 @@ function eciToLatLon(positionEci, date) {
 
 function lookAngles(satrec, observer, date) {
   const pv = satellite.propagate(satrec, date);
-  if (!pv.position) return null;
+  if (!pv.position || typeof pv.position === "boolean") return null;
   const gmst = gmstFromDate(date);
   const positionEcf = satellite.eciToEcf(pv.position, gmst);
   const look = satellite.ecfToLookAngles(observer, positionEcf);
@@ -39,87 +39,39 @@ function lookAngles(satrec, observer, date) {
   };
 }
 
-function angularDistanceDeg(a, b) {
-  if (!a || !b) return 0;
-  let daz = b.az - a.az;
-  daz = ((daz + 540) % 360) - 180;
-  const meanElRad = ((a.el + b.el) / 2) * (Math.PI / 180);
-  const cosEl = Math.cos(meanElRad);
-  return Math.sqrt((daz * cosEl) ** 2 + (b.el - a.el) ** 2);
+function lookAnglesLead(satrec, observer, date, leadSec) {
+  return lookAngles(
+    satrec,
+    observer,
+    new Date(date.getTime() + (leadSec || 0) * 1000),
+  );
 }
 
-function lookAnglesLead(satrec, observer, now, leadDeg) {
-  if (!leadDeg || leadDeg <= 0) return lookAngles(satrec, observer, now);
-
-  const current = lookAngles(satrec, observer, now);
-  if (!current) return null;
-
-  let lo = 0.5;
-  let hi = 30;
-  let best = null;
-  let bestErr = Infinity;
-
-  for (let i = 0; i < 14; i++) {
-    const mid = (lo + hi) / 2;
-    const future = lookAngles(
-      satrec,
-      observer,
-      new Date(now.getTime() + mid * 1000),
-    );
-    if (!future) {
-      hi = mid;
-      continue;
-    }
-
-    const dang = angularDistanceDeg(current, future);
-    const err = Math.abs(dang - leadDeg);
-
-    if (err < bestErr) {
-      bestErr = err;
-      best = future;
-    }
-
-    if (dang < leadDeg) {
-      lo = mid;
-    } else {
-      hi = mid;
-    }
-
-    if (err < 0.25) break;
-  }
-
-  if (best) {
-    const finalDang = angularDistanceDeg(current, best);
-    if (finalDang > leadDeg * 1.6) {
-      return lookAngles(
-        satrec,
-        observer,
-        new Date(now.getTime() + Math.min(12, leadDeg / 0.35) * 1000),
-      );
-    }
-  }
-
-  return best || lookAngles(satrec, observer, now);
+function angularDistanceDeg(az1, el1, az2, el2) {
+  const a1 = (az1 * Math.PI) / 180;
+  const e1 = (el1 * Math.PI) / 180;
+  const a2 = (az2 * Math.PI) / 180;
+  const e2 = (el2 * Math.PI) / 180;
+  const cosD =
+    Math.sin(e1) * Math.sin(e2) +
+    Math.cos(e1) * Math.cos(e2) * Math.cos(a1 - a2);
+  return (Math.acos(Math.max(-1, Math.min(1, cosD))) * 180) / Math.PI;
 }
 
 function rangeRateKmS(satrec, observer, date) {
-  const pv = satellite.propagate(satrec, date);
-  if (!pv.position || !pv.velocity) return null;
-  const gmst = gmstFromDate(date);
-  const posEcf = satellite.eciToEcf(pv.position, gmst);
-  const velEcf = satellite.eciToEcf(pv.velocity, gmst);
-  const obsEcf = satellite.geodeticToEcf(observer);
-  const dx = posEcf.x - obsEcf.x;
-  const dy = posEcf.y - obsEcf.y;
-  const dz = posEcf.z - obsEcf.z;
-  const range = Math.sqrt(dx * dx + dy * dy + dz * dz);
-  if (range < 1e-6) return 0;
-  return (dx * velEcf.x + dy * velEcf.y + dz * velEcf.z) / range;
+  const look0 = lookAngles(satrec, observer, date);
+  const look1 = lookAngles(
+    satrec,
+    observer,
+    new Date(date.getTime() + 1000),
+  );
+  if (!look0 || !look1) return null;
+  return look1.rangeKm - look0.rangeKm;
 }
 
 function groundPoint(satrec, date) {
   const pv = satellite.propagate(satrec, date);
-  if (!pv.position) return null;
+  if (!pv.position || typeof pv.position === "boolean") return null;
   return eciToLatLon(pv.position, date);
 }
 
@@ -127,8 +79,8 @@ function buildTrail(satrec, now, minutes, stepSec) {
   minutes = minutes != null ? minutes : TRAIL_MINUTES;
   stepSec = stepSec != null ? stepSec : TRAIL_STEP_SEC;
   const points = [];
-  const start = new Date(now.getTime() - minutes * 60 * 1000);
-  for (let t = start.getTime(); t <= now.getTime(); t += stepSec * 1000) {
+  const start = now.getTime() - minutes * 60 * 1000;
+  for (let t = start; t <= now.getTime(); t += stepSec * 1000) {
     const p = groundPoint(satrec, new Date(t));
     if (p) points.push([p.lat, p.lon]);
   }
@@ -136,7 +88,7 @@ function buildTrail(satrec, now, minutes, stepSec) {
 }
 
 function buildForwardTrack(satrec, now, orbits, stepSec) {
-  orbits = orbits != null ? orbits : 2;
+  orbits = orbits != null ? orbits : 1;
   stepSec = stepSec != null ? stepSec : TRAIL_STEP_SEC;
   const periodMin = (2 * Math.PI) / satrec.no;
   const totalSec = periodMin * orbits * 60;
@@ -147,6 +99,25 @@ function buildForwardTrack(satrec, now, orbits, stepSec) {
     if (p) points.push([p.lat, p.lon]);
   }
   return points;
+}
+
+/** Binary-search the horizon crossing to ~0.1 s (same idea as catalog horizonFlags). */
+function refineCrossing(satrec, observer, tLo, tHi, minEl, rising) {
+  let lo = tLo;
+  let hi = tHi;
+  for (let i = 0; i < 12; i++) {
+    const mid = (lo + hi) / 2;
+    const look = lookAngles(satrec, observer, new Date(mid));
+    const el = look ? look.el : -90;
+    if (rising) {
+      if (el >= minEl) hi = mid;
+      else lo = mid;
+    } else {
+      if (el < minEl) hi = mid;
+      else lo = mid;
+    }
+  }
+  return hi;
 }
 
 function findPasses(satrec, observer, now, minEl, hours, stepSec) {
@@ -162,6 +133,7 @@ function findPasses(satrec, observer, now, minEl, hours, stepSec) {
   const start = new Date(now.getTime() - lookbackMs);
 
   let prevEl = null;
+  let prevT = null;
   let aosTime = null;
   let aosAz = null;
   let maxEl = minEl;
@@ -172,16 +144,22 @@ function findPasses(satrec, observer, now, minEl, hours, stepSec) {
     if (!look) continue;
     const el = look.el;
 
-    if (prevEl !== null) {
+    if (prevEl !== null && prevT != null) {
       if (prevEl < minEl && el >= minEl) {
-        aosTime = date;
-        aosAz = look.az;
+        // Refine AOS within [prevT, t]
+        const aosMs = refineCrossing(satrec, observer, prevT, t, minEl, true);
+        aosTime = new Date(aosMs);
+        const lookAos = lookAngles(satrec, observer, aosTime);
+        aosAz = lookAos ? lookAos.az : look.az;
         maxEl = el;
       } else if (prevEl >= minEl && el < minEl && aosTime) {
-        if (date.getTime() >= now.getTime() - stepSec * 1000) {
+        // Refine LOS within [prevT, t]
+        const losMs = refineCrossing(satrec, observer, prevT, t, minEl, false);
+        const losTime = new Date(losMs);
+        if (losMs >= now.getTime() - stepSec * 1000) {
           passes.push({
             aos: aosTime.toISOString(),
-            los: date.toISOString(),
+            los: losTime.toISOString(),
             maxEl,
             aosAz,
           });
@@ -194,6 +172,7 @@ function findPasses(satrec, observer, now, minEl, hours, stepSec) {
       }
     }
     prevEl = el;
+    prevT = t;
   }
 
   if (aosTime && passes.length < MAX_PASSES) {
