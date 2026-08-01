@@ -482,13 +482,22 @@ body {
 }
 
 #radar-canvas,
-#rotor-az-canvas,
-#rotor-el-canvas {
+#rotor-az-canvas {
   display: block;
   width: 220px;
   height: 220px;
   border-radius: 50%;
   background: rgba(13, 17, 23, 0.75);
+  border: 1px solid var(--border);
+}
+
+/* EL is a semicircle (0–180°); keep square canvas but no full-circle clip */
+#rotor-el-canvas {
+  display: block;
+  width: 220px;
+  height: 220px;
+  border-radius: 12px;
+  background: transparent;
   border: 1px solid var(--border);
 }
 
