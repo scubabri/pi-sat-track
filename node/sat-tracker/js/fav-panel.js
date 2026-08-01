@@ -45,15 +45,25 @@ function formatAosHms(sec) {
   );
 }
 
+/** Last server secToAos we used to seed each deadline (avoid re-seed every tick). */
+let favLastSecToAos = {};
+
 function noteAosDeadline(key, secToAos) {
   if (!key) return;
   if (
-    typeof secToAos === "number" &&
-    Number.isFinite(secToAos) &&
-    secToAos >= 0
+    typeof secToAos !== "number" ||
+    !Number.isFinite(secToAos) ||
+    secToAos < 0
   ) {
-    favAosDeadline[key] = Date.now() + secToAos * 1000;
+    return;
   }
+  // Server secToAos is coarse (~30s). Only re-seed when the value changes,
+  // otherwise the live countdown would reset every resolve/tick and freeze.
+  if (favLastSecToAos[key] === secToAos && favAosDeadline[key] != null) {
+    return;
+  }
+  favLastSecToAos[key] = secToAos;
+  favAosDeadline[key] = Date.now() + secToAos * 1000;
 }
 
 function favNextLabel(s, multi, key) {
@@ -448,6 +458,7 @@ function invalidateFavPanelStructure() {
   lastFavStructureKey = "";
   lastFavOrderKeys = null;
   lastFavOrderSet = "";
+  // Keep deadlines; they re-seed from the next sat-list if keys change.
   renderFavPanel();
 }
 
