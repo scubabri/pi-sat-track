@@ -13,6 +13,7 @@
     />
     <link rel="stylesheet" href="css/style.css" />
     <link rel="stylesheet" href="css/fav-panel.css" />
+    <link rel="stylesheet" href="css/pass-panel.css" />
     <link rel="stylesheet" href="css/layout.css" />
     <link rel="stylesheet" href="css/sidebar.css" />
     <link rel="stylesheet" href="css/lock.css" />
@@ -264,6 +265,36 @@
       </div>
     </div>
 
+    <div id="pass-panel">
+      <button
+        type="button"
+        id="pass-drawer-toggle"
+        class="pass-drawer-toggle"
+        aria-expanded="false"
+        title="Show or hide next passes"
+      >
+        <span class="pass-drawer-chevron">&#9662;</span>
+        <span class="pass-drawer-label">Next Passes</span>
+        <span id="pass-drawer-sat" class="pass-drawer-sat"></span>
+        <span id="pass-drawer-count" class="pass-drawer-count">—</span>
+        <span class="pass-drawer-hint">next 5 for selected sat</span>
+      </button>
+      <div id="pass-panel-drawer" class="pass-panel-drawer">
+        <div id="pass-panel-table">
+          <div class="pass-head">
+            <span class="pass-cell pass-idx">#</span>
+            <span class="pass-cell pass-time">AOS</span>
+            <span class="pass-cell pass-time">LOS</span>
+            <span class="pass-cell pass-num">Max El</span>
+            <span class="pass-cell pass-num">Duration</span>
+            <span class="pass-cell pass-num">AOS Az</span>
+            <span class="pass-cell pass-status">Status</span>
+          </div>
+          <div id="pass-panel-body"></div>
+        </div>
+      </div>
+    </div>
+
     <div id="main">
       <div id="left-column">
         <div id="map-container">
@@ -478,7 +509,7 @@
             <span class="label">Orbit</span><span id="sat-orbit">-</span>
           </div>
           <div class="status-item">
-            <span class="label">TLE age</span><span id="status-tle">-</span>
+            <span class="label">TLE age</span><span id="sat-orbit">-</span>
           </div>
           <div class="status-item">
             <span class="label">Catalog</span><span id="status-catalog">-</span>
@@ -502,6 +533,7 @@
     <script src="js/freq-utils.js"></script>
     <script src="js/sat-menu.js"></script>
     <script src="js/fav-panel.js"></script>
+    <script src="js/pass-panel.js"></script>
     <script src="js/pass-ui.js"></script>
     <script src="js/tracker.js"></script>
     <script src="js/lock-ui.js"></script>
