@@ -43,18 +43,9 @@ function angularDistanceDeg(a, b) {
   if (!a || !b) return 0;
   let daz = b.az - a.az;
   daz = ((daz + 540) % 360) - 180;
-  const a1 = (a.az * Math.PI) / 180;
-  const e1 = (a.el * Math.PI) / 180;
-  const a2 = (b.az * Math.PI) / 180;
-  const e2 = (b.el * Math.PI) / 180;
-  const cosD =
-    Math.sin(e1) * Math.sin(e2) +
-    Math.cos(e1) * Math.cos(e2) * Math.cos((daz * Math.PI) / 180);
-  // Prefer spherical law of cosines with normalized daz already applied above via cos(daz)
-  const cosD2 =
-    Math.sin(e1) * Math.sin(e2) +
-    Math.cos(e1) * Math.cos(e2) * Math.cos(a1 - a2);
-  return (Math.acos(Math.max(-1, Math.min(1, cosD2))) * 180) / Math.PI;
+  const meanElRad = ((a.el + b.el) / 2) * (Math.PI / 180);
+  const cosEl = Math.cos(meanElRad);
+  return Math.sqrt((daz * cosEl) ** 2 + (b.el - a.el) ** 2);
 }
 
 function lookAnglesLead(satrec, observer, now, leadDeg) {
