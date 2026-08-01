@@ -55,6 +55,7 @@ function tickCountdown() {
   const dot = document.querySelector("#pass-status .status-dot");
   if (!countdownEl) return;
 
+  // Above horizon → in pass (green only here)
   if (currentEl != null && currentEl >= 0) {
     if (labelEl) labelEl.textContent = "LOS in";
     if (dot) dot.className = "status-dot green";
