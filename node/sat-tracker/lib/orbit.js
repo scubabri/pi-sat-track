@@ -39,84 +39,96 @@ function lookAngles(satrec, observer, date) {
   };
 }
 
+function angularDistanceDeg(a, b) {
+  if (!a || !b) return 0;
+  let daz = b.az - a.az;
+  daz = ((daz + 540) % 360) - 180;
+  const a1 = (a.az * Math.PI) / 180;
+  const e1 = (a.el * Math.PI) / 180;
+  const a2 = (b.az * Math.PI) / 180;
+  const e2 = (b.el * Math.PI) / 180;
+  const cosD =
+    Math.sin(e1) * Math.sin(e2) +
+    Math.cos(e1) * Math.cos(e2) * Math.cos((daz * Math.PI) / 180);
+  // Prefer spherical law of cosines with normalized daz already applied above via cos(daz)
+  const cosD2 =
+    Math.sin(e1) * Math.sin(e2) +
+    Math.cos(e1) * Math.cos(e2) * Math.cos(a1 - a2);
+  return (Math.acos(Math.max(-1, Math.min(1, cosD2))) * 180) / Math.PI;
+}
+
 function lookAnglesLead(satrec, observer, now, leadDeg) {
   if (!leadDeg || leadDeg <= 0) return lookAngles(satrec, observer, now);
-  // Search forward for the time when angular travel from current sky position
-  // reaches leadDeg. Used by rotor lead-ahead.
-  const look0 = lookAngles(satrec, observer, now);
-  if (!look0) return null;
-  let lo = 0;
-  let hi = 120; // seconds
-  let bestT = 0;
-  let bestLook = look0;
-  for (let iter = 0; iter < 16; iter++) {
+
+  const current = lookAngles(satrec, observer, now);
+  if (!current) return null;
+
+  let lo = 0.5;
+  let hi = 30;
+  let best = null;
+  let bestErr = Infinity;
+
+  for (let i = 0; i < 14; i++) {
     const mid = (lo + hi) / 2;
-    const look = lookAngles(
+    const future = lookAngles(
       satrec,
       observer,
       new Date(now.getTime() + mid * 1000),
     );
-    if (!look) {
+    if (!future) {
       hi = mid;
       continue;
     }
-    const dang = angularDistanceDeg(look0.az, look0.el, look.az, look.el);
+
+    const dang = angularDistanceDeg(current, future);
     const err = Math.abs(dang - leadDeg);
-    if (err < 0.15) {
-      bestT = mid;
-      bestLook = look;
-      break;
+
+    if (err < bestErr) {
+      bestErr = err;
+      best = future;
     }
+
     if (dang < leadDeg) {
       lo = mid;
     } else {
       hi = mid;
     }
-    bestT = mid;
-    bestLook = look;
-  }
-  // Guard against wild solutions
-  const finalDang = angularDistanceDeg(
-    look0.az,
-    look0.el,
-    bestLook.az,
-    bestLook.el,
-  );
-  if (finalDang > leadDeg * 1.6) {
-    return lookAngles(
-      satrec,
-      observer,
-      new Date(now.getTime() + Math.min(12, leadDeg / 0.35) * 1000),
-    );
-  }
-  return bestLook;
-}
 
-function angularDistanceDeg(az1, el1, az2, el2) {
-  const a1 = (az1 * Math.PI) / 180;
-  const e1 = (el1 * Math.PI) / 180;
-  const a2 = (az2 * Math.PI) / 180;
-  const e2 = (el2 * Math.PI) / 180;
-  const cosD =
-    Math.sin(e1) * Math.sin(e2) +
-    Math.cos(e1) * Math.cos(e2) * Math.cos(a1 - a2);
-  return (Math.acos(Math.max(-1, Math.min(1, cosD))) * 180) / Math.PI;
+    if (err < 0.25) break;
+  }
+
+  if (best) {
+    const finalDang = angularDistanceDeg(current, best);
+    if (finalDang > leadDeg * 1.6) {
+      return lookAngles(
+        satrec,
+        observer,
+        new Date(now.getTime() + Math.min(12, leadDeg / 0.35) * 1000),
+      );
+    }
+  }
+
+  return best || lookAngles(satrec, observer, now);
 }
 
 function rangeRateKmS(satrec, observer, date) {
-  const look0 = lookAngles(satrec, observer, date);
-  const look1 = lookAngles(
-    satrec,
-    observer,
-    new Date(date.getTime() + 1000),
-  );
-  if (!look0 || !look1) return null;
-  return look1.rangeKm - look0.rangeKm;
+  const pv = satellite.propagate(satrec, date);
+  if (!pv.position || !pv.velocity) return null;
+  const gmst = gmstFromDate(date);
+  const posEcf = satellite.eciToEcf(pv.position, gmst);
+  const velEcf = satellite.eciToEcf(pv.velocity, gmst);
+  const obsEcf = satellite.geodeticToEcf(observer);
+  const dx = posEcf.x - obsEcf.x;
+  const dy = posEcf.y - obsEcf.y;
+  const dz = posEcf.z - obsEcf.z;
+  const range = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  if (range < 1e-6) return 0;
+  return (dx * velEcf.x + dy * velEcf.y + dz * velEcf.z) / range;
 }
 
 function groundPoint(satrec, date) {
   const pv = satellite.propagate(satrec, date);
-  if (!pv.position || typeof pv.position === "boolean") return null;
+  if (!pv.position) return null;
   return eciToLatLon(pv.position, date);
 }
 
@@ -124,8 +136,8 @@ function buildTrail(satrec, now, minutes, stepSec) {
   minutes = minutes != null ? minutes : TRAIL_MINUTES;
   stepSec = stepSec != null ? stepSec : TRAIL_STEP_SEC;
   const points = [];
-  const start = now.getTime() - minutes * 60 * 1000;
-  for (let t = start; t <= now.getTime(); t += stepSec * 1000) {
+  const start = new Date(now.getTime() - minutes * 60 * 1000);
+  for (let t = start.getTime(); t <= now.getTime(); t += stepSec * 1000) {
     const p = groundPoint(satrec, new Date(t));
     if (p) points.push([p.lat, p.lon]);
   }
@@ -133,7 +145,7 @@ function buildTrail(satrec, now, minutes, stepSec) {
 }
 
 function buildForwardTrack(satrec, now, orbits, stepSec) {
-  orbits = orbits != null ? orbits : 1;
+  orbits = orbits != null ? orbits : 2;
   stepSec = stepSec != null ? stepSec : TRAIL_STEP_SEC;
   const periodMin = (2 * Math.PI) / satrec.no;
   const totalSec = periodMin * orbits * 60;
