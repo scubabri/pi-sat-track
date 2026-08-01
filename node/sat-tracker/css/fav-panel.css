@@ -83,17 +83,18 @@
 }
 
 #fav-panel-table {
-  min-width: 900px;
   width: 100%;
+  min-width: 0;
 }
 
 .fav-head,
 .fav-row {
   display: grid;
+  /* Fixed column widths so data packs left; trailing 1fr eats leftover space */
   grid-template-columns:
-    minmax(110px, 1.4fr)  /* name */
-    64px                  /* norad */
-    52px                  /* visible */
+    120px                 /* name */
+    56px                  /* norad */
+    48px                  /* visible */
     72px                  /* az */
     72px                  /* el */
     88px                  /* range */
@@ -102,8 +103,9 @@
     80px                  /* lon */
     80px                  /* alt */
     56px                  /* orbit */
-    52px;                 /* next */
-  gap: 0 8px;
+    52px                  /* next */
+    1fr;                  /* spacer — keeps columns left-aligned */
+  gap: 0 10px;
   align-items: center;
   padding: 0 12px;
   font-size: 0.78rem;
