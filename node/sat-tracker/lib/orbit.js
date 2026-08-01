@@ -7,6 +7,9 @@ const {
   PASS_STEP_SEC,
 } = require("./config");
 
+/** How many upcoming passes to compute for the UI drawer / state. */
+const MAX_PASSES = 5;
+
 function gmstFromDate(date) {
   return satellite.gstime(date);
 }
@@ -188,7 +191,7 @@ function findPasses(satrec, observer, now, minEl, hours, stepSec) {
             maxEl,
             aosAz,
           });
-          if (passes.length >= 2) break;
+          if (passes.length >= MAX_PASSES) break;
         }
         aosTime = null;
         maxEl = minEl;
@@ -199,7 +202,7 @@ function findPasses(satrec, observer, now, minEl, hours, stepSec) {
     prevEl = el;
   }
 
-  if (aosTime && passes.length < 2) {
+  if (aosTime && passes.length < MAX_PASSES) {
     const lookEnd = lookAngles(satrec, observer, end);
     if (lookEnd && lookEnd.el >= minEl) {
       passes.push({
@@ -223,7 +226,7 @@ function findPasses(satrec, observer, now, minEl, hours, stepSec) {
     passes.unshift(cur);
   }
 
-  return passes.slice(0, 2);
+  return passes.slice(0, MAX_PASSES);
 }
 
 function passSkyPath(satrec, observer, aosIso, losIso, stepSec) {
@@ -248,4 +251,5 @@ module.exports = {
   buildForwardTrack,
   findPasses,
   passSkyPath,
+  MAX_PASSES,
 };
