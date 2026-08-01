@@ -49,7 +49,11 @@ function toggleFavorite(key) {
   else favs.push(key);
   saveFavorites(favs);
   if (lastSatList) renderSatMenu(lastSatList);
-  if (typeof renderFavPanel === "function") renderFavPanel();
+  if (typeof invalidateFavPanelStructure === "function") {
+    invalidateFavPanelStructure();
+  } else if (typeof renderFavPanel === "function") {
+    renderFavPanel();
+  }
   sendFavoritesToServer();
 }
 
@@ -171,7 +175,6 @@ function renderSatMenu(payload) {
   const headRow = document.createElement("div");
   headRow.className = "sat-menu-head";
 
-  // List mode toggle: Favorites ↔ Heard on AMSAT
   const listBtn = document.createElement("button");
   listBtn.type = "button";
   listBtn.className = "sat-list-btn";
@@ -206,7 +209,6 @@ function renderSatMenu(payload) {
   }
 
   if (satListMode === "favorites") {
-    // Favorites first (preserve user order), then resolve from catalog
     favs.forEach((key) => {
       const match = sats.find((s) => s.key === key);
       if (match) add(match);
