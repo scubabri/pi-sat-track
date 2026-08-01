@@ -135,35 +135,11 @@ wss.on("connection", (ws) => {
       }
 
       if (msg.type === "radio") {
-        radioOn = !!msg.on;
-        const r = radios.active();
-        if (typeof r.setRadioOn === "function") r.setRadioOn(radioOn);
-        else if (typeof r.setOn === "function") r.setOn(radioOn);
-        radios.broadcastAllStatus();
-        pushNow();
-      }
-
-      if (msg.type === "antenna") {
-        rotor.setAntennaOn(!!msg.on);
-        rotor.broadcastStatus();
-        pushNow();
-      }
-
-      if (msg.type === "fine" && typeof msg.delta === "number") {
-        const r = radios.active();
-        if (typeof r.applyFine === "function") r.applyFine(msg.delta, msg.step);
-        pushNow();
-      }
-
-      if (msg.type === "center") {
-        radios.resetAllOffsets();
-        pushNow();
+        radios.setRadio(!!msg.on);
       }
 
       if (msg.type === "lock") {
-        const r = radios.active();
-        if (typeof r.setLock === "function") r.setLock(!!msg.on);
-        pushNow();
+        radios.setLock(!!msg.on);
       }
 
       if (msg.type === "ulFixed") {
@@ -171,8 +147,24 @@ wss.on("connection", (ws) => {
         pushNow();
       }
 
-      if (msg.type === "ctcss" && msg.which) {
-        const which = msg.which;
+      if (msg.type === "antenna") {
+        rotor.setAntenna(!!msg.on);
+      }
+
+      if (msg.type === "fine") {
+        const delta = typeof msg.delta === "number" ? msg.delta : 0;
+        const step = typeof msg.step === "number" ? msg.step : 100;
+        radios.applyFine(delta, step);
+        pushNow();
+      }
+
+      if (msg.type === "center") {
+        radios.centerOffsets();
+        pushNow();
+      }
+
+      if (msg.type === "ctcss") {
+        const which = msg.which || "off";
         const r = radios.active();
         if (typeof r.setCtcss === "function") r.setCtcss(which);
         pushNow();
