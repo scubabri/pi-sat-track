@@ -189,18 +189,18 @@ function drawElGauge(el) {
     ctx.stroke();
   }
 
-  // Angle labels
+  // Angle labels — keep fully inside canvas (180° was clipping to "80°")
   ctx.fillStyle = "rgba(230, 237, 243, 0.85)";
   ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
-  // 0° right
-  ctx.fillText("0°", cx + r + 2, cy - 2);
+  // 0° right — just inside the rim, above the diameter
+  ctx.fillText("0°", cx + r - 12, cy - 12);
   // 90° top
   ctx.fillText("90°", cx, cy - r - 8);
-  // 180° left
-  ctx.fillText("180°", cx - r - 4, cy - 2);
+  // 180° left — same inset so the full "180°" stays on-canvas
+  ctx.fillText("180°", cx - r + 16, cy - 12);
 
   // Intermediate labels (30 / 60 / 120 / 150) a bit inward
   ctx.fillStyle = "rgba(139, 148, 158, 0.75)";
