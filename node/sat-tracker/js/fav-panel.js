@@ -137,6 +137,7 @@ function resolveFavRows() {
     };
   });
 
+  // Only re-sort when the set of favorite keys changes.
   const setKey = favs.slice().sort().join("\0");
   if (setKey !== lastFavOrderSet || !lastFavOrderKeys) {
     const sorted = sortFavRowsByAos(rows);
@@ -303,53 +304,35 @@ function buildFavRowEl(row) {
   el.className = "fav-row" + (v.active ? " active" : "");
   el.dataset.sat = row.key;
 
-  el.innerHTML =
-    '<span class="fav-cell fav-name" title="' +
-    v.name.replace(/"/g, """) +
-    '">' +
-    v.name +
-    "</span>" +
-    '<span class="fav-cell fav-norad">' +
-    v.norad +
-    "</span>" +
-    '<span class="fav-cell fav-vis ' +
-    (v.visible ? "yes" : "no") +
-    '">' +
-    v.visText +
-    "</span>" +
-    '<span class="fav-cell fav-num">' +
-    v.az +
-    "</span>" +
-    '<span class="fav-cell fav-num">' +
-    v.elev +
-    "</span>" +
-    '<span class="fav-cell fav-num">' +
-    v.range +
-    "</span>" +
-    '<span class="fav-cell fav-num">' +
-    v.rate +
-    "</span>" +
-    '<span class="fav-cell fav-num">' +
-    v.lat +
-    "</span>" +
-    '<span class="fav-cell fav-num">' +
-    v.lon +
-    "</span>" +
-    '<span class="fav-cell fav-num">' +
-    v.alt +
-    "</span>" +
-    '<span class="fav-cell fav-num">' +
-    v.orbit +
-    "</span>" +
-    '<span class="fav-cell fav-next">' +
-    v.next +
-    "</span>";
+  const nameSpan = document.createElement("span");
+  nameSpan.className = "fav-cell fav-name";
+  nameSpan.title = v.name;
+  nameSpan.textContent = v.name;
+  el.appendChild(nameSpan);
+
+  function numCell(text, extraClass) {
+    const s = document.createElement("span");
+    s.className = "fav-cell " + (extraClass || "fav-num");
+    s.textContent = text;
+    el.appendChild(s);
+    return s;
+  }
+
+  numCell(v.norad, "fav-norad");
+  numCell(v.visText, "fav-vis " + (v.visible ? "yes" : "no"));
+  numCell(v.az);
+  numCell(v.elev);
+  numCell(v.range);
+  numCell(v.rate);
+  numCell(v.lat);
+  numCell(v.lon);
+  numCell(v.alt);
+  numCell(v.orbit);
+  numCell(v.next, "fav-next");
 
   el.addEventListener("click", () => {
     if (typeof selectSatellite === "function") {
-      const nameEl = el.querySelector(".fav-name");
-      const name = (nameEl && nameEl.textContent) || row.key;
-      selectSatellite(row.key, name);
+      selectSatellite(row.key, v.name);
     }
   });
   return el;
