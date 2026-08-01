@@ -3,6 +3,8 @@ let lastPassList = []; // array of { aos, los, maxEl, aosAz, ... }
 let lastPassListSat = null;
 let passDrawerOpen =
   localStorage.getItem("satTrackerPassDrawer") === "1";
+/** Frozen absolute AOS/LOS (ms) so server recompute drift does not reset countdown. */
+let frozenPassTimes = []; // [{ aosMs, losMs }, ...]
 
 function passDurLabel(aosIso, losIso) {
   const aos = new Date(aosIso).getTime();
@@ -155,11 +157,55 @@ function renderPassPanel() {
   });
 }
 
+/**
+ * Adopt server pass list but freeze AOS/LOS absolute times when the server
+ * only drifts them by a few seconds (recompute each tick). Same idea as
+ * favAosDeadline — otherwise the countdown never advances and clock times walk.
+ */
+function adoptPasses(passes, satKey) {
+  if (satKey && satKey !== lastPassListSat) {
+    lastPassListSat = satKey;
+    frozenPassTimes = [];
+  }
+  if (!Array.isArray(passes)) return;
+
+  const next = passes.slice(0, 5);
+  const newFrozen = [];
+  const stabilized = next.map((p, i) => {
+    const aosMs = new Date(p.aos).getTime();
+    const losMs = new Date(p.los).getTime();
+    const prev = frozenPassTimes[i];
+    // Keep prior absolute times if within 15s (server step / recompute jitter)
+    if (
+      prev &&
+      Number.isFinite(prev.aosMs) &&
+      Number.isFinite(aosMs) &&
+      Math.abs(prev.aosMs - aosMs) < 15000
+    ) {
+      newFrozen.push(prev);
+      return Object.assign({}, p, {
+        aos: new Date(prev.aosMs).toISOString(),
+        los: new Date(prev.losMs).toISOString(),
+      });
+    }
+    newFrozen.push({
+      aosMs: aosMs,
+      losMs: Number.isFinite(losMs) ? losMs : aosMs,
+    });
+    return p;
+  });
+  frozenPassTimes = newFrozen;
+  lastPassList = stabilized;
+}
+
 function updatePassPanelFromState(state) {
   if (!state) return;
-  if (state.sat) lastPassListSat = state.sat;
   if (Array.isArray(state.passes)) {
-    lastPassList = state.passes;
+    adoptPasses(state.passes, state.sat || lastPassListSat);
+  } else if (state.sat && state.sat !== lastPassListSat) {
+    lastPassListSat = state.sat;
+    lastPassList = [];
+    frozenPassTimes = [];
   }
   renderPassPanel();
 }
