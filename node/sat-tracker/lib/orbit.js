@@ -39,10 +39,6 @@ function lookAngles(satrec, observer, date) {
   };
 }
 
-/**
- * Approximate angular separation (degrees) between two az/el points.
- * Uses mean elevation for the azimuth component.
- */
 function angularDistanceDeg(a, b) {
   if (!a || !b) return 0;
   let daz = b.az - a.az;
@@ -52,10 +48,6 @@ function angularDistanceDeg(a, b) {
   return Math.sqrt((daz * cosEl) ** 2 + (b.el - a.el) ** 2);
 }
 
-/**
- * Return look angles approximately `leadDeg` ahead of `now` along the track.
- * Binary-searches time so angular distance is close to leadDeg.
- */
 function lookAnglesLead(satrec, observer, now, leadDeg) {
   if (!leadDeg || leadDeg <= 0) return lookAngles(satrec, observer, now);
 
@@ -160,6 +152,8 @@ function buildForwardTrack(satrec, now, orbits, stepSec) {
 function findPasses(satrec, observer, now, minEl, hours, stepSec) {
   minEl = minEl != null ? minEl : MIN_EL;
   hours = hours != null ? hours : PASS_HOURS;
+  // LEO passes are sparse in geometry; 12h often yields only 1–2. Use at least 48h for MAX_PASSES.
+  if (hours < 48) hours = 48;
   stepSec = stepSec != null ? stepSec : PASS_STEP_SEC;
 
   const passes = [];
