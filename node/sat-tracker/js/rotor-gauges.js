@@ -132,61 +132,96 @@ function drawAzGauge(az) {
 }
 
 /**
- * EL — same circular face; 0° at right (E), 90° at top (N).
- * Scale is 0–90 only (quarter used for scale labels); needle still draws full line.
+ * EL — upper semicircle for 0–180° rotor travel.
+ * 0° = right, 90° = top, 180° = left.
  */
 function drawElGauge(el) {
   if (!elCtx) return;
   const ctx = elCtx;
   const cx = RG_CENTER;
-  const cy = RG_CENTER;
-  const r = RG_RADIUS;
+  // Shift center slightly down so the semicircle fills the canvas better
+  const cy = RG_CENTER + 18;
+  const r = RG_RADIUS - 4;
 
-  drawCircularFace(ctx);
+  ctx.clearRect(0, 0, RG_SIZE, RG_SIZE);
 
-  // Rings at 30 / 60 / 90 along the radius (like elev rings on sat radar)
-  ctx.strokeStyle = "rgba(139, 148, 158, 0.45)";
+  // Background: filled upper semicircle + a little padding
+  ctx.beginPath();
+  ctx.arc(cx, cy, r + 6, Math.PI, 0, false); // left → right via top (CCW from π to 0)
+  ctx.lineTo(cx + r + 6, cy);
+  ctx.lineTo(cx - r - 6, cy);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(13, 17, 23, 0.75)";
+  ctx.fill();
+
+  // Outer arc (0° right → 180° left via top)
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, Math.PI, 0, false);
+  ctx.strokeStyle = "rgba(139, 148, 158, 0.55)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Diameter line (horizon / 0–180 baseline)
+  ctx.beginPath();
+  ctx.moveTo(cx - r, cy);
+  ctx.lineTo(cx + r, cy);
+  ctx.strokeStyle = "rgba(139, 148, 158, 0.4)";
   ctx.lineWidth = 1;
-  [30, 60, 90].forEach((elev) => {
-    const ringR = r * (elev / 90);
+  ctx.stroke();
+
+  // Concentric arcs at 30° intervals of radius (visual depth only)
+  ctx.strokeStyle = "rgba(139, 148, 158, 0.3)";
+  ctx.lineWidth = 1;
+  [0.33, 0.66].forEach((f) => {
     ctx.beginPath();
-    ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+    ctx.arc(cx, cy, r * f, Math.PI, 0, false);
     ctx.stroke();
   });
 
-  // Spokes every 30° of compass for visual match
+  // Radial spokes every 30° of elevation (0, 30, 60, 90, 120, 150, 180)
   ctx.strokeStyle = "rgba(139, 148, 158, 0.35)";
-  for (let a = 0; a < 360; a += 30) {
-    const rad = ((a - 90) * Math.PI) / 180;
+  for (let elev = 0; elev <= 180; elev += 30) {
+    const compassAz = 90 - elev;
+    const rad = ((compassAz - 90) * Math.PI) / 180;
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.lineTo(cx + r * Math.cos(rad), cy + r * Math.sin(rad));
     ctx.stroke();
   }
 
-  // Cardinals
+  // Angle labels
   ctx.fillStyle = "rgba(230, 237, 243, 0.85)";
   ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  const lo = r + 2;
-  ctx.fillText("N", cx, cy - lo + 10);
-  ctx.fillText("E", cx + lo - 8, cy);
-  ctx.fillText("S", cx, cy + lo - 8);
-  ctx.fillText("W", cx - lo + 8, cy);
 
-  // Elev scale labels on NE quadrant
-  ctx.fillStyle = "rgba(139, 148, 158, 0.7)";
+  // 0° right
+  ctx.fillText("0°", cx + r + 2, cy - 2);
+  // 90° top
+  ctx.fillText("90°", cx, cy - r - 8);
+  // 180° left
+  ctx.fillText("180°", cx - r - 4, cy - 2);
+
+  // Intermediate labels (30 / 60 / 120 / 150) a bit inward
+  ctx.fillStyle = "rgba(139, 148, 158, 0.75)";
   ctx.font = '9px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-  ctx.fillText("30°", cx + 4, cy - r * (30 / 90) + 3);
-  ctx.fillText("60°", cx + 4, cy - r * (60 / 90) + 3);
+  const labelR = r - 14;
+  [
+    [30, "30°"],
+    [60, "60°"],
+    [120, "120°"],
+    [150, "150°"],
+  ].forEach(([elev, txt]) => {
+    const compassAz = 90 - elev;
+    const rad = ((compassAz - 90) * Math.PI) / 180;
+    const lx = cx + labelR * Math.cos(rad);
+    const ly = cy + labelR * Math.sin(rad);
+    ctx.fillText(txt, lx, ly);
+  });
 
-  // Needle: map elev 0→90 onto compass bearing 90°(E) → 0°(N)
-  // So elev angle on screen = 90 - elev (from north, clockwise would be wrong;
-  // we use: 0 elev points East, 90 elev points North)
+  // Needle: elev 0 → right, 90 → up, 180 → left
   if (el != null && Number.isFinite(el)) {
-    const clamped = Math.max(-5, Math.min(90, el));
-    // Screen angle: elev 0 → east (az 90), elev 90 → north (az 0)
+    const clamped = Math.max(-5, Math.min(185, el));
     const compassAz = 90 - clamped;
     const rad = ((compassAz - 90) * Math.PI) / 180;
 
@@ -198,6 +233,7 @@ function drawElGauge(el) {
     ctx.lineCap = "round";
     ctx.stroke();
 
+    // Tip dot
     ctx.beginPath();
     ctx.arc(
       cx + (r - 4) * Math.cos(rad),
@@ -213,7 +249,7 @@ function drawElGauge(el) {
     ctx.stroke();
   }
 
-  // Center degrees
+  // Center hub + degrees (slightly above the diameter so it sits inside the semicircle)
   ctx.beginPath();
   ctx.arc(cx, cy, 22, 0, Math.PI * 2);
   ctx.fillStyle = "rgba(13, 17, 23, 0.9)";
