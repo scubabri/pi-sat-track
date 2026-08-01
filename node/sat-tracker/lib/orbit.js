@@ -39,12 +39,57 @@ function lookAngles(satrec, observer, date) {
   };
 }
 
-function lookAnglesLead(satrec, observer, date, leadSec) {
-  return lookAngles(
-    satrec,
-    observer,
-    new Date(date.getTime() + (leadSec || 0) * 1000),
+function lookAnglesLead(satrec, observer, now, leadDeg) {
+  if (!leadDeg || leadDeg <= 0) return lookAngles(satrec, observer, now);
+  // Search forward for the time when angular travel from current sky position
+  // reaches leadDeg. Used by rotor lead-ahead.
+  const look0 = lookAngles(satrec, observer, now);
+  if (!look0) return null;
+  let lo = 0;
+  let hi = 120; // seconds
+  let bestT = 0;
+  let bestLook = look0;
+  for (let iter = 0; iter < 16; iter++) {
+    const mid = (lo + hi) / 2;
+    const look = lookAngles(
+      satrec,
+      observer,
+      new Date(now.getTime() + mid * 1000),
+    );
+    if (!look) {
+      hi = mid;
+      continue;
+    }
+    const dang = angularDistanceDeg(look0.az, look0.el, look.az, look.el);
+    const err = Math.abs(dang - leadDeg);
+    if (err < 0.15) {
+      bestT = mid;
+      bestLook = look;
+      break;
+    }
+    if (dang < leadDeg) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+    bestT = mid;
+    bestLook = look;
+  }
+  // Guard against wild solutions
+  const finalDang = angularDistanceDeg(
+    look0.az,
+    look0.el,
+    bestLook.az,
+    bestLook.el,
   );
+  if (finalDang > leadDeg * 1.6) {
+    return lookAngles(
+      satrec,
+      observer,
+      new Date(now.getTime() + Math.min(12, leadDeg / 0.35) * 1000),
+    );
+  }
+  return bestLook;
 }
 
 function angularDistanceDeg(az1, el1, az2, el2) {
