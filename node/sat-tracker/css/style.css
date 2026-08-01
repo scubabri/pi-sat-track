@@ -13,6 +13,7 @@
   --uplink: #58a6ff;
   --downlink: #3fb950;
   --topbar-h: 52px;
+  --fav-panel-h: auto;
   --sidebar-w: 280px;
   --radius: 8px;
   --font:
@@ -38,6 +39,11 @@ body {
   font-size: 14px;
 }
 
+body {
+  display: flex;
+  flex-direction: column;
+}
+
 /* ========== TOP BAR ========== */
 #topbar {
   display: flex;
@@ -50,6 +56,7 @@ body {
   position: relative;
   z-index: 2000;
   overflow: visible;
+  flex-shrink: 0;
 }
 
 #sat-selector {
@@ -253,7 +260,6 @@ body {
 #sat-menu .sat-chip .sat-option {
   margin: 0;
 }
-
 
 #pass-status {
   display: flex;
@@ -497,10 +503,115 @@ body {
   flex: 1;
 }
 
+/* ========== FAVORITES TELEMETRY STRIP ========== */
+#fav-panel {
+  background: #12161c;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+#fav-panel-table {
+  min-width: 900px;
+  width: 100%;
+}
+
+.fav-head,
+.fav-row {
+  display: grid;
+  grid-template-columns:
+    minmax(110px, 1.4fr) /* name */
+    64px /* norad */
+    52px /* visible */
+    72px /* az */
+    72px /* el */
+    88px /* range */
+    88px /* rate */
+    72px /* lat */
+    80px /* lon */
+    80px /* alt */
+    56px /* orbit */
+    52px; /* next */
+  gap: 0 8px;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.fav-head {
+  height: 28px;
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.35px;
+  border-bottom: 1px solid var(--border);
+  background: #0e1218;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.fav-row {
+  height: 30px;
+  color: var(--text);
+  border-bottom: 1px solid rgba(48, 54, 61, 0.45);
+  cursor: pointer;
+}
+
+.fav-row:hover {
+  background: rgba(88, 166, 255, 0.06);
+}
+
+.fav-row.active {
+  background: rgba(88, 166, 255, 0.12);
+  outline: 1px solid rgba(88, 166, 255, 0.35);
+  outline-offset: -1px;
+}
+
+.fav-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fav-name {
+  font-weight: 600;
+}
+
+.fav-norad,
+.fav-num,
+.fav-next {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  text-align: right;
+}
+
+.fav-vis {
+  font-weight: 700;
+  font-size: 0.72rem;
+  text-align: center;
+}
+.fav-vis.yes {
+  color: var(--green);
+}
+.fav-vis.no {
+  color: var(--red);
+}
+
+.fav-panel-empty {
+  padding: 10px 14px;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+}
+
 /* ========== MAIN LAYOUT ========== */
 #main {
   display: flex;
-  height: calc(100% - var(--topbar-h));
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 

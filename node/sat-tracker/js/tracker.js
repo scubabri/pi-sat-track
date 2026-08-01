@@ -72,7 +72,6 @@ function updateStationStatus() {
         : "-";
   }
 }
-
 function updateModeSelect(modes, modeIndex) {
   const sel = document.getElementById("mode-select");
   if (!sel) return;
@@ -363,6 +362,7 @@ function connectTracker() {
       pendingSatKey = currentSatKey;
       ws.send(JSON.stringify({ type: "sat", key: currentSatKey }));
     }
+    if (typeof sendFavoritesToServer === "function") sendFavoritesToServer();
   };
 
   ws.onmessage = (ev) => {
@@ -392,6 +392,11 @@ function connectTracker() {
       if (msg.type === "tick") {
         if (pendingSatKey && msg.sat && msg.sat !== pendingSatKey) return;
         applyFreqAndLook(msg);
+        if (typeof updateFavPanelFromState === "function") {
+          updateFavPanelFromState(
+            Object.assign({ type: "tick", sat: msg.sat || currentSatKey }, msg),
+          );
+        }
         return;
       }
 
@@ -434,6 +439,8 @@ function connectTracker() {
       if (typeof updateProfile === "function") updateProfile(msg);
       updateSidebar(msg);
       updateSatelliteStatus(msg);
+      if (typeof updateFavPanelFromState === "function")
+        updateFavPanelFromState(msg);
     } catch (e) {
       console.warn("Bad state message", e);
     }
@@ -475,12 +482,10 @@ function updateSatelliteStatus(state) {
     orbitEl.textContent = state.orbit != null ? String(state.orbit) : "-";
   }
 }
-
 function notifyObserverChanged() {
   sendObserver();
   updateStationStatus();
 }
-
 function initModeSelect() {
   const sel = document.getElementById("mode-select");
   if (!sel) return;

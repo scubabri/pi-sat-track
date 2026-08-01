@@ -16,7 +16,6 @@ function setSatButtonLabel(label) {
   });
 }
 
-
 function loadFavorites() {
   try {
     const raw = localStorage.getItem("satTrackerFavorites");
@@ -35,6 +34,13 @@ function isFavorite(key) {
   return !!key && loadFavorites().includes(key);
 }
 
+function sendFavoritesToServer() {
+  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN)
+    return;
+  const keys = loadFavorites();
+  ws.send(JSON.stringify({ type: "favorites", keys: keys }));
+}
+
 function toggleFavorite(key) {
   if (!key) return;
   const favs = loadFavorites();
@@ -43,6 +49,8 @@ function toggleFavorite(key) {
   else favs.push(key);
   saveFavorites(favs);
   if (lastSatList) renderSatMenu(lastSatList);
+  if (typeof renderFavPanel === "function") renderFavPanel();
+  sendFavoritesToServer();
 }
 
 function toggleSatListMode(e) {
@@ -292,6 +300,7 @@ function renderSatMenu(payload) {
     currentSatKey = quick[0].key;
     setSatButtonLabel(quick[0].name);
   }
+  if (typeof renderFavPanel === "function") renderFavPanel();
 }
 
 function refreshCurrentSatChip() {

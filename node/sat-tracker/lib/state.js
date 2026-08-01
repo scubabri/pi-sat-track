@@ -12,7 +12,7 @@ const {
   listSatsPayload,
   parseCtcss,
 } = require("./catalog");
-const { fetchTLE, cacheSatrec } = require("./tle");
+const { fetchTLE, cacheSatrec, getSatrecForNorad } = require("./tle");
 const {
   lookAngles,
   lookAnglesLead,
@@ -32,6 +32,7 @@ let satrec = null;
 let tleNote = "";
 let currentNorad = null;
 let currentOrbit = null;
+let favoriteKeys = [];
 let ulFixed = false;
 let observer = {
   latitude: satellite.degreesToRadians(40.5),
@@ -232,6 +233,100 @@ function modesPayload(info) {
   return modes;
 }
 
+function setFavorites(keys) {
+  if (!Array.isArray(keys)) keys = [];
+  favoriteKeys = keys
+    .filter((k) => typeof k === "string" && k)
+    .filter((k, i, a) => a.indexOf(k) === i)
+    .slice(0, 24);
+  // Warm TLE cache for favorites in background
+  favoriteKeys.forEach((key) => {
+    ensureSatrecForKey(key).catch(() => {});
+  });
+  console.log(
+    "Favorites set:",
+    favoriteKeys.length,
+    favoriteKeys.join(", ") || "(none)",
+  );
+}
+
+async function ensureSatrecForKey(key) {
+  if (!key) return null;
+  if (key === currentSatKey && satrec) return satrec;
+  const info = getCatalog()[key] || {};
+  const norad = info.norad != null ? String(info.norad) : null;
+  if (!norad) return null;
+  let rec = getSatrecForNorad(norad);
+  if (rec) return rec;
+  try {
+    const tle = await fetchTLE(norad);
+    if (!tle) return null;
+    rec = satellite.twoline2satrec(tle.l1, tle.l2);
+    cacheSatrec(norad, rec);
+    return rec;
+  } catch (e) {
+    return null;
+  }
+}
+
+function lookSnapshotForSatrec(rec, key) {
+  if (!rec) return null;
+  const now = new Date();
+  const look = lookAngles(rec, observer, now);
+  if (!look) return null;
+  const pos = groundPoint(rec, now);
+  const rr = rangeRateKmS(rec, observer, now);
+  const info = getCatalog()[key] || {};
+  return {
+    key: key,
+    display: info.display || info.name || key,
+    norad: info.norad != null ? info.norad : null,
+    look: { az: look.az, el: look.el, rangeKm: look.rangeKm },
+    position: pos
+      ? { lat: pos.lat, lon: pos.lon, heightKm: pos.heightKm }
+      : null,
+    rangeRateKmS: rr,
+    above: look.el >= 0,
+  };
+}
+
+function computeFavoritesLooks() {
+  const out = [];
+  const seen = new Set();
+  const keys = favoriteKeys.slice();
+  // Always include current if set
+  if (currentSatKey && !keys.includes(currentSatKey)) {
+    keys.unshift(currentSatKey);
+  }
+  for (const key of keys) {
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    let rec = null;
+    if (key === currentSatKey && satrec) {
+      rec = satrec;
+    } else {
+      const info = getCatalog()[key] || {};
+      const norad = info.norad != null ? String(info.norad) : null;
+      if (norad) rec = getSatrecForNorad(norad);
+    }
+    const snap = lookSnapshotForSatrec(rec, key);
+    if (snap) out.push(snap);
+    else {
+      const info = getCatalog()[key] || {};
+      out.push({
+        key: key,
+        display: info.display || info.name || key,
+        norad: info.norad != null ? info.norad : null,
+        look: null,
+        position: null,
+        rangeRateKmS: null,
+        above: false,
+      });
+    }
+  }
+  return out;
+}
+
 function computeTick() {
   if (!satrec) return null;
   const now = new Date();
@@ -276,9 +371,7 @@ function computeTick() {
     if (freqs.dlMHz != null) {
       const f0 = freqs.dlMHz * 1e6;
       const fRx =
-        f0 * df +
-        (rState.manualDlOffset || 0) +
-        (rState.dlFineOffset || 0);
+        f0 * df + (rState.manualDlOffset || 0) + (rState.dlFineOffset || 0);
       dlDopplerHz = f0 * df - f0;
       dlHz = Math.round(fRx);
       downlink = (fRx / 1e6).toFixed(6);
@@ -301,9 +394,7 @@ function computeTick() {
           ulDopplerHz = f0 * (2 - df) - f0;
         } else {
           fTx =
-            f0 * df +
-            (rState.manualDlOffset || 0) +
-            (rState.ulFineOffset || 0);
+            f0 * df + (rState.manualDlOffset || 0) + (rState.ulFineOffset || 0);
           ulDopplerHz = f0 * df - f0;
         }
         ulHz = Math.round(fTx);
@@ -373,6 +464,7 @@ function computeTick() {
     rotorEl: r.el,
     rotorAzConnected: r.azConnected,
     rotorElConnected: r.elConnected,
+    favorites: computeFavoritesLooks(),
   };
 }
 
@@ -448,6 +540,7 @@ function computeState() {
     rotorEl: r.el,
     rotorAzConnected: r.azConnected,
     rotorElConnected: r.elConnected,
+    favorites: computeFavoritesLooks(),
   };
 }
 
@@ -463,6 +556,7 @@ module.exports = {
   setModeIndex,
   loadSatellite,
   setUlFixed,
+  setFavorites,
   computeTick,
   computeState,
   satsPayload,

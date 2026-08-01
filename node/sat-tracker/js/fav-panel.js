@@ -23,7 +23,11 @@ function fmtRate(v) {
 function favNextLabel(s) {
   if (!s) return "\u2014";
   if (s.above) return "UP";
-  if (typeof s.secToAos === "number" && Number.isFinite(s.secToAos) && s.secToAos >= 0) {
+  if (
+    typeof s.secToAos === "number" &&
+    Number.isFinite(s.secToAos) &&
+    s.secToAos >= 0
+  ) {
     if (s.secToAos < 60) return "<1m";
     if (s.secToAos < 3600) return Math.round(s.secToAos / 60) + "m";
     return Math.floor(s.secToAos / 3600) + "h";
@@ -64,8 +68,7 @@ function renderFavPanel() {
   if (!rows.length) {
     const empty = document.createElement("div");
     empty.className = "fav-panel-empty";
-    empty.textContent =
-      "No favorites yet — star sats in the picker or catalog";
+    empty.textContent = "No favorites yet — star sats in the picker or catalog";
     body.appendChild(empty);
     return;
   }
@@ -87,10 +90,7 @@ function renderFavPanel() {
     el.dataset.sat = row.key;
 
     const name =
-      (live && live.display) ||
-      (multi && multi.display) ||
-      s.name ||
-      s.key;
+      (live && live.display) || (multi && multi.display) || s.name || s.key;
     const noradRaw =
       live && live.norad != null
         ? live.norad

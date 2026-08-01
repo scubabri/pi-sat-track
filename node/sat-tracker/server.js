@@ -125,12 +125,10 @@ wss.on("connection", (ws) => {
             if (st) broadcast(st);
             const tk = state.computeTick();
             if (tk) broadcast(tk);
+            broadcastSats();
           })
           .catch((err) => {
-            console.warn("Load sat failed:", err.message);
-            ws.send(
-              JSON.stringify({ type: "error", message: err.message }),
-            );
+            ws.send(JSON.stringify({ type: "error", message: err.message }));
           });
       }
 
@@ -152,19 +150,24 @@ wss.on("connection", (ws) => {
       }
 
       if (msg.type === "fine") {
-        const delta = typeof msg.delta === "number" ? msg.delta : 0;
-        const step = typeof msg.step === "number" ? msg.step : 100;
-        radios.applyFine(delta, step);
+        const r = radios.active();
+        const side = msg.side === "dl" ? "dl" : "ul";
+        if (typeof msg.step === "number" && r.setStep) r.setStep(msg.step);
+        if (typeof msg.delta === "number" && r.adjustFine)
+          r.adjustFine(msg.delta, side);
         pushNow();
       }
 
       if (msg.type === "center") {
-        radios.centerOffsets();
+        radios.active().center();
         pushNow();
       }
 
       if (msg.type === "ctcss") {
-        const which = msg.which || "off";
+        const which =
+          msg.which === "access" || msg.which === "activation"
+            ? msg.which
+            : "off";
         const r = radios.active();
         if (typeof r.setCtcss === "function") r.setCtcss(which);
         pushNow();
