@@ -228,22 +228,36 @@
     </header>
 
     <div id="fav-panel">
-      <div id="fav-panel-table">
-        <div class="fav-head">
-          <span class="fav-cell fav-name">Satellite Name</span>
-          <span class="fav-cell fav-norad">Number</span>
-          <span class="fav-cell fav-vis">Visible</span>
-          <span class="fav-cell fav-num">Azimuth</span>
-          <span class="fav-cell fav-num">Elevation</span>
-          <span class="fav-cell fav-num">Range</span>
-          <span class="fav-cell fav-num">Range Rate</span>
-          <span class="fav-cell fav-num">Latitude</span>
-          <span class="fav-cell fav-num">Longitude</span>
-          <span class="fav-cell fav-num">Altitude</span>
-          <span class="fav-cell fav-num">Orbit</span>
-          <span class="fav-cell fav-next">Next</span>
+      <button
+        type="button"
+        id="fav-drawer-toggle"
+        class="fav-drawer-toggle"
+        aria-expanded="false"
+        title="Show or hide favorites"
+      >
+        <span class="fav-drawer-chevron">&#9662;</span>
+        <span class="fav-drawer-label">Favorites</span>
+        <span id="fav-drawer-count" class="fav-drawer-count">—</span>
+        <span class="fav-drawer-hint">sorted by AOS</span>
+      </button>
+      <div id="fav-panel-drawer" class="fav-panel-drawer">
+        <div id="fav-panel-table">
+          <div class="fav-head">
+            <span class="fav-cell fav-name">Satellite Name</span>
+            <span class="fav-cell fav-norad">Number</span>
+            <span class="fav-cell fav-vis">Visible</span>
+            <span class="fav-cell fav-num">Azimuth</span>
+            <span class="fav-cell fav-num">Elevation</span>
+            <span class="fav-cell fav-num">Range</span>
+            <span class="fav-cell fav-num">Range Rate</span>
+            <span class="fav-cell fav-num">Latitude</span>
+            <span class="fav-cell fav-num">Longitude</span>
+            <span class="fav-cell fav-num">Altitude</span>
+            <span class="fav-cell fav-num">Orbit</span>
+            <span class="fav-cell fav-next">Next</span>
+          </div>
+          <div id="fav-panel-body"></div>
         </div>
-        <div id="fav-panel-body"></div>
       </div>
     </div>
 
