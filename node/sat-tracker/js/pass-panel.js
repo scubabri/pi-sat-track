@@ -169,19 +169,34 @@ function adoptPasses(passes, satKey) {
   }
   if (!Array.isArray(passes)) return;
 
+  // Server findPasses steps on a 30s grid anchored to `now`, so absolute AOS
+  // walks ~1s per tick. Freeze client-side and only accept a new AOS when it
+  // clearly is a different pass (>> step jitter).
+  const TOL_MS = 5 * 60 * 1000; // 5 minutes
   const next = passes.slice(0, 5);
   const newFrozen = [];
   const stabilized = next.map((p, i) => {
     const aosMs = new Date(p.aos).getTime();
     const losMs = new Date(p.los).getTime();
-    const prev = frozenPassTimes[i];
-    // Keep prior absolute times if within 15s (server step / recompute jitter)
+    let prev = frozenPassTimes[i];
+    // Prefer index match; fall back to any nearby frozen AOS (list shift)
     if (
-      prev &&
-      Number.isFinite(prev.aosMs) &&
-      Number.isFinite(aosMs) &&
-      Math.abs(prev.aosMs - aosMs) < 15000
+      !(
+        prev &&
+        Number.isFinite(prev.aosMs) &&
+        Number.isFinite(aosMs) &&
+        Math.abs(prev.aosMs - aosMs) < TOL_MS
+      )
     ) {
+      prev = frozenPassTimes.find(
+        (f) =>
+          f &&
+          Number.isFinite(f.aosMs) &&
+          Number.isFinite(aosMs) &&
+          Math.abs(f.aosMs - aosMs) < TOL_MS,
+      );
+    }
+    if (prev && Math.abs(prev.aosMs - aosMs) < TOL_MS) {
       newFrozen.push(prev);
       return Object.assign({}, p, {
         aos: new Date(prev.aosMs).toISOString(),
