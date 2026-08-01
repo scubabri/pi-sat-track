@@ -13,7 +13,6 @@
   --uplink: #58a6ff;
   --downlink: #3fb950;
   --topbar-h: 52px;
-  --fav-panel-h: auto;
   --sidebar-w: 280px;
   --radius: 8px;
   --font:
@@ -39,11 +38,6 @@ body {
   font-size: 14px;
 }
 
-body {
-  display: flex;
-  flex-direction: column;
-}
-
 /* ========== TOP BAR ========== */
 #topbar {
   display: flex;
@@ -56,7 +50,6 @@ body {
   position: relative;
   z-index: 2000;
   overflow: visible;
-  flex-shrink: 0;
 }
 
 #sat-selector {
@@ -85,13 +78,11 @@ body {
   position: absolute;
   top: calc(100% + 10px);
   left: 0;
-  /* Wide enough for ~4â€“5 chip columns so the full heard list fits without scrolling */
-  width: min(720px, 92vw);
-  min-width: 420px;
+  min-width: 280px;
   max-width: min(920px, 92vw);
-  max-height: 80vh;
+  max-height: 70vh;
   overflow-x: hidden;
-  overflow-y: auto; /* fallback only on short viewports */
+  overflow-y: auto;
   z-index: 3000;
   padding: 12px;
   background: var(--bg-panel);
@@ -184,7 +175,7 @@ body {
   background: var(--bg-elevated);
 }
 
-/* Horizon colors â€” match top-bar status-dot */
+/* Horizon colors — match top-bar status-dot */
 #sat-menu .sat-option.sat-up {
   color: var(--green);
   border-color: rgba(63, 185, 80, 0.35);
@@ -207,58 +198,6 @@ body {
 #sat-menu .sat-option.active {
   outline: 1px solid var(--accent);
   font-weight: 600;
-}
-
-/* Favorites / list-mode chips */
-.sat-list-btn {
-  flex: 1;
-  text-align: left;
-  background: transparent;
-  color: var(--text-dim);
-  border: none;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  cursor: pointer;
-  padding: 0 2px;
-  line-height: 1.4;
-}
-.sat-list-btn:hover {
-  color: var(--text);
-}
-
-.sat-chip {
-  display: inline-flex;
-  align-items: center;
-  margin: 0 6px 6px 0;
-  vertical-align: middle;
-}
-
-.sat-fav {
-  flex-shrink: 0;
-  width: 22px;
-  height: 26px;
-  padding: 0;
-  margin: 0 2px 0 0;
-  border: none;
-  background: transparent;
-  color: var(--text-dim);
-  font-size: 0.85rem;
-  line-height: 1;
-  cursor: pointer;
-  border-radius: 4px;
-}
-.sat-fav:hover {
-  color: var(--yellow);
-  background: rgba(212, 167, 44, 0.12);
-}
-.sat-fav.on {
-  color: var(--yellow);
-}
-
-#sat-menu .sat-chip .sat-option {
-  margin: 0;
 }
 
 #pass-status {
@@ -385,7 +324,7 @@ body {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: 340px;
+  width: 320px;
   max-height: 80vh;
   overflow-y: auto;
   padding: 16px;
@@ -409,20 +348,6 @@ body {
   letter-spacing: 0.5px;
 }
 
-.form-section {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-
-.form-section-title {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-dim);
-  margin-bottom: 10px;
-}
-
 .form-row {
   margin-bottom: 10px;
 }
@@ -434,8 +359,7 @@ body {
   margin-bottom: 4px;
 }
 
-.form-row input,
-.form-row .cfg-select {
+.form-row input {
   width: 100%;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -443,28 +367,6 @@ body {
   color: var(--text);
   padding: 8px 10px;
   font-size: 0.9rem;
-}
-
-.form-row .cfg-select {
-  cursor: pointer;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%238b949e' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  padding-right: 28px;
-}
-
-.form-row .cfg-select:focus,
-.form-row input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.form-hint {
-  font-size: 0.75rem;
-  color: var(--text-dim);
-  margin-top: 4px;
-  margin-bottom: 4px;
 }
 
 .form-row-2 {
@@ -503,189 +405,10 @@ body {
   flex: 1;
 }
 
-/* ========== FAVORITES TELEMETRY STRIP (drawer) ========== */
-#fav-panel {
-  background: #12161c;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  overflow: hidden;
-}
-
-.fav-drawer-toggle {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  height: 28px;
-  padding: 0 12px;
-  margin: 0;
-  border: none;
-  border-bottom: 1px solid transparent;
-  background: #0e1218;
-  color: var(--text-dim);
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
-  cursor: pointer;
-  text-align: left;
-}
-
-.fav-drawer-toggle:hover {
-  color: var(--text);
-  background: #141a22;
-}
-
-#fav-panel.open .fav-drawer-toggle {
-  border-bottom-color: var(--border);
-  color: var(--text);
-}
-
-.fav-drawer-chevron {
-  display: inline-block;
-  width: 1em;
-  font-size: 0.75rem;
-  color: var(--accent);
-}
-
-.fav-drawer-label {
-  flex-shrink: 0;
-}
-
-.fav-drawer-count {
-  font-weight: 500;
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-}
-
-.fav-drawer-hint {
-  margin-left: auto;
-  font-weight: 500;
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 0.68rem;
-  color: var(--text-dim);
-  opacity: 0.75;
-}
-
-/* Collapsed by default â€” expand when #fav-panel.open */
-.fav-panel-drawer {
-  max-height: 0;
-  overflow: hidden;
-  opacity: 0;
-  transition:
-    max-height 0.22s ease,
-    opacity 0.18s ease;
-}
-
-#fav-panel.open .fav-panel-drawer {
-  max-height: min(40vh, 280px);
-  opacity: 1;
-  overflow-x: auto;
-  overflow-y: auto;
-}
-
-#fav-panel-table {
-  min-width: 900px;
-  width: 100%;
-}
-
-.fav-head,
-.fav-row {
-  display: grid;
-  grid-template-columns:
-    minmax(110px, 1.4fr) /* name */
-    64px /* norad */
-    52px /* visible */
-    72px /* az */
-    72px /* el */
-    88px /* range */
-    88px /* rate */
-    72px /* lat */
-    80px /* lon */
-    80px /* alt */
-    56px /* orbit */
-    52px; /* next */
-  gap: 0 8px;
-  align-items: center;
-  padding: 0 12px;
-  font-size: 0.78rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.fav-head {
-  height: 28px;
-  color: var(--text-dim);
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.35px;
-  border-bottom: 1px solid var(--border);
-  background: #0e1218;
-  position: sticky;
-  top: 0;
-  z-index: 1;
-}
-
-.fav-row {
-  height: 30px;
-  color: var(--text);
-  border-bottom: 1px solid rgba(48, 54, 61, 0.45);
-  cursor: pointer;
-}
-
-.fav-row:hover {
-  background: rgba(88, 166, 255, 0.06);
-}
-
-.fav-row.active {
-  background: rgba(88, 166, 255, 0.12);
-  outline: 1px solid rgba(88, 166, 255, 0.35);
-  outline-offset: -1px;
-}
-
-.fav-cell {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.fav-name {
-  font-weight: 600;
-}
-
-.fav-norad,
-.fav-num,
-.fav-next {
-  font-family: var(--mono);
-  font-size: 0.75rem;
-  text-align: right;
-}
-
-.fav-vis {
-  font-weight: 700;
-  font-size: 0.72rem;
-  text-align: center;
-}
-.fav-vis.yes {
-  color: var(--green);
-}
-.fav-vis.no {
-  color: var(--red);
-}
-
-.fav-panel-empty {
-  padding: 10px 14px;
-  color: var(--text-dim);
-  font-size: 0.82rem;
-}
-
 /* ========== MAIN LAYOUT ========== */
 #main {
   display: flex;
-  flex: 1;
-  min-height: 0;
+  height: calc(100% - var(--topbar-h));
   overflow: hidden;
 }
 
@@ -709,7 +432,6 @@ body {
   background: #0a1628;
 }
 
-/* ========== RADAR + ROTOR GAUGES ========== */
 #radar {
   position: absolute;
   top: 12px;
@@ -723,22 +445,14 @@ body {
 }
 
 #radar-canvas,
-#rotor-az-canvas {
+#rotor-az-canvas,
+#rotor-el-canvas {
   display: block;
   width: 220px;
   height: 220px;
   border-radius: 50%;
   background: rgba(13, 17, 23, 0.75);
   border: 1px solid var(--border);
-}
-
-#rotor-el-canvas {
-  display: block;
-  width: 220px;
-  height: 220px;
-  border-radius: 0;
-  background: transparent;
-  border: none;
 }
 
 .rotor-gauge-wrap {
@@ -760,11 +474,6 @@ body {
   padding: 1px 8px;
   border-radius: 4px;
   pointer-events: none;
-}
-
-/* EL semicircle sits lower in the 220 canvas â€” tuck label down a bit */
-.rotor-gauge-wrap:has(#rotor-el-canvas) .rotor-gauge-label {
-  top: 14px;
 }
 
 #pass-profile {
@@ -837,7 +546,6 @@ body {
   text-underline-offset: 3px;
 }
 
-/* Frequencies */
 .freq-block {
   margin-bottom: 10px;
 }
@@ -869,7 +577,6 @@ body {
   min-height: 1em;
 }
 
-/* Fine-tune: match sidebar .btn look (no browser default chrome) */
 .fine-tune {
   display: flex;
   align-items: center;
@@ -959,7 +666,6 @@ body {
   font-weight: 600;
 }
 
-/* Toggles */
 .toggle-row {
   display: flex;
   justify-content: space-between;
@@ -977,6 +683,12 @@ body {
   display: inline-block;
   width: 40px;
   height: 22px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
 }
 
 .switch input {
@@ -1017,7 +729,6 @@ body {
   background: var(--green);
 }
 
-/* Mode select */
 .mode-select {
   width: 100%;
   background: #161b22;
@@ -1060,7 +771,6 @@ body {
   word-break: break-all;
 }
 
-/* Leaflet tweaks */
 .leaflet-container {
   background: #0a1628;
   font: inherit;
