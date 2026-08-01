@@ -29,6 +29,7 @@ function toggleTimeMode() {
   timeMode = timeMode === "utc" ? "local" : "utc";
   localStorage.setItem("satTrackerTimeMode", timeMode);
   renderPassTimes();
+  if (typeof renderPassPanel === "function") renderPassPanel();
 }
 
 function formatCountdown(sec) {
@@ -55,7 +56,6 @@ function tickCountdown() {
   const dot = document.querySelector("#pass-status .status-dot");
   if (!countdownEl) return;
 
-  // Above horizon → in pass (green only here)
   if (currentEl != null && currentEl >= 0) {
     if (labelEl) labelEl.textContent = "LOS in";
     if (dot) dot.className = "status-dot green";
@@ -111,6 +111,9 @@ function startCountdownTimer() {
 }
 
 function updateSidebar(state) {
+  if (typeof updatePassPanelFromState === "function") {
+    updatePassPanelFromState(state);
+  }
   const tleEl = document.getElementById("status-tle");
   if (tleEl) tleEl.textContent = state.tleNote || "-";
 
