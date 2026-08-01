@@ -14,22 +14,28 @@ function passDurLabel(aosIso, losIso) {
   return m + "m " + String(s).padStart(2, "0") + "s";
 }
 
+function formatPassAosHms(sec) {
+  if (sec == null || !Number.isFinite(sec) || sec < 0) return "\u2014";
+  sec = Math.floor(sec);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return (
+    String(h).padStart(2, "0") +
+    ":" +
+    String(m).padStart(2, "0") +
+    ":" +
+    String(s).padStart(2, "0")
+  );
+}
+
 function passStatusLabel(p, now) {
   const aos = new Date(p.aos).getTime();
   const los = new Date(p.los).getTime();
   if (!Number.isFinite(aos) || !Number.isFinite(los)) return "\u2014";
   if (now >= aos && now <= los) return "IN PASS";
   if (now < aos) {
-    const sec = (aos - now) / 1000;
-    if (sec < 60) return "<1m";
-    if (sec < 3600) return Math.round(sec / 60) + "m";
-    if (sec < 86400) {
-      const h = Math.floor(sec / 3600);
-      const m = Math.round((sec % 3600) / 60);
-      return h + "h " + m + "m";
-    }
-    const d = Math.floor(sec / 86400);
-    return d + "d";
+    return formatPassAosHms((aos - now) / 1000);
   }
   return "DONE";
 }
@@ -163,7 +169,8 @@ function initPassPanel() {
   if (btn) btn.addEventListener("click", togglePassDrawer);
   updatePassDrawerChrome(0);
   renderPassPanel();
+  // Live AOS HH:MM:SS countdown while drawer is open
   setInterval(function () {
     if (passDrawerOpen && lastPassList.length) renderPassPanel();
-  }, 30000);
+  }, 1000);
 }
