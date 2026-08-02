@@ -1,4 +1,5 @@
 const http = require("http");
+const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const { WebSocketServer } = require("ws");
@@ -49,6 +50,59 @@ function broadcastProfiles() {
 profiles.load();
 applyProfileToRuntime(profiles.getActive());
 
+/** In-memory NORAD → SatNOGS sat_id cache (process lifetime). */
+const satnogsCache = new Map();
+
+function fetchSatnogsByNorad(norad) {
+  const key = String(norad || "").trim();
+  if (!key) return Promise.resolve(null);
+  if (satnogsCache.has(key)) return Promise.resolve(satnogsCache.get(key));
+
+  const url =
+    "https://db.satnogs.org/api/satellites/?norad_cat_id=" +
+    encodeURIComponent(key);
+  return new Promise((resolve) => {
+    const req = https.get(
+      url,
+      { headers: { Accept: "application/json", "User-Agent": "pi-sat-track" } },
+      (resp) => {
+        let body = "";
+        resp.on("data", (c) => {
+          body += c;
+        });
+        resp.on("end", () => {
+          try {
+            const arr = JSON.parse(body);
+            const row = Array.isArray(arr) && arr[0] ? arr[0] : null;
+            const satId = row && row.sat_id ? String(row.sat_id) : null;
+            const payload = satId
+              ? {
+                  sat_id: satId,
+                  norad_cat_id: row.norad_cat_id,
+                  name: row.name || null,
+                  names: row.names || null,
+                  status: row.status || null,
+                }
+              : null;
+            satnogsCache.set(key, payload);
+            resolve(payload);
+          } catch (e) {
+            satnogsCache.set(key, null);
+            resolve(null);
+          }
+        });
+      },
+    );
+    req.on("error", () => {
+      resolve(null);
+    });
+    req.setTimeout(8000, () => {
+      req.destroy();
+      resolve(null);
+    });
+  });
+}
+
 const server = http.createServer((req, res) => {
   let urlPath = req.url === "/" ? "/index.html" : req.url;
   const q = urlPath.includes("?") ? urlPath.split("?")[1] : "";
@@ -62,6 +116,25 @@ const server = http.createServer((req, res) => {
       "Cache-Control": "no-store",
     });
     return res.end(JSON.stringify(state.satsPayload(filter)));
+  }
+
+  if (urlPath === "/api/satnogs") {
+    const params = new URLSearchParams(q);
+    const norad = params.get("norad");
+    if (!norad) {
+      res.writeHead(400, {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+      });
+      return res.end(JSON.stringify({ error: "norad required" }));
+    }
+    return fetchSatnogsByNorad(norad).then((payload) => {
+      res.writeHead(200, {
+        "Content-Type": "application/json",
+        "Cache-Control": "public, max-age=86400",
+      });
+      res.end(JSON.stringify(payload || { sat_id: null, norad_cat_id: norad }));
+    });
   }
 
   const filePath = path.join(ROOT, urlPath);
