@@ -55,6 +55,7 @@ let ctcssAccessHz = null;
 let ctcssActivationHz = null;
 let lastCtcssApplied = null;
 
+// Force mode/freq until verified after enable or reconnect
 const MODE_RETRIES = 3;
 const FREQ_RETRIES = 3;
 const SYNC_WINDOW_MS = 12000;
