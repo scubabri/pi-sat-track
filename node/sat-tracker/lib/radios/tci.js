@@ -5,6 +5,9 @@
  * CTCSS: AetherSDR is a Flex client — tone must be set on the radio via
  * SmartSDR API (LAN IP:4992), not TCI. ExpertSDR CTCSS_* TCI cmds are
  * still sent as a best-effort; Flex API is authoritative when configured.
+ *
+ * On radio enable / WS open we mark syncNeeded and force modulation + VFO
+ * for a short window (TCI has no reliable read-back).
  */
 
 const WebSocket = require("ws");
@@ -53,6 +56,12 @@ let lastCtcssApplied = null;
 const UL_RX = 1;
 const CTCSS_MODE_TX = 2;
 
+const SYNC_WINDOW_MS = 10000;
+const SYNC_OK_STREAK = 3;
+let syncNeeded = false;
+let syncStartedAt = 0;
+let syncOkStreak = 0;
+
 const api = createApiClient();
 
 let getCtx = () => ({
@@ -74,6 +83,38 @@ function apiHost() {
 
 function apiPort() {
   return config.FLEX_API_PORT || 4992;
+}
+
+function markSyncNeeded(reason) {
+  syncNeeded = true;
+  syncStartedAt = Date.now();
+  syncOkStreak = 0;
+  lastModDl = "";
+  lastModUl = "";
+  lastCmdDl = 0;
+  lastCmdUl = 0;
+  console.log("TCI syncNeeded:", reason || "enable");
+}
+
+function clearSyncNeeded(reason) {
+  if (!syncNeeded) return;
+  syncNeeded = false;
+  syncOkStreak = 0;
+  console.log("TCI sync clear:", reason || "ok");
+}
+
+function maybeClearSync(okThisTick) {
+  if (!syncNeeded) return;
+  if (okThisTick) syncOkStreak += 1;
+  else syncOkStreak = 0;
+  const elapsed = Date.now() - syncStartedAt;
+  if (syncOkStreak >= SYNC_OK_STREAK) {
+    clearSyncNeeded("streak " + syncOkStreak);
+  } else if (elapsed >= SYNC_WINDOW_MS && syncOkStreak >= 1) {
+    clearSyncNeeded("window " + elapsed + "ms");
+  } else if (elapsed >= SYNC_WINDOW_MS * 1.5) {
+    clearSyncNeeded("window expired");
+  }
 }
 
 function statusPayload() {
@@ -100,6 +141,7 @@ function statusPayload() {
     ctcssMode,
     ctcssAccessHz,
     ctcssActivationHz,
+    syncNeeded,
   };
 }
 
@@ -158,6 +200,7 @@ function disconnect() {
   }
   tciConnected = false;
   radioOn = false;
+  syncNeeded = false;
   lastModDl = "";
   lastModUl = "";
   lastCtcssApplied = null;
@@ -176,20 +219,26 @@ function modesForActive(active) {
 }
 
 function pushModulation(active, force) {
-  if (!tciConnected) return;
+  if (!tciConnected) return false;
   const mods = modesForActive(active);
+  let ok = true;
   if (force || mods.dl !== lastModDl) {
     if (tciSend(`modulation:0,${mods.dl};`)) {
       lastModDl = mods.dl;
-      console.log("TCI mod DL (rx0) ->", mods.dl);
+      console.log("TCI mod DL (rx0) ->", mods.dl, force ? "(force)" : "");
+    } else {
+      ok = false;
     }
   }
   if (force || mods.ul !== lastModUl) {
     if (tciSend(`modulation:1,${mods.ul};`)) {
       lastModUl = mods.ul;
-      console.log("TCI mod UL (rx1) ->", mods.ul);
+      console.log("TCI mod UL (rx1) ->", mods.ul, force ? "(force)" : "");
+    } else {
+      ok = false;
     }
   }
+  return ok;
 }
 
 function activeCtcssHz() {
@@ -210,10 +259,6 @@ function resolveUlHzForCtcss() {
   return null;
 }
 
-/**
- * Prefer Flex radio API for CTCSS (works with AetherSDR + Flex hardware).
- * Also emit ExpertSDR-style TCI CTCSS_* as best-effort.
- */
 async function applyCtcssToRadio(force) {
   const hz = activeCtcssHz();
   const key = hz != null ? String(hz) : "off";
@@ -309,11 +354,8 @@ async function connect() {
     manualDlOffset = 0;
     ulFineOffset = 0;
     dlFineOffset = 0;
-    lastCmdDl = 0;
-    lastCmdUl = 0;
-    lastModDl = "";
-    lastModUl = "";
     lastCtcssApplied = null;
+    markSyncNeeded("ws open");
     clearReconnect();
     console.log("TCI connected to", uri);
     broadcastStatus();
@@ -411,6 +453,7 @@ function getActiveModeObj(info, modeIndex) {
 function setRadio(on) {
   if (on) {
     radioOn = true;
+    markSyncNeeded("setRadio");
     connect();
   } else {
     radioOn = false;
@@ -434,6 +477,7 @@ function applyEndpointChange() {
   if (radioOn) {
     disconnect();
     radioOn = true;
+    markSyncNeeded("endpoint change");
     connect();
   } else broadcastStatus();
 }
@@ -500,18 +544,36 @@ function applyDefaultCtcss(accessHz, activationHz) {
 function pushFrequencies(ulHz, dlHz) {
   if (!radioOn || !tciConnected) return;
 
+  const force = syncNeeded;
   const { currentSatKey, currentModeIndex } = getCtx();
   const info = getCatalog()[currentSatKey] || {};
   const active = getActiveModeObj(info, currentModeIndex);
-  pushModulation(active, false);
+  const modOk = pushModulation(active, force);
   applyCtcssToRadio(false).catch(() => {});
 
-  if (dlHz != null && Number.isFinite(dlHz) && Math.abs(dlHz - lastCmdDl) >= 1) {
-    if (tciSend(`vfo:0,0,${Math.round(dlHz)};`)) lastCmdDl = Math.round(dlHz);
+  let freqOk = true;
+  if (dlHz != null && Number.isFinite(dlHz)) {
+    const target = Math.round(dlHz);
+    if (force || Math.abs(target - lastCmdDl) >= 1) {
+      if (tciSend(`vfo:0,0,${target};`)) {
+        lastCmdDl = target;
+      } else {
+        freqOk = false;
+      }
+    }
   }
-  if (ulHz != null && Number.isFinite(ulHz) && Math.abs(ulHz - lastCmdUl) >= 1) {
-    if (tciSend(`vfo:1,0,${Math.round(ulHz)};`)) lastCmdUl = Math.round(ulHz);
+  if (ulHz != null && Number.isFinite(ulHz)) {
+    const target = Math.round(ulHz);
+    if (force || Math.abs(target - lastCmdUl) >= 1) {
+      if (tciSend(`vfo:1,0,${target};`)) {
+        lastCmdUl = target;
+      } else {
+        freqOk = false;
+      }
+    }
   }
+
+  maybeClearSync(modOk && freqOk);
 }
 
 function getRadioState() {
@@ -532,6 +594,7 @@ function getRadioState() {
     ctcssMode,
     ctcssAccessHz,
     ctcssActivationHz,
+    syncNeeded,
   };
 }
 

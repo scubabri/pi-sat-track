@@ -20,6 +20,7 @@ const state = require("./lib/state");
 const radios = require("./lib/radios");
 const rotor = require("./lib/rotor");
 const config = require("./lib/config");
+const platform = require("./lib/platform");
 const profiles = require("./lib/profiles");
 
 /** WebSocket server; set after createServer. broadcast() is safe before that. */
@@ -122,6 +123,15 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify(state.satsPayload(filter)));
   }
 
+  // Host OS + present serial ports (for CAT Serial picker)
+  if (urlPath === "/api/host") {
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    });
+    return res.end(JSON.stringify(platform.hostInfo()));
+  }
+
   if (urlPath === "/api/satnogs") {
     const params = new URLSearchParams(q);
     const norad = params.get("norad");
@@ -184,6 +194,7 @@ function pushNow() {
 wss.on("connection", (ws) => {
   console.log("Client connected");
   ws.send(JSON.stringify({ type: "sats", ...state.satsPayload("trackable") }));
+  ws.send(JSON.stringify({ type: "host", ...platform.hostInfo() }));
   ws.send(JSON.stringify(profiles.publicPayload()));
   radios.broadcastAllStatus();
   rotor.broadcastStatus();
@@ -442,7 +453,27 @@ setInterval(() => {
     }
   }
   server.listen(PORT, "0.0.0.0", () => {
+    const host = platform.hostInfo();
     console.log("Sat Tracker  http://127.0.0.1:" + PORT);
+    console.log(
+      "Host OS     " +
+        host.platform +
+        " (" +
+        host.type +
+        " " +
+        host.release +
+        ") " +
+        host.arch +
+        " @ " +
+        host.hostname,
+    );
+    console.log(
+      "Serial      default " +
+        host.defaultCatDevice +
+        (host.serialDevices.length
+          ? " | present: " + host.serialDevices.join(", ")
+          : " | (none scanned)"),
+    );
     console.log(
       "Active radio",
       radios.active().meta.id,

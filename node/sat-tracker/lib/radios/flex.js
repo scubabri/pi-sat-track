@@ -4,6 +4,9 @@
  * - SmartSDR API (radio LAN IP:4992): FM CTCSS on UL/TX slice only
  *
  * CAT never supports TN/TO. 4992 is on the radio, not the Windows PC.
+ *
+ * On radio enable / link open we mark syncNeeded and force mode+freq
+ * with read-back verification and retries until confirmed or window expires.
  */
 
 const net = require("net");
@@ -52,12 +55,25 @@ let ctcssAccessHz = null;
 let ctcssActivationHz = null;
 let lastCtcssApplied = null;
 
+// Force mode/freq until verified after enable or reconnect
+const MODE_RETRIES = 3;
+const FREQ_RETRIES = 3;
+const SYNC_WINDOW_MS = 12000;
+const SYNC_OK_STREAK = 2;
+let syncNeeded = false;
+let syncStartedAt = 0;
+let syncOkStreak = 0;
+
 let getCtx = () => ({
   satrec: null,
   observer: null,
   currentSatKey: null,
   currentModeIndex: 0,
 });
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 function init(opts) {
   if (opts && opts.broadcast) broadcastFn = opts.broadcast;
@@ -74,6 +90,36 @@ function apiHost() {
 
 function apiPort() {
   return config.FLEX_API_PORT || 4992;
+}
+
+function markSyncNeeded(reason) {
+  syncNeeded = true;
+  syncStartedAt = Date.now();
+  syncOkStreak = 0;
+  ul.lastMode = null;
+  dl.lastMode = null;
+  console.log("Flex syncNeeded:", reason || "enable");
+}
+
+function clearSyncNeeded(reason) {
+  if (!syncNeeded) return;
+  syncNeeded = false;
+  syncOkStreak = 0;
+  console.log("Flex sync clear:", reason || "ok");
+}
+
+function maybeClearSync(okThisTick) {
+  if (!syncNeeded) return;
+  if (okThisTick) syncOkStreak += 1;
+  else syncOkStreak = 0;
+  const elapsed = Date.now() - syncStartedAt;
+  if (syncOkStreak >= SYNC_OK_STREAK) {
+    clearSyncNeeded("verified streak " + syncOkStreak);
+  } else if (elapsed >= SYNC_WINDOW_MS && syncOkStreak >= 1) {
+    clearSyncNeeded("window " + elapsed + "ms with partial ok");
+  } else if (elapsed >= SYNC_WINDOW_MS * 1.5) {
+    clearSyncNeeded("window expired");
+  }
 }
 
 function statusPayload() {
@@ -105,6 +151,7 @@ function statusPayload() {
     ctcssMode,
     ctcssAccessHz,
     ctcssActivationHz,
+    syncNeeded,
   };
 }
 
@@ -141,6 +188,13 @@ function parseFa(reply) {
   const digits = s.slice(2, -1);
   if (!/^\d+$/.test(digits)) return null;
   return parseInt(digits, 10);
+}
+
+function parseMd(reply) {
+  if (!reply) return null;
+  const s = String(reply).trim();
+  const m = s.match(/MD([0-9])/i);
+  return m ? m[1] : null;
 }
 
 function modesForCatalogMode(modeStr) {
@@ -243,6 +297,26 @@ function sendCmd(link, cmd, expectReply) {
   });
 }
 
+async function readLinkMode(link) {
+  if (!link.connected) return null;
+  try {
+    const reply = await sendCmd(link, "MD;", true);
+    return parseMd(reply);
+  } catch (_) {
+    return null;
+  }
+}
+
+async function readLinkFreq(link) {
+  if (!link.connected) return null;
+  try {
+    const reply = await sendCmd(link, "FA;", true);
+    return parseFa(reply);
+  } catch (_) {
+    return null;
+  }
+}
+
 function openLink(link) {
   if (link.socket && link.connected) return Promise.resolve(true);
   if (link.connecting) return Promise.resolve(false);
@@ -277,6 +351,7 @@ function openLink(link) {
       link.lastMode = null;
       clearReconnect(link);
       console.log("Flex", link.name.toUpperCase(), "connected", host + ":" + port);
+      markSyncNeeded("open " + link.name);
       broadcastStatus();
       if (link.name === "dl") startVfoPoll();
       if (link.name === "ul") {
@@ -337,6 +412,7 @@ function closeLink(link) {
 
 function close() {
   radioOn = false;
+  syncNeeded = false;
   stopVfoPoll();
   closeLink(ul);
   closeLink(dl);
@@ -354,6 +430,7 @@ function setRadio(on) {
     ulFineOffset = 0;
     dlFineOffset = 0;
     lastCtcssApplied = null;
+    markSyncNeeded("setRadio");
     syncTonesFromCatalog();
     const h = apiHost();
     if (h) {
@@ -450,7 +527,6 @@ async function applyCtcssToRadio(force) {
   const key = hz != null ? String(hz) : "off";
   if (!force && key === lastCtcssApplied) return;
 
-  // CAT mode only on UL port (encode path)
   if (ul.connected) {
     try {
       await sendCmd(ul, "MD4;", false);
@@ -482,7 +558,6 @@ async function applyCtcssToRadio(force) {
   }
 
   try {
-    // Prefer TX slice; else match CAT UL frequency
     await api.setCtcss(hz, ul.lastFreqHz);
     lastCtcssApplied = key;
   } catch (e) {
@@ -490,66 +565,148 @@ async function applyCtcssToRadio(force) {
   }
 }
 
-async function setLinkFrequency(link, freqHz) {
+async function setLinkFrequency(link, freqHz, force) {
   if (!Number.isFinite(freqHz) || freqHz < 1e5 || freqHz > 6e8) return false;
   if (!link.connected) return false;
-  try {
-    await sendCmd(link, freqToFa(freqHz), false);
-    link.lastFreqHz = Math.round(freqHz);
+  const target = Math.round(freqHz);
+  if (
+    !force &&
+    !syncNeeded &&
+    link.lastFreqHz != null &&
+    Math.abs(target - link.lastFreqHz) < 1
+  ) {
     return true;
-  } catch (e) {
-    console.warn("Flex", link.name, "set failed:", e.message);
-    return false;
   }
+
+  for (let attempt = 1; attempt <= FREQ_RETRIES; attempt++) {
+    try {
+      await sendCmd(link, freqToFa(target), false);
+      await sleep(60);
+      const got = await readLinkFreq(link);
+      if (got != null && Math.abs(got - target) <= 5) {
+        link.lastFreqHz = target;
+        if (attempt > 1 || force || syncNeeded) {
+          console.log(
+            "Flex",
+            link.name.toUpperCase(),
+            "freq OK",
+            (target / 1e6).toFixed(6),
+            "MHz attempt",
+            attempt,
+          );
+        }
+        return true;
+      }
+      console.warn(
+        "Flex",
+        link.name,
+        "freq verify fail got",
+        got,
+        "want",
+        target,
+        "attempt",
+        attempt,
+      );
+    } catch (e) {
+      console.warn("Flex", link.name, "set freq failed:", e.message);
+    }
+    await sleep(100 * attempt);
+  }
+  link.lastFreqHz = target;
+  return false;
 }
 
-async function setLinkMode(link, mdCode, mdName) {
+async function setLinkMode(link, mdCode, mdName, force) {
   if (!link.connected) return false;
-  if (link.lastMode === mdCode) return true;
-  try {
-    await sendCmd(link, "MD" + mdCode + ";", false);
-    link.lastMode = mdCode;
-    console.log("Flex", link.name.toUpperCase(), "mode →", mdName);
-    return true;
-  } catch (e) {
-    return false;
+  if (!force && !syncNeeded && link.lastMode === mdCode) return true;
+
+  for (let attempt = 1; attempt <= MODE_RETRIES; attempt++) {
+    try {
+      await sendCmd(link, "MD" + mdCode + ";", false);
+      await sleep(80);
+      const got = await readLinkMode(link);
+      if (got === mdCode) {
+        link.lastMode = mdCode;
+        console.log(
+          "Flex",
+          link.name.toUpperCase(),
+          "mode →",
+          mdName,
+          "OK attempt",
+          attempt,
+        );
+        return true;
+      }
+      console.warn(
+        "Flex",
+        link.name,
+        "mode verify fail got",
+        got,
+        "want",
+        mdCode,
+        "attempt",
+        attempt,
+      );
+    } catch (e) {
+      console.warn("Flex", link.name, "set mode failed:", e.message);
+    }
+    await sleep(120 * attempt);
   }
+  return false;
 }
 
-async function pushModulation() {
+async function pushModulation(force) {
   const { currentSatKey, currentModeIndex } = getCtx();
   const info = getCatalog()[currentSatKey] || {};
   const active = getActiveModeObj(info, currentModeIndex);
   const mods = modesForCatalogMode(active && active.mode);
-  if (ul.connected && ul.wanted) await setLinkMode(ul, mods.ul, mods.ulName);
-  if (dl.connected && dl.wanted) await setLinkMode(dl, mods.dl, mods.dlName);
+  let ok = true;
+  if (ul.connected && ul.wanted) {
+    const u = await setLinkMode(ul, mods.ul, mods.ulName, force);
+    if (!u) ok = false;
+  }
+  if (dl.connected && dl.wanted) {
+    const d = await setLinkMode(dl, mods.dl, mods.dlName, force);
+    if (!d) ok = false;
+  }
+  return ok;
 }
 
-async function pushSide(link, freqHz) {
+async function pushSide(link, freqHz, force) {
   const hasFreq = freqHz != null && Number.isFinite(freqHz);
   if (!hasFreq) {
     if (link.wanted || link.connected || link.connecting) {
       closeLink(link);
       broadcastStatus();
     }
-    return;
+    return true;
   }
   link.wanted = true;
   if (!link.connected) {
     const ok = await openLink(link);
-    if (!ok) return;
+    if (!ok) return false;
   }
-  if (link.lastFreqHz == null || Math.abs(freqHz - link.lastFreqHz) >= 1) {
-    await setLinkFrequency(link, freqHz);
-  }
+  return setLinkFrequency(link, freqHz, force);
 }
 
 async function pushFrequencies(ulHz, dlHz) {
   if (!radioOn) return;
-  await pushSide(ul, ulHz);
-  await pushSide(dl, dlHz);
-  await pushModulation();
+  const force = syncNeeded;
+  const ulOk = await pushSide(ul, ulHz, force);
+  const dlOk = await pushSide(dl, dlHz, force);
+  const modOk = await pushModulation(force);
   await applyCtcssToRadio(false);
+
+  const anyWanted = ul.wanted || dl.wanted;
+  const anyConnectedNow = anyConnected();
+  const okThisTick =
+    anyWanted &&
+    anyConnectedNow &&
+    (ul.wanted ? ulOk : true) &&
+    (dl.wanted ? dlOk : true) &&
+    modOk;
+
+  maybeClearSync(okThisTick);
 }
 
 function getActiveModeObj(info, modeIndex) {
@@ -666,6 +823,7 @@ function getRadioState() {
     ctcssMode,
     ctcssAccessHz,
     ctcssActivationHz,
+    syncNeeded,
   };
 }
 
@@ -678,6 +836,7 @@ function applyEndpointChange() {
   api.close();
   radioOn = wasOn;
   if (wasOn) {
+    markSyncNeeded("endpoint change");
     ul.wanted = ulWanted;
     dl.wanted = dlWanted;
     const h = apiHost();

@@ -6,6 +6,7 @@ const {
   findModel,
   defaultSerialSelection,
 } = require("./serial-catalog");
+const platform = require("./platform");
 
 const ROOT = path.join(__dirname, "..");
 const CACHE_DIR = path.join(os.homedir(), ".rpitrack");
@@ -62,7 +63,8 @@ const ROTOR_STALL_RETRIES = parseInt(
 const ROTOR_POLL_MS = parseInt(process.env.ROTOR_POLL_MS || "250", 10);
 const ROTOR_LEAD_DEG = parseFloat(process.env.ROTOR_LEAD_DEG || "4");
 
-let CAT_DEVICE = process.env.CAT_DEVICE || "/dev/ttyACM0";
+// Default CAT device follows host OS (linux → ttyACM0, darwin → cu.usbmodem*, win → COM3)
+let CAT_DEVICE = process.env.CAT_DEVICE || platform.defaultCatDevice();
 let CAT_BAUD = parseInt(process.env.CAT_BAUD || "19200", 10);
 let CAT_CIV_ADDR = parseInt(process.env.CAT_CIV_ADDR || "0xA4", 16);
 
@@ -182,6 +184,8 @@ function getEndpoints() {
       makes: listMakes(),
       models: listModels(SERIAL_MAKE),
     },
+    // Host OS — used later for CAT serial device picker
+    host: platform.hostInfo(),
   };
 }
 
@@ -485,4 +489,5 @@ module.exports = {
   useSerialCat,
   useIcomSerial,
   getSerialModelInfo,
+  platform,
 };
