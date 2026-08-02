@@ -1,2 +1,243 @@
-<!DOCTYPE html>
-PLACEHOLDER_WILL_FAIL
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pi Sat Track</title>
+
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="css/fav-panel.css" />
+    <link rel="stylesheet" href="css/layout.css" />
+    <link rel="stylesheet" href="css/sidebar.css" />
+    <link rel="stylesheet" href="css/lock.css" />
+    <link rel="stylesheet" href="css/fine-ctcss.css" />
+    <link rel="stylesheet" href="css/pass-panel.css" />
+  </head>
+  <body>
+    <header id="topbar">
+      <div id="sat-selector">
+        <button type="button" id="sat-name" class="sat-name-btn">-</button>
+        <div id="sat-menu" hidden></div>
+      </div>
+
+      <div id="pass-status">
+        <span class="status-dot" id="pass-dot"></span>
+        <span id="countdown">—</span>
+      </div>
+
+      <div id="pass-summary">
+        <div class="pass-sum-item">
+          <span class="pass-sum-label">AOS</span>
+          <span class="pass-sum-value time-toggle" id="sum-aos">—</span>
+        </div>
+        <div class="pass-sum-item">
+          <span class="pass-sum-label">LOS</span>
+          <span class="pass-sum-value time-toggle" id="sum-los">—</span>
+        </div>
+        <div class="pass-sum-item">
+          <span class="pass-sum-label">Max El</span>
+          <span class="pass-sum-value" id="sum-maxel">—</span>
+        </div>
+        <div class="pass-sum-item">
+          <span class="pass-sum-label">Duration</span>
+          <span class="pass-sum-value" id="sum-duration">—</span>
+        </div>
+      </div>
+
+      <div id="top-controls">
+        <button type="button" class="btn" id="btn-radio">Radio</button>
+        <button type="button" class="btn" id="btn-antenna">Antenna</button>
+
+        <div id="config-wrapper">
+          <button class="btn btn-icon" id="btn-config" title="Configuration">
+            &#9881;
+          </button>
+
+          <div id="config-panel">
+            <h3>Station Configuration</h3>
+
+            <div class="form-row profile-row">
+              <label for="cfg-profile">Profile</label>
+              <div class="profile-controls">
+                <select id="cfg-profile" class="cfg-select" title="Station profile (saved on the server)"></select>
+                <button type="button" class="btn btn-small" id="btn-profile-new" title="Create profile from current">
+                  New
+                </button>
+                <button type="button" class="btn btn-small" id="btn-profile-rename" title="Rename active profile">
+                  Rename
+                </button>
+                <button type="button" class="btn btn-small" id="btn-profile-delete" title="Delete active profile">
+                  Del
+                </button>
+              </div>
+            </div>
+            <p class="form-hint" id="cfg-profile-hint">
+              Profiles store favorites and radio settings on the server (e.g. MacBook Pro vs Air).
+            </p>
+
+            <div class="form-row">
+              <label for="cfg-callsign">Callsign</label>
+              <input
+                type="text"
+                id="cfg-callsign"
+                placeholder="N0CALL"
+                maxlength="10"
+              />
+            </div>
+
+            <div class="form-row">
+              <label for="cfg-grid">Gridsquare</label>
+              <input
+                type="text"
+                id="cfg-grid"
+                placeholder="DN40"
+                maxlength="8"
+              />
+            </div>
+
+            <div class="form-row">
+              <label for="cfg-elev">Elevation (m)</label>
+              <input type="number" id="cfg-elev" placeholder="1324" step="1" />
+            </div>
+
+            <div class="form-section">
+              <div class="form-section-title">Radio</div>
+
+              <div class="form-row">
+                <label for="cfg-radio-transport">Connection</label>
+                <select id="cfg-radio-transport" class="cfg-select">
+                  <option value="tcp">TCP / network</option>
+                  <option value="serial">Serial / USB</option>
+                </select>
+              </div>
+
+              <div id="cfg-tcp-block">
+                <div class="form-row">
+                  <label for="cfg-radio-type">Radio / software</label>
+                  <select id="cfg-radio-type" class="cfg-select">
+                    <option value="smartsdr">SmartSDR (Flex)</option>
+                    <option value="aethersdr">AetherSDR</option>
+                    <option value="flex">Flex (legacy)</option>
+                  </select>
+                </div>
+                <div class="form-row">
+                  <label for="cfg-radio-protocol">Protocol</label>
+                  <select id="cfg-radio-protocol" class="cfg-select">
+                    <option value="cat">CAT</option>
+                    <option value="tci">TCI</option>
+                  </select>
+                </div>
+
+                <div id="cfg-tci-block">
+                  <div class="form-row">
+                    <label for="cfg-tci-endpoint">TCI endpoint</label>
+                    <input
+                      type="text"
+                      id="cfg-tci-endpoint"
+                      placeholder="127.0.0.1:50001"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                  </div>
+                </div>
+
+                <div id="cfg-flex-cat-block">
+                  <div class="form-row">
+                    <label for="cfg-flex-ul-endpoint">Uplink (TX)</label>
+                    <input
+                      type="text"
+                      id="cfg-flex-ul-endpoint"
+                      placeholder="172.17.18.229:60002"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                  </div>
+                  <div class="form-row">
+                    <label for="cfg-flex-dl-endpoint">Downlink (RX)</label>
+                    <input
+                      type="text"
+                      id="cfg-flex-dl-endpoint"
+                      placeholder="172.17.18.229:60001"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                  </div>
+                </div>
+
+                <div id="cfg-flex-api-block">
+                  <div class="form-row">
+                    <label for="cfg-flex-api-endpoint">Radio API (CTCSS)</label>
+                    <input
+                      type="text"
+                      id="cfg-flex-api-endpoint"
+                      placeholder="172.17.18.46:4992"
+                      autocomplete="off"
+                      spellcheck="false"
+                      title="Flex radio LAN IP (not SmartSDR/Aether host). Port 4992."
+                    />
+                  </div>
+                  <p class="form-hint">
+                    Flex radio LAN IP for CTCSS (SmartSDR CAT and AetherSDR
+                    TCI).
+                  </p>
+                </div>
+              </div>
+
+              <div id="cfg-serial-block" hidden>
+                <div class="form-row">
+                  <label for="cfg-serial-make">Manufacturer</label>
+                  <select id="cfg-serial-make" class="cfg-select">
+                    <option value="icom">Icom</option>
+                    <option value="kenwood">Kenwood</option>
+                    <option value="yaesu">Yaesu</option>
+                  </select>
+                </div>
+                <div class="form-row">
+                  <label for="cfg-serial-model">Model</label>
+                  <select id="cfg-serial-model" class="cfg-select">
+                    <option value="ic-705">IC-705</option>
+                  </select>
+                </div>
+                <div class="form-row">
+                  <label for="cfg-serial-device">Serial device</label>
+                  <input
+                    type="text"
+                    id="cfg-serial-device"
+                    placeholder="/dev/ttyACM0"
+                    autocomplete="off"
+                  />
+                </div>
+                <div class="form-row">
+                  <label for="cfg-serial-baud">Baud</label>
+                  <input
+                    type="number"
+                    id="cfg-serial-baud"
+                    placeholder="19200"
+                    min="1200"
+                    step="1"
+                  />
+                </div>
+                <p class="form-hint" id="cfg-serial-hint">
+                  CI-V over USB. Cross-band split: VFO A = DL, VFO B = UL.
+                </p>
+              </div>
+            </div>
+
+            <div id="config-actions">
+              <button class="btn active" id="btn-save-config">Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- truncated intentionally if this fails - full body continues in next push -->
+    <p>INCOMPLETE_INDEX_DO_NOT_USE</p>
+  </body>
+</html>
