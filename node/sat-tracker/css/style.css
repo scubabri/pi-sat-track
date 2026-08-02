@@ -353,7 +353,6 @@ body {
   border-radius: 6px;
   padding: 6px 12px;
   font-size: 0.85rem;
-  cursor: pointer;
 }
 
 .btn:hover {
@@ -501,4 +500,24 @@ body {
 
 #config-actions .btn {
   flex: 1;
+}
+
+/* Station profiles in config panel */
+.profile-row .profile-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+.profile-row .profile-controls .cfg-select {
+  flex: 1 1 8rem;
+  min-width: 6rem;
+}
+.btn-small {
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  white-space: nowrap;
 }

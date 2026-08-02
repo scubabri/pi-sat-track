@@ -1,4 +1,5 @@
 const http = require("http");
+const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const { WebSocketServer } = require("ws");
@@ -19,8 +20,13 @@ const state = require("./lib/state");
 const radios = require("./lib/radios");
 const rotor = require("./lib/rotor");
 const config = require("./lib/config");
+const profiles = require("./lib/profiles");
+
+/** WebSocket server; set after createServer. broadcast() is safe before that. */
+let wss = null;
 
 function broadcast(obj) {
+  if (!wss) return;
   const data = JSON.stringify(obj);
   for (const c of wss.clients) {
     if (c.readyState === 1) c.send(data);
@@ -28,6 +34,78 @@ function broadcast(obj) {
 }
 
 state.init({ broadcast });
+
+function applyProfileToRuntime(prof) {
+  if (!prof) return;
+  state.setFavorites(Array.isArray(prof.favorites) ? prof.favorites : []);
+  const cfg = prof.config && typeof prof.config === "object" ? prof.config : {};
+  if (Object.keys(cfg).length) {
+    const flags = config.applyEndpoints(cfg);
+    radios.applyEndpointChange(flags);
+    if (flags.rotorChanged) rotor.applyEndpointChange();
+  }
+}
+
+function broadcastProfiles() {
+  broadcast(profiles.publicPayload());
+}
+
+// Load named profiles from ~/.rpitrack/profiles.json and apply active one
+profiles.load();
+applyProfileToRuntime(profiles.getActive());
+
+/** In-memory NORAD → SatNOGS sat_id cache (process lifetime). */
+const satnogsCache = new Map();
+
+function fetchSatnogsByNorad(norad) {
+  const key = String(norad || "").trim();
+  if (!key) return Promise.resolve(null);
+  if (satnogsCache.has(key)) return Promise.resolve(satnogsCache.get(key));
+
+  const url =
+    "https://db.satnogs.org/api/satellites/?norad_cat_id=" +
+    encodeURIComponent(key);
+  return new Promise((resolve) => {
+    const req = https.get(
+      url,
+      { headers: { Accept: "application/json", "User-Agent": "pi-sat-track" } },
+      (resp) => {
+        let body = "";
+        resp.on("data", (c) => {
+          body += c;
+        });
+        resp.on("end", () => {
+          try {
+            const arr = JSON.parse(body);
+            const row = Array.isArray(arr) && arr[0] ? arr[0] : null;
+            const satId = row && row.sat_id ? String(row.sat_id) : null;
+            const payload = satId
+              ? {
+                  sat_id: satId,
+                  norad_cat_id: row.norad_cat_id,
+                  name: row.name || null,
+                  names: row.names || null,
+                  status: row.status || null,
+                }
+              : null;
+            satnogsCache.set(key, payload);
+            resolve(payload);
+          } catch (e) {
+            satnogsCache.set(key, null);
+            resolve(null);
+          }
+        });
+      },
+    );
+    req.on("error", () => {
+      resolve(null);
+    });
+    req.setTimeout(8000, () => {
+      req.destroy();
+      resolve(null);
+    });
+  });
+}
 
 const server = http.createServer((req, res) => {
   let urlPath = req.url === "/" ? "/index.html" : req.url;
@@ -42,6 +120,25 @@ const server = http.createServer((req, res) => {
       "Cache-Control": "no-store",
     });
     return res.end(JSON.stringify(state.satsPayload(filter)));
+  }
+
+  if (urlPath === "/api/satnogs") {
+    const params = new URLSearchParams(q);
+    const norad = params.get("norad");
+    if (!norad) {
+      res.writeHead(400, {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+      });
+      return res.end(JSON.stringify({ error: "norad required" }));
+    }
+    return fetchSatnogsByNorad(norad).then((payload) => {
+      res.writeHead(200, {
+        "Content-Type": "application/json",
+        "Cache-Control": "public, max-age=86400",
+      });
+      res.end(JSON.stringify(payload || { sat_id: null, norad_cat_id: norad }));
+    });
   }
 
   const filePath = path.join(ROOT, urlPath);
@@ -63,7 +160,7 @@ const server = http.createServer((req, res) => {
   });
 });
 
-const wss = new WebSocketServer({ noServer: true });
+wss = new WebSocketServer({ noServer: true });
 
 server.on("upgrade", (req, socket, head) => {
   if (req.url === "/ws") {
@@ -87,6 +184,7 @@ function pushNow() {
 wss.on("connection", (ws) => {
   console.log("Client connected");
   ws.send(JSON.stringify({ type: "sats", ...state.satsPayload("trackable") }));
+  ws.send(JSON.stringify(profiles.publicPayload()));
   radios.broadcastAllStatus();
   rotor.broadcastStatus();
 
@@ -105,6 +203,8 @@ wss.on("connection", (ws) => {
 
       if (msg.type === "favorites" && Array.isArray(msg.keys)) {
         state.setFavorites(msg.keys);
+        profiles.updateActive({ favorites: msg.keys });
+        broadcastProfiles();
         const tk = state.computeTick();
         if (tk) broadcast(tk);
       }
@@ -121,6 +221,7 @@ wss.on("connection", (ws) => {
         state
           .loadSatellite(msg.key)
           .then(() => {
+            profiles.updateActive({ lastSat: msg.key });
             const st = state.computeState();
             if (st) broadcast(st);
             const tk = state.computeTick();
@@ -174,7 +275,7 @@ wss.on("connection", (ws) => {
       }
 
       if (msg.type === "endpoints") {
-        const flags = config.applyEndpoints({
+        const ep = {
           radioTransport: msg.radioTransport,
           radioType: msg.radioType,
           radioProtocol: msg.radioProtocol,
@@ -196,17 +297,113 @@ wss.on("connection", (ws) => {
           rotorHost: msg.rotorHost,
           rotorAzPort: msg.rotorAzPort,
           rotorElPort: msg.rotorElPort,
-        });
+        };
+        const flags = config.applyEndpoints(ep);
         console.log("Endpoints updated", config.getEndpoints());
         console.log("Radio path:", radios.active().meta.id);
 
         radios.applyEndpointChange(flags);
         if (flags.rotorChanged) rotor.applyEndpointChange();
 
+        const cfgPatch = Object.assign({}, ep);
+        if (typeof msg.callsign === "string") cfgPatch.callsign = msg.callsign;
+        if (typeof msg.grid === "string") cfgPatch.grid = msg.grid;
+        if (typeof msg.elevation === "number") cfgPatch.elevation = msg.elevation;
+        profiles.updateActive({ config: cfgPatch });
+        broadcastProfiles();
+
         broadcast({
           type: "endpoints",
           ...config.getEndpoints(),
         });
+      }
+
+      if (msg.type === "profile-select" && msg.name) {
+        if (profiles.setActive(msg.name)) {
+          applyProfileToRuntime(profiles.getActive());
+          broadcastProfiles();
+          const st = state.computeState();
+          if (st) broadcast(st);
+          const tk = state.computeTick();
+          if (tk) broadcast(tk);
+          broadcastSats();
+          broadcast({ type: "endpoints", ...config.getEndpoints() });
+        } else {
+          ws.send(
+            JSON.stringify({
+              type: "error",
+              message: "Unknown profile: " + msg.name,
+            }),
+          );
+        }
+      }
+
+      if (msg.type === "profile-create" && msg.name) {
+        if (profiles.createProfile(msg.name, msg.fromActive !== false)) {
+          applyProfileToRuntime(profiles.getActive());
+          broadcastProfiles();
+          broadcast({ type: "endpoints", ...config.getEndpoints() });
+        } else {
+          ws.send(
+            JSON.stringify({
+              type: "error",
+              message: "Could not create profile (name empty or exists)",
+            }),
+          );
+        }
+      }
+
+      if (msg.type === "profile-delete" && msg.name) {
+        if (profiles.deleteProfile(msg.name)) {
+          applyProfileToRuntime(profiles.getActive());
+          broadcastProfiles();
+          const st = state.computeState();
+          if (st) broadcast(st);
+          const tk = state.computeTick();
+          if (tk) broadcast(tk);
+          broadcastSats();
+          broadcast({ type: "endpoints", ...config.getEndpoints() });
+        } else {
+          ws.send(
+            JSON.stringify({
+              type: "error",
+              message: "Could not delete profile",
+            }),
+          );
+        }
+      }
+
+      if (msg.type === "profile-rename" && msg.from && msg.to) {
+        if (profiles.renameProfile(msg.from, msg.to)) {
+          broadcastProfiles();
+        } else {
+          ws.send(
+            JSON.stringify({
+              type: "error",
+              message: "Could not rename profile",
+            }),
+          );
+        }
+      }
+
+      if (msg.type === "profile-save") {
+        const patch = {};
+        if (Array.isArray(msg.favorites)) patch.favorites = msg.favorites;
+        if (msg.config && typeof msg.config === "object") patch.config = msg.config;
+        if (msg.lastSat !== undefined) patch.lastSat = msg.lastSat;
+        profiles.updateActive(patch);
+        if (patch.config) {
+          const flags = config.applyEndpoints(patch.config);
+          radios.applyEndpointChange(flags);
+          if (flags.rotorChanged) rotor.applyEndpointChange();
+        }
+        if (Array.isArray(patch.favorites)) {
+          state.setFavorites(patch.favorites);
+        }
+        broadcastProfiles();
+        broadcast({ type: "endpoints", ...config.getEndpoints() });
+        const tk = state.computeTick();
+        if (tk) broadcast(tk);
       }
     } catch (e) {
       console.warn("Bad message", e.message);
