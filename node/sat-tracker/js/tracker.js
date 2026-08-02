@@ -465,14 +465,93 @@ function connectTracker() {
   };
 }
 
+/** Client cache: NORAD string → sat_id or null after lookup. */
+const satnogsIdCache = new Map();
+/** Tracks which NORAD the name link is currently for (avoids race on sat switch). */
+let satnogsLinkNorad = null;
+
+function satnogsDbUrl(satId) {
+  return "https://db.satnogs.org/satellite/" + encodeURIComponent(satId);
+}
+
+/**
+ * Resolve SatNOGS sat_id for a NORAD catalog number via our server proxy
+ * (db.satnogs.org does not send CORS headers).
+ */
+function resolveSatnogsId(norad) {
+  const key = String(norad || "").trim();
+  if (!key) return Promise.resolve(null);
+  if (satnogsIdCache.has(key)) {
+    return Promise.resolve(satnogsIdCache.get(key));
+  }
+  return fetch("/api/satnogs?norad=" + encodeURIComponent(key))
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j) => {
+      const id = j && j.sat_id ? String(j.sat_id) : null;
+      satnogsIdCache.set(key, id);
+      return id;
+    })
+    .catch(() => {
+      satnogsIdCache.set(key, null);
+      return null;
+    });
+}
+
+function setSatNamePlain(nameEl, name) {
+  if (!nameEl) return;
+  nameEl.textContent = name;
+}
+
+function setSatNameLink(nameEl, name, satId) {
+  if (!nameEl || !satId) {
+    setSatNamePlain(nameEl, name);
+    return;
+  }
+  nameEl.textContent = "";
+  const a = document.createElement("a");
+  a.href = satnogsDbUrl(satId);
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.className = "sat-name-link";
+  a.textContent = name;
+  a.title = "Open in SatNOGS DB";
+  nameEl.appendChild(a);
+}
+
 function updateSatelliteStatus(state) {
   const nameEl = document.getElementById("sat-common");
   const noradEl = document.getElementById("sat-norad");
   const orbitEl = document.getElementById("sat-orbit");
 
-  if (nameEl) nameEl.textContent = state.display || state.sat || "-";
-  if (noradEl)
-    noradEl.textContent = state.norad != null ? String(state.norad) : "-";
+  const name = state.display || state.sat || "-";
+  const norad = state.norad != null ? String(state.norad) : null;
+
+  if (noradEl) noradEl.textContent = norad || "-";
+
+  if (nameEl) {
+    // Show name immediately; upgrade to link when sat_id resolves.
+    if (norad && name !== "-") {
+      const cached = satnogsIdCache.has(norad)
+        ? satnogsIdCache.get(norad)
+        : undefined;
+      if (cached) {
+        satnogsLinkNorad = norad;
+        setSatNameLink(nameEl, name, cached);
+      } else {
+        satnogsLinkNorad = norad;
+        setSatNamePlain(nameEl, name);
+        if (cached === undefined) {
+          resolveSatnogsId(norad).then((satId) => {
+            if (satnogsLinkNorad !== norad) return;
+            if (satId) setSatNameLink(nameEl, name, satId);
+          });
+        }
+      }
+    } else {
+      satnogsLinkNorad = null;
+      setSatNamePlain(nameEl, name);
+    }
+  }
 
   if (state.look) {
     const azEl = document.getElementById("sat-az");
