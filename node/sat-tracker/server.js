@@ -22,7 +22,11 @@ const rotor = require("./lib/rotor");
 const config = require("./lib/config");
 const profiles = require("./lib/profiles");
 
+/** WebSocket server; set after createServer. broadcast() is safe before that. */
+let wss = null;
+
 function broadcast(obj) {
+  if (!wss) return;
   const data = JSON.stringify(obj);
   for (const c of wss.clients) {
     if (c.readyState === 1) c.send(data);
@@ -156,7 +160,7 @@ const server = http.createServer((req, res) => {
   });
 });
 
-const wss = new WebSocketServer({ noServer: true });
+wss = new WebSocketServer({ noServer: true });
 
 server.on("upgrade", (req, socket, head) => {
   if (req.url === "/ws") {
