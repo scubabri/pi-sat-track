@@ -30,6 +30,21 @@ function saveFavorites(keys) {
   localStorage.setItem("satTrackerFavorites", JSON.stringify(keys));
 }
 
+/** Apply favorites from server profile (source of truth). */
+function applyFavoritesFromServer(keys) {
+  if (!Array.isArray(keys)) keys = [];
+  keys = keys
+    .filter((k) => typeof k === "string" && k)
+    .filter((k, i, a) => a.indexOf(k) === i);
+  saveFavorites(keys);
+  if (lastSatList) renderSatMenu(lastSatList);
+  if (typeof invalidateFavPanelStructure === "function") {
+    invalidateFavPanelStructure();
+  } else if (typeof renderFavPanel === "function") {
+    renderFavPanel();
+  }
+}
+
 function isFavorite(key) {
   return !!key && loadFavorites().includes(key);
 }

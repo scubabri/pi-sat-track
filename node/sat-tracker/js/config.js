@@ -1,4 +1,11 @@
 const CONFIG_KEY = "satTrackerConfig";
+const PROFILE_CACHE_KEY = "satTrackerProfileName";
+
+/** Active profile name from server (null until first profiles message). */
+let activeProfileName = localStorage.getItem(PROFILE_CACHE_KEY) || null;
+let profileNames = [];
+let profilesReady = false;
+let migratedLocalToServer = false;
 
 /** Mirrors lib/serial-catalog.js — keep in sync when adding models. */
 const SERIAL_CATALOG = {
@@ -357,6 +364,9 @@ function sendEndpointsToServer(cfg) {
   ws.send(
     JSON.stringify({
       type: "endpoints",
+      callsign: cfg.callsign,
+      grid: cfg.grid,
+      elevation: cfg.elevation,
       radioTransport: cfg.radioTransport,
       radioType: cfg.radioType,
       radioProtocol: cfg.radioProtocol,
@@ -379,9 +389,156 @@ function sendEndpointsToServer(cfg) {
   );
 }
 
+function sendProfileSelect(name) {
+  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: "profile-select", name: name }));
+}
+
+function sendProfileCreate(name) {
+  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: "profile-create", name: name, fromActive: true }));
+}
+
+function sendProfileDelete(name) {
+  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: "profile-delete", name: name }));
+}
+
+function sendProfileRename(from, to) {
+  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: "profile-rename", from: from, to: to }));
+}
+
+function fillProfileSelect() {
+  const el = document.getElementById("cfg-profile");
+  if (!el) return;
+  const names = profileNames.slice();
+  if (activeProfileName && names.indexOf(activeProfileName) < 0) {
+    names.push(activeProfileName);
+  }
+  names.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  el.innerHTML = "";
+  names.forEach((n) => {
+    const opt = document.createElement("option");
+    opt.value = n;
+    opt.textContent = n;
+    el.appendChild(opt);
+  });
+  if (activeProfileName) el.value = activeProfileName;
+}
+
+/**
+ * Apply server profiles payload: source of truth for favorites + config.
+ * localStorage is only a cache for faster paint / offline.
+ */
+function applyProfilesMessage(msg) {
+  if (!msg || msg.type !== "profiles") return;
+  profilesReady = true;
+  activeProfileName = msg.active || activeProfileName;
+  profileNames = Array.isArray(msg.names) ? msg.names.slice() : [];
+  if (activeProfileName) {
+    localStorage.setItem(PROFILE_CACHE_KEY, activeProfileName);
+  }
+  fillProfileSelect();
+
+  const cfg = msg.config && typeof msg.config === "object" ? msg.config : {};
+  const hasServerCfg = Object.keys(cfg).length > 0;
+  const hasServerFavs = Array.isArray(msg.favorites) && msg.favorites.length > 0;
+
+  // One-time migrate: empty server profile + local data → push up
+  if (!migratedLocalToServer && !hasServerCfg && !hasServerFavs) {
+    const localCfg = loadConfig();
+    const localFavs =
+      typeof loadFavorites === "function" ? loadFavorites() : [];
+    const localHas =
+      (localCfg && (localCfg.grid || localCfg.callsign || localCfg.tciHost)) ||
+      (localFavs && localFavs.length);
+    if (localHas && typeof ws !== "undefined" && ws && ws.readyState === 1) {
+      migratedLocalToServer = true;
+      const merged = Object.assign(defaultsEndpoints(), localCfg);
+      saveConfig(merged);
+      fillForm(merged);
+      sendEndpointsToServer(merged);
+      if (localFavs.length && typeof saveFavorites === "function") {
+        saveFavorites(localFavs);
+        if (typeof sendFavoritesToServer === "function") sendFavoritesToServer();
+      }
+      const hint = document.getElementById("cfg-profile-hint");
+      if (hint) {
+        hint.textContent =
+          "Migrated browser settings into server profile “" +
+          (activeProfileName || "default") +
+          "”.";
+      }
+      return;
+    }
+  }
+
+  if (hasServerCfg) {
+    const merged = Object.assign(defaultsEndpoints(), cfg);
+    saveConfig(merged);
+    fillForm(merged);
+    if (merged.grid && typeof centerOnGrid === "function") {
+      centerOnGrid(merged.grid);
+    }
+    if (typeof notifyObserverChanged === "function") {
+      notifyObserverChanged();
+    }
+  }
+
+  if (typeof applyFavoritesFromServer === "function") {
+    applyFavoritesFromServer(msg.favorites || []);
+  }
+}
+
+function initProfileControls() {
+  const profileSel = document.getElementById("cfg-profile");
+  if (profileSel) {
+    profileSel.addEventListener("change", () => {
+      const name = profileSel.value;
+      if (name && name !== activeProfileName) sendProfileSelect(name);
+    });
+  }
+
+  const btnNew = document.getElementById("btn-profile-new");
+  if (btnNew) {
+    btnNew.addEventListener("click", () => {
+      const name = prompt("New profile name:");
+      if (name && name.trim()) sendProfileCreate(name.trim());
+    });
+  }
+
+  const btnRen = document.getElementById("btn-profile-rename");
+  if (btnRen) {
+    btnRen.addEventListener("click", () => {
+      if (!activeProfileName) return;
+      const name = prompt("Rename profile to:", activeProfileName);
+      if (name && name.trim() && name.trim() !== activeProfileName) {
+        sendProfileRename(activeProfileName, name.trim());
+      }
+    });
+  }
+
+  const btnDel = document.getElementById("btn-profile-delete");
+  if (btnDel) {
+    btnDel.addEventListener("click", () => {
+      if (!activeProfileName) return;
+      if (profileNames.length <= 1) {
+        alert("Cannot delete the only profile.");
+        return;
+      }
+      if (confirm('Delete profile "' + activeProfileName + '"?')) {
+        sendProfileDelete(activeProfileName);
+      }
+    });
+  }
+}
+
 function initConfig() {
   const cfg = loadConfig();
   fillForm(cfg);
+  fillProfileSelect();
+  initProfileControls();
 
   const btn = document.getElementById("btn-config");
   const panel = document.getElementById("config-panel");
@@ -391,6 +548,7 @@ function initConfig() {
     e.stopPropagation();
     if (!panel.classList.contains("open")) {
       fillForm(loadConfig());
+      fillProfileSelect();
     }
     panel.classList.toggle("open");
   });
@@ -441,7 +599,14 @@ function applySavedGrid() {
 
 /** Push last *saved* config to server (WS reconnect). Does not read the open form. */
 function pushSavedEndpoints() {
-  const cfg = Object.assign(defaultsEndpoints(), loadConfig());
-  if (cfg.radioType === "flex") cfg.radioType = "smartsdr";
-  sendEndpointsToServer(cfg);
+  // Server owns config after profiles. Only push if profiles never arrived
+  // (legacy / offline). Prefer waiting for profiles message.
+  if (profilesReady) return;
+  setTimeout(() => {
+    if (profilesReady) return;
+    const cfg = Object.assign(defaultsEndpoints(), loadConfig());
+    if (cfg.radioType === "flex") cfg.radioType = "smartsdr";
+    sendEndpointsToServer(cfg);
+    // Do not push — server owns config. applyProfilesMessage migrates once if empty.
+  }, 1500);
 }

@@ -75,6 +75,25 @@
           <div id="config-panel">
             <h3>Station Configuration</h3>
 
+            <div class="form-row profile-row">
+              <label for="cfg-profile">Profile</label>
+              <div class="profile-controls">
+                <select id="cfg-profile" class="cfg-select" title="Station profile (saved on the server)"></select>
+                <button type="button" class="btn btn-small" id="btn-profile-new" title="Create profile from current">
+                  New
+                </button>
+                <button type="button" class="btn btn-small" id="btn-profile-rename" title="Rename active profile">
+                  Rename
+                </button>
+                <button type="button" class="btn btn-small" id="btn-profile-delete" title="Delete active profile">
+                  Del
+                </button>
+              </div>
+            </div>
+            <p class="form-hint" id="cfg-profile-hint">
+              Profiles store favorites and radio settings on the server (e.g. MacBook Pro vs Air).
+            </p>
+
             <div class="form-row">
               <label for="cfg-callsign">Callsign</label>
               <input
