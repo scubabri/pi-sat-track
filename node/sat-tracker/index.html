@@ -13,46 +13,59 @@
     />
     <link rel="stylesheet" href="css/style.css" />
     <link rel="stylesheet" href="css/fav-panel.css" />
+    <link rel="stylesheet" href="css/pass-panel.css" />
     <link rel="stylesheet" href="css/layout.css" />
     <link rel="stylesheet" href="css/sidebar.css" />
     <link rel="stylesheet" href="css/lock.css" />
     <link rel="stylesheet" href="css/fine-ctcss.css" />
-    <link rel="stylesheet" href="css/pass-panel.css" />
   </head>
   <body>
     <header id="topbar">
       <div id="sat-selector">
-        <button type="button" id="sat-name" class="sat-name-btn">-</button>
-        <div id="sat-menu" hidden></div>
+        <button
+          type="button"
+          id="sat-name"
+          class="sat-name-btn"
+          title="Select satellite"
+        >
+          - ▾
+        </button>
+        <div id="sat-menu" class="sat-menu" hidden>
+          <a class="sat-option sat-browse" href="/sats.html"
+            >Browse full catalog...</a
+          >
+          <div class="sat-menu-section">Heard on AMSAT</div>
+        </div>
       </div>
 
       <div id="pass-status">
-        <span class="status-dot" id="pass-dot"></span>
-        <span id="countdown">—</span>
+        <div class="status-dot yellow"></div>
+        <span id="pass-label">Next AOS in</span>
+        <span id="countdown">-</span>
       </div>
 
       <div id="pass-summary">
         <div class="pass-sum-item">
           <span class="pass-sum-label">AOS</span>
-          <span class="pass-sum-value time-toggle" id="sum-aos">—</span>
+          <span class="pass-sum-value time-toggle" id="pass-aos">-</span>
         </div>
         <div class="pass-sum-item">
           <span class="pass-sum-label">LOS</span>
-          <span class="pass-sum-value time-toggle" id="sum-los">—</span>
+          <span class="pass-sum-value time-toggle" id="pass-los">-</span>
         </div>
         <div class="pass-sum-item">
-          <span class="pass-sum-label">Max El</span>
-          <span class="pass-sum-value" id="sum-maxel">—</span>
+          <span class="pass-sum-label">Max</span>
+          <span class="pass-sum-value" id="pass-maxel">-</span>
         </div>
         <div class="pass-sum-item">
-          <span class="pass-sum-label">Duration</span>
-          <span class="pass-sum-value" id="sum-duration">—</span>
+          <span class="pass-sum-label">Dur</span>
+          <span class="pass-sum-value" id="pass-duration">-</span>
         </div>
       </div>
 
       <div id="top-controls">
-        <button type="button" class="btn" id="btn-radio">Radio</button>
-        <button type="button" class="btn" id="btn-antenna">Antenna</button>
+        <button class="btn" id="btn-radio">Radio</button>
+        <button class="btn" id="btn-antenna">Antenna</button>
 
         <div id="config-wrapper">
           <button class="btn btn-icon" id="btn-config" title="Configuration">
@@ -112,8 +125,8 @@
               <div class="form-row">
                 <label for="cfg-radio-transport">Connection</label>
                 <select id="cfg-radio-transport" class="cfg-select">
-                  <option value="tcp">TCP / network</option>
-                  <option value="serial">Serial / USB</option>
+                  <option value="tcp">TCP</option>
+                  <option value="serial">Serial</option>
                 </select>
               </div>
 
@@ -123,9 +136,9 @@
                   <select id="cfg-radio-type" class="cfg-select">
                     <option value="smartsdr">SmartSDR (Flex)</option>
                     <option value="aethersdr">AetherSDR</option>
-                    <option value="flex">Flex (legacy)</option>
                   </select>
                 </div>
+
                 <div class="form-row">
                   <label for="cfg-radio-protocol">Protocol</label>
                   <select id="cfg-radio-protocol" class="cfg-select">
@@ -237,7 +250,314 @@
       </div>
     </header>
 
-    <!-- truncated intentionally if this fails - full body continues in next push -->
-    <p>INCOMPLETE_INDEX_DO_NOT_USE</p>
+    <div id="fav-panel">
+      <button
+        type="button"
+        id="fav-drawer-toggle"
+        class="fav-drawer-toggle"
+        aria-expanded="false"
+        title="Show or hide favorites"
+      >
+        <span class="fav-drawer-chevron">&#9662;</span>
+        <span class="fav-drawer-label">Favorites</span>
+        <span id="fav-drawer-count" class="fav-drawer-count">—</span>
+        <span class="fav-drawer-hint">sorted by AOS</span>
+      </button>
+      <div id="fav-panel-drawer" class="fav-panel-drawer">
+        <div id="fav-panel-table">
+          <div class="fav-head">
+            <span class="fav-cell fav-name">Satellite Name</span>
+            <span class="fav-cell fav-norad">Number</span>
+            <span class="fav-cell fav-vis">Visible</span>
+            <span class="fav-cell fav-num">Azimuth</span>
+            <span class="fav-cell fav-num">Elevation</span>
+            <span class="fav-cell fav-num">Range</span>
+            <span class="fav-cell fav-num">Range Rate</span>
+            <span class="fav-cell fav-num">Latitude</span>
+            <span class="fav-cell fav-num">Longitude</span>
+            <span class="fav-cell fav-num">Altitude</span>
+            <span class="fav-cell fav-num">Orbit</span>
+            <span class="fav-cell fav-next">AOS</span>
+          </div>
+          <div id="fav-panel-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="pass-panel">
+      <button
+        type="button"
+        id="pass-drawer-toggle"
+        class="pass-drawer-toggle"
+        aria-expanded="false"
+        title="Show or hide next passes"
+      >
+        <span class="pass-drawer-chevron">&#9662;</span>
+        <span class="pass-drawer-label">Next Passes</span>
+        <span id="pass-drawer-sat" class="pass-drawer-sat"></span>
+        <span id="pass-drawer-count" class="pass-drawer-count">—</span>
+        <span class="pass-drawer-hint">next 5 for selected sat</span>
+      </button>
+      <div id="pass-panel-drawer" class="pass-panel-drawer">
+        <div id="pass-panel-table">
+          <div class="pass-head">
+            <span class="pass-cell pass-idx">#</span>
+            <span class="pass-cell pass-time">AOS</span>
+            <span class="pass-cell pass-time">LOS</span>
+            <span class="pass-cell pass-num">Max El</span>
+            <span class="pass-cell pass-num">Duration</span>
+            <span class="pass-cell pass-num">AOS Az</span>
+            <span class="pass-cell pass-status">AOS</span>
+          </div>
+          <div id="pass-panel-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="main">
+      <div id="left-column">
+        <div id="map-container">
+          <div id="map"></div>
+          <div id="radar">
+            <canvas id="radar-canvas" width="220" height="220"></canvas>
+            <div class="rotor-gauge-wrap">
+              <div class="rotor-gauge-label">Rotor AZ</div>
+              <canvas id="rotor-az-canvas" width="220" height="220"></canvas>
+            </div>
+            <div class="rotor-gauge-wrap">
+              <div class="rotor-gauge-label">Rotor EL</div>
+              <canvas id="rotor-el-canvas" width="220" height="220"></canvas>
+            </div>
+          </div>
+        </div>
+        <div id="pass-profile">
+          <canvas id="profile-canvas"></canvas>
+        </div>
+      </div>
+
+      <aside id="sidebar">
+        <section class="panel-section">
+          <h3>Frequencies</h3>
+          <div class="freq-block">
+            <div class="freq-label">Mode</div>
+            <select
+              id="mode-select"
+              class="mode-select"
+              title="Transponder / mode"
+            >
+              <option value="0">—</option>
+            </select>
+          </div>
+          <div class="freq-block">
+            <div class="freq-label">Uplink (LSB)</div>
+            <div class="freq-value uplink" id="freq-ul">-</div>
+            <div class="freq-doppler" id="freq-ul-doppler"></div>
+          </div>
+          <div class="freq-block">
+            <div class="freq-label">Downlink (USB)</div>
+            <div class="freq-value downlink" id="freq-dl">-</div>
+            <div class="freq-doppler" id="freq-dl-doppler"></div>
+          </div>
+
+          <div class="fine-tune-block">
+            <div class="fine-row">
+              <span class="fine-side">UL</span>
+              <button
+                type="button"
+                id="btn-fine-ul-minus"
+                class="btn-fine"
+                title="UL −"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                id="btn-fine-ul-plus"
+                class="btn-fine"
+                title="UL +"
+              >
+                +
+              </button>
+              <span id="fine-offset-ul" class="fine-offset">0 Hz</span>
+            </div>
+            <div class="fine-row">
+              <span class="fine-side">DL</span>
+              <button
+                type="button"
+                id="btn-fine-dl-minus"
+                class="btn-fine"
+                title="DL −"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                id="btn-fine-dl-plus"
+                class="btn-fine"
+                title="DL +"
+              >
+                +
+              </button>
+              <span id="fine-offset-dl" class="fine-offset">0 Hz</span>
+            </div>
+            <div class="fine-row">
+              <span class="fine-side">Step</span>
+              <input
+                type="number"
+                id="fine-step"
+                value="100"
+                min="1"
+                step="1"
+                title="Fine step (Hz). Double-click to center."
+              />
+              <span class="unit">Hz</span>
+              <button
+                type="button"
+                id="btn-fine-center"
+                class="btn-fine-center"
+                title="Center offsets"
+              >
+                ⌖
+              </button>
+              <button
+                type="button"
+                id="btn-ul-fixed"
+                class="btn-ul-fixed"
+                hidden
+                title="Fix UL at published frequency (no Doppler)"
+              >
+                Fix UL
+              </button>
+              <button
+                type="button"
+                id="btn-lock"
+                class="btn-lock"
+                title="Lock VFO — ignore operator DL tunes (FM default ON)"
+              >
+                LOCK
+              </button>
+            </div>
+            <div id="ctcss-row" class="ctcss-row" hidden>
+              <span class="ctcss-label">CTCSS</span>
+              <button type="button" id="btn-ctcss-access" class="btn-ctcss">
+                Access
+              </button>
+              <button type="button" id="btn-ctcss-activation" class="btn-ctcss">
+                Activate
+              </button>
+            </div>
+          </div>
+
+          <div class="passband" id="passband">
+            <div class="passband-row">
+              <span class="passband-label">UL passband</span>
+              <span class="passband-value" id="passband-ul">-</span>
+            </div>
+            <div class="passband-row">
+              <span class="passband-label">DL passband</span>
+              <span class="passband-value" id="passband-dl">-</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <h3>Controls</h3>
+          <div class="toggle-row">
+            <span class="toggle-label">Radio</span>
+            <label class="switch">
+              <input type="checkbox" id="toggle-radio" />
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <span class="toggle-label">Antenna (Rotor)</span>
+            <label class="switch">
+              <input type="checkbox" id="toggle-antenna" />
+              <span class="slider"></span>
+            </label>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <h3>Station Status</h3>
+          <div class="status-item">
+            <span class="label">Callsign</span><span id="station-call">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Grid</span><span id="station-grid">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Latitude</span><span id="station-lat">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Longitude</span><span id="station-lon">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Elevation</span><span id="station-elev">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Radio</span
+            ><span id="status-tci">Disconnected</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Rotor AZ</span><span id="rotor-az">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Rotor EL</span><span id="rotor-el">-</span>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <h3>Satellite Status</h3>
+          <div class="status-item">
+            <span class="label">Name</span><span id="sat-common">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">NORAD</span><span id="sat-norad">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Azimuth</span><span id="sat-az">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Elevation</span><span id="sat-el">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Range</span><span id="sat-range">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Orbit</span><span id="sat-orbit">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">TLE age</span><span id="status-tle">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Catalog</span><span id="status-catalog">-</span>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+
+    <script src="js/maidenhead.js"></script>
+    <script src="js/map.js"></script>
+    <script src="js/radar.js"></script>
+    <script src="js/rotor-gauges.js"></script>
+    <script src="js/profile.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/freq-utils.js"></script>
+    <script src="js/sat-menu.js"></script>
+    <script src="js/fav-panel.js"></script>
+    <script src="js/pass-panel.js"></script>
+    <script src="js/pass-ui.js"></script>
+    <script src="js/tracker.js"></script>
+    <script src="js/lock-ui.js"></script>
+    <script src="js/fine-ctcss.js"></script>
+    <script src="js/ul-fixed.js"></script>
+    <script src="js/app.js"></script>
   </body>
 </html>
