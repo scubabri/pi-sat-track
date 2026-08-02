@@ -8,10 +8,6 @@ const {
   PORT,
   MIME,
   TCI_URI,
-  ROTOR_AZ_HOST,
-  ROTOR_AZ_PORT,
-  ROTOR_EL_HOST,
-  ROTOR_EL_PORT,
   REFRESH_MS,
   SATS_BROADCAST_MS,
   TICK_MS,
@@ -20,7 +16,7 @@ const {
 
 const catalog = require("./lib/catalog");
 const state = require("./lib/state");
-const tci = require("./lib/tci");
+const radios = require("./lib/radios");
 const rotor = require("./lib/rotor");
 const config = require("./lib/config");
 
@@ -83,10 +79,15 @@ function broadcastSats() {
   broadcast({ type: "sats", ...state.satsPayload("trackable") });
 }
 
+function pushNow() {
+  const tk = state.computeTick();
+  if (tk) broadcast(tk);
+}
+
 wss.on("connection", (ws) => {
   console.log("Client connected");
   ws.send(JSON.stringify({ type: "sats", ...state.satsPayload("trackable") }));
-  tci.broadcastStatus();
+  radios.broadcastAllStatus();
   rotor.broadcastStatus();
 
   const s = state.computeState();
@@ -100,6 +101,12 @@ wss.on("connection", (ws) => {
 
       if (msg.type === "observer" && typeof msg.lat === "number") {
         state.setObserver(msg.lat, msg.lon, msg.elevM);
+      }
+
+      if (msg.type === "favorites" && Array.isArray(msg.keys)) {
+        state.setFavorites(msg.keys);
+        const tk = state.computeTick();
+        if (tk) broadcast(tk);
       }
 
       if (msg.type === "mode" && typeof msg.index === "number") {
@@ -126,7 +133,16 @@ wss.on("connection", (ws) => {
       }
 
       if (msg.type === "radio") {
-        tci.setRadio(!!msg.on);
+        radios.setRadio(!!msg.on);
+      }
+
+      if (msg.type === "lock") {
+        radios.setLock(!!msg.on);
+      }
+
+      if (msg.type === "ulFixed") {
+        state.setUlFixed(!!msg.on);
+        pushNow();
       }
 
       if (msg.type === "antenna") {
@@ -134,33 +150,62 @@ wss.on("connection", (ws) => {
       }
 
       if (msg.type === "fine") {
-        if (typeof msg.delta === "number") tci.adjustFine(msg.delta);
-        if (typeof msg.step === "number") tci.setStep(msg.step);
+        const r = radios.active();
+        const side = msg.side === "dl" ? "dl" : "ul";
+        if (typeof msg.step === "number" && r.setStep) r.setStep(msg.step);
+        if (typeof msg.delta === "number" && r.adjustFine)
+          r.adjustFine(msg.delta, side);
+        pushNow();
       }
 
       if (msg.type === "center") {
-        tci.center();
+        radios.active().center();
+        pushNow();
       }
+
+      if (msg.type === "ctcss") {
+        const which =
+          msg.which === "access" || msg.which === "activation"
+            ? msg.which
+            : "off";
+        const r = radios.active();
+        if (typeof r.setCtcss === "function") r.setCtcss(which);
+        pushNow();
+      }
+
       if (msg.type === "endpoints") {
-        const prev = catalog; // silence unused if any
-        const { tciChanged, rotorChanged } =
-          require("./lib/config").applyEndpoints({
-            tciHost: msg.tciHost,
-            tciPort: msg.tciPort,
-            rotorHost: msg.rotorHost,
-            rotorAzPort: msg.rotorAzPort,
-            rotorElPort: msg.rotorElPort,
-          });
-        console.log(
-          "Endpoints updated",
-          require("./lib/config").getEndpoints(),
-        );
-        if (tciChanged) tci.applyEndpointChange();
-        if (rotorChanged) rotor.applyEndpointChange();
-        // Echo current endpoints to all clients
+        const flags = config.applyEndpoints({
+          radioTransport: msg.radioTransport,
+          radioType: msg.radioType,
+          radioProtocol: msg.radioProtocol,
+          serialMake: msg.serialMake,
+          serialModel: msg.serialModel,
+          tciHost: msg.tciHost,
+          tciPort: msg.tciPort,
+          flexUlHost: msg.flexUlHost,
+          flexUlPort: msg.flexUlPort,
+          flexDlHost: msg.flexDlHost,
+          flexDlPort: msg.flexDlPort,
+          flexApiHost: msg.flexApiHost,
+          flexApiPort: msg.flexApiPort,
+          flexHost: msg.flexHost,
+          flexPort: msg.flexPort,
+          serialDevice: msg.serialDevice,
+          serialBaud: msg.serialBaud,
+          catDevice: msg.serialDevice,
+          rotorHost: msg.rotorHost,
+          rotorAzPort: msg.rotorAzPort,
+          rotorElPort: msg.rotorElPort,
+        });
+        console.log("Endpoints updated", config.getEndpoints());
+        console.log("Radio path:", radios.active().meta.id);
+
+        radios.applyEndpointChange(flags);
+        if (flags.rotorChanged) rotor.applyEndpointChange();
+
         broadcast({
           type: "endpoints",
-          ...require("./lib/config").getEndpoints(),
+          ...config.getEndpoints(),
         });
       }
     } catch (e) {
@@ -201,9 +246,12 @@ setInterval(() => {
   }
   server.listen(PORT, "0.0.0.0", () => {
     console.log("Sat Tracker  http://127.0.0.1:" + PORT);
+    console.log(
+      "Active radio",
+      radios.active().meta.id,
+      radios.active().meta.label,
+    );
     console.log("TCI target   " + TCI_URI);
-    console.log("Rotor AZ     " + ROTOR_AZ_HOST + ":" + ROTOR_AZ_PORT);
-    console.log("Rotor EL     " + ROTOR_EL_HOST + ":" + ROTOR_EL_PORT);
     console.log(
       "Tick " + TICK_MS + "ms (Doppler), state " + STATE_MS + "ms (map)",
     );

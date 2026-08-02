@@ -70,7 +70,7 @@
       #sat-table tr:hover td {
         background: #21262d;
       }
-      #sat-table tr.heard td:first-child {
+      #sat-table tr.heard td.name-cell {
         color: var(--green);
         font-weight: 600;
       }
@@ -100,6 +100,28 @@
         text-decoration: none;
         font-size: 0.9rem;
       }
+      .fav-btn {
+        background: none;
+        border: none;
+        color: var(--text-dim);
+        font-size: 1.1rem;
+        cursor: pointer;
+        padding: 0 4px;
+        line-height: 1;
+      }
+      .fav-btn.on {
+        color: var(--yellow);
+      }
+      .fav-btn:hover {
+        color: var(--yellow);
+      }
+      th.fav-col,
+      td.fav-col {
+        width: 36px;
+        text-align: center;
+        padding-left: 4px;
+        padding-right: 4px;
+      }
     </style>
   </head>
   <body>
@@ -118,6 +140,9 @@
         <button type="button" class="btn active" data-filter="all">
           All trackable
         </button>
+        <button type="button" class="btn" data-filter="favorites">
+          Favorites
+        </button>
         <button type="button" class="btn" data-filter="heard">
           Heard (AMSAT)
         </button>
@@ -129,6 +154,7 @@
       <table id="sat-table">
         <thead>
           <tr>
+            <th class="fav-col">★</th>
             <th>Name</th>
             <th>NORAD</th>
             <th>Mode</th>
@@ -146,6 +172,34 @@
       let filter = "all";
       let query = "";
 
+      function loadFavorites() {
+        try {
+          const raw = localStorage.getItem("satTrackerFavorites");
+          const arr = raw ? JSON.parse(raw) : [];
+          return Array.isArray(arr) ? arr.filter((k) => typeof k === "string") : [];
+        } catch (e) {
+          return [];
+        }
+      }
+
+      function saveFavorites(keys) {
+        localStorage.setItem("satTrackerFavorites", JSON.stringify(keys));
+      }
+
+      function isFavorite(key) {
+        return loadFavorites().includes(key);
+      }
+
+      function toggleFavorite(key) {
+        if (!key) return;
+        const favs = loadFavorites();
+        const i = favs.indexOf(key);
+        if (i >= 0) favs.splice(i, 1);
+        else favs.push(key);
+        saveFavorites(favs);
+        render();
+      }
+
       async function load() {
         const res = await fetch("/api/sats?filter=trackable");
         const data = await res.json();
@@ -159,10 +213,12 @@
         const q = query.trim().toLowerCase();
         const body = document.getElementById("sat-body");
         body.innerHTML = "";
+        const favSet = new Set(loadFavorites());
 
         const rows = allSats.filter((s) => {
           if (filter === "heard" && !s.heard) return false;
           if (filter === "active" && s.status !== "active") return false;
+          if (filter === "favorites" && !favSet.has(s.key)) return false;
           if (!q) return true;
           return (
             s.name.toLowerCase().includes(q) ||
@@ -174,17 +230,45 @@
         for (const s of rows) {
           const tr = document.createElement("tr");
           if (s.heard) tr.classList.add("heard");
-          tr.innerHTML = `
-          <td>${escapeHtml(s.name)}
-            ${s.heard ? '<span class="badge heard">heard</span>' : ""}
-            ${s.status === "active" ? '<span class="badge active">active</span>' : ""}
-          </td>
-          <td>${s.norad}</td>
-          <td>${escapeHtml(s.mode || "—")}</td>
-          <td class="freq">${escapeHtml(s.uplink || "—")}</td>
-          <td class="freq">${escapeHtml(s.downlink || "—")}</td>
-          <td>${escapeHtml(s.status || "—")}</td>
-        `;
+
+          const favTd = document.createElement("td");
+          favTd.className = "fav-col";
+          const favBtn = document.createElement("button");
+          favBtn.type = "button";
+          favBtn.className = "fav-btn" + (favSet.has(s.key) ? " on" : "");
+          favBtn.textContent = favSet.has(s.key) ? "★" : "☆";
+          favBtn.title = favSet.has(s.key) ? "Remove favorite" : "Add favorite";
+          favBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            toggleFavorite(s.key);
+          });
+          favTd.appendChild(favBtn);
+          tr.appendChild(favTd);
+
+          const nameTd = document.createElement("td");
+          nameTd.className = "name-cell";
+          nameTd.innerHTML =
+            escapeHtml(s.name) +
+            (s.heard ? ' <span class="badge heard">heard</span>' : "") +
+            (s.status === "active"
+              ? ' <span class="badge active">active</span>'
+              : "");
+          tr.appendChild(nameTd);
+
+          const cells = [
+            s.norad,
+            escapeHtml(s.mode || "—"),
+            escapeHtml(s.uplink || "—"),
+            escapeHtml(s.downlink || "—"),
+            escapeHtml(s.status || "—"),
+          ];
+          cells.forEach((html, i) => {
+            const td = document.createElement("td");
+            if (i === 2 || i === 3) td.className = "freq";
+            td.innerHTML = html;
+            tr.appendChild(td);
+          });
+
           tr.addEventListener("click", () => {
             localStorage.setItem("satTrackerSat", s.key);
             location.href = "/";
@@ -195,9 +279,9 @@
 
       function escapeHtml(s) {
         return String(s)
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;");
+          .replace(/&/g, "&")
+          .replace(/</g, "<")
+          .replace(/>/g, ">");
       }
 
       document.getElementById("search").addEventListener("input", (e) => {

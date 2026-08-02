@@ -67,6 +67,69 @@ function azElToXY(az, el) {
   };
 }
 
+/** Small filled arrow ~same footprint as the old r=5 blue dot */
+function drawSatArrow(ctx, x, y, angleRad) {
+  const len = 10; // tip-to-tail ≈ diameter of old 5px-radius dot
+  const halfW = 4.5;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angleRad);
+
+  ctx.beginPath();
+  // Tip forward, base back — classic chevron/arrowhead
+  ctx.moveTo(len * 0.55, 0); // tip
+  ctx.lineTo(-len * 0.45, halfW);
+  ctx.lineTo(-len * 0.2, 0);
+  ctx.lineTo(-len * 0.45, -halfW);
+  ctx.closePath();
+
+  ctx.fillStyle = "#58a6ff";
+  ctx.fill();
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 1.25;
+  ctx.lineJoin = "round";
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+/** Heading (screen radians) from sky path near current position */
+function headingFromSkyPath(az, el, skyPath) {
+  if (!skyPath || skyPath.length < 2) return null;
+
+  // Find nearest path index
+  let bestI = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < skyPath.length; i++) {
+    const p = skyPath[i];
+    const daz = ((p.az - az + 540) % 360) - 180;
+    const del = p.el - el;
+    const d = daz * daz + del * del;
+    if (d < bestD) {
+      bestD = d;
+      bestI = i;
+    }
+  }
+
+  // Prefer forward segment; fall back to previous if at end
+  let a, b;
+  if (bestI < skyPath.length - 1) {
+    a = skyPath[bestI];
+    b = skyPath[bestI + 1];
+  } else {
+    a = skyPath[bestI - 1];
+    b = skyPath[bestI];
+  }
+
+  const pa = azElToXY(a.az, a.el);
+  const pb = azElToXY(b.az, b.el);
+  const dx = pb.x - pa.x;
+  const dy = pb.y - pa.y;
+  if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return null;
+  return Math.atan2(dy, dx);
+}
+
 /**
  * skyPath: [{az, el}, ...] next pass
  * az, el: current look angles
@@ -102,16 +165,23 @@ function updateRadar(az, el, skyPath) {
     });
   }
 
-  // Live sat when above horizon
+  // Live sat when above horizon — arrow pointing along track
   if (typeof el === "number" && el >= 0) {
     const { x, y } = azElToXY(az, el);
-    ctx.beginPath();
-    ctx.arc(x, y, 5, 0, Math.PI * 2);
-    ctx.fillStyle = "#58a6ff";
-    ctx.fill();
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+    const heading = headingFromSkyPath(az, el, skyPath);
+
+    if (heading != null) {
+      drawSatArrow(ctx, x, y, heading);
+    } else {
+      // Fallback: same-size filled circle if no path heading available
+      ctx.beginPath();
+      ctx.arc(x, y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = "#58a6ff";
+      ctx.fill();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
   }
 }
 

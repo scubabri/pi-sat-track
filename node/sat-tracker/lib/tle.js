@@ -4,6 +4,7 @@ const satellite = require("satellite.js");
 const { CACHE_DIR } = require("./config");
 
 const satrecCache = new Map();
+const orbitCache = new Map();
 
 function ensureCacheDir() {
   if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
@@ -17,6 +18,27 @@ function parseOrbitFromL2(l2) {
   } catch (_) {
     return null;
   }
+}
+
+function getOrbitForNorad(norad) {
+  if (norad == null) return null;
+  const key = String(norad);
+  if (orbitCache.has(key)) return orbitCache.get(key);
+  const tlePath = path.join(CACHE_DIR, "tle_" + key + ".txt");
+  try {
+    if (fs.existsSync(tlePath)) {
+      const lines = fs
+        .readFileSync(tlePath, "utf8")
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+      const l2 = lines[0].startsWith("1 ") ? lines[1] : lines[2];
+      const orbit = parseOrbitFromL2(l2);
+      if (orbit != null) orbitCache.set(key, orbit);
+      return orbit;
+    }
+  } catch (_) {}
+  return null;
 }
 
 function getSatrecForNorad(norad) {
@@ -39,6 +61,8 @@ function getSatrecForNorad(norad) {
       }
       const rec = satellite.twoline2satrec(l1, l2);
       satrecCache.set(norad, rec);
+      const orbit = parseOrbitFromL2(l2);
+      if (orbit != null) orbitCache.set(String(norad), orbit);
       return rec;
     }
   } catch (_) {}
@@ -89,12 +113,14 @@ async function fetchTLE(norad) {
         name,
       }),
     );
+    const orbit = parseOrbitFromL2(l2);
+    if (orbit != null) orbitCache.set(String(norad), orbit);
     return {
       name,
       l1,
       l2,
       note: "Celestrak (just fetched)",
-      orbit: parseOrbitFromL2(l2),
+      orbit,
     };
   } catch (err) {
     if (fs.existsSync(tlePath)) {
@@ -116,12 +142,14 @@ async function fetchTLE(norad) {
       }
       const l1 = lines[0].startsWith("1 ") ? lines[0] : lines[1];
       const l2 = lines[0].startsWith("1 ") ? lines[1] : lines[2];
+      const orbit = parseOrbitFromL2(l2);
+      if (orbit != null) orbitCache.set(String(norad), orbit);
       return {
         name: lines[0].startsWith("1 ") ? "NORAD " + norad : lines[0],
         l1,
         l2,
         note: "TLE cache age " + age,
-        orbit: parseOrbitFromL2(l2),
+        orbit,
       };
     }
     throw err;
@@ -130,6 +158,7 @@ async function fetchTLE(norad) {
 
 module.exports = {
   getSatrecForNorad,
+  getOrbitForNorad,
   cacheSatrec,
   fetchTLE,
   parseOrbitFromL2,

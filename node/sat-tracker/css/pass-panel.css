@@ -1,0 +1,183 @@
+/* ========== NEXT PASSES DRAWER (selected sat) ========== */
+#pass-panel {
+  background: #12161c;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.pass-drawer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 28px;
+  padding: 0 12px;
+  margin: 0;
+  border: none;
+  border-bottom: 1px solid transparent;
+  background: #0e1218;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  text-align: left;
+}
+
+.pass-drawer-toggle:hover {
+  color: var(--text);
+  background: #141a22;
+}
+
+#pass-panel.open .pass-drawer-toggle {
+  border-bottom-color: var(--border);
+  color: var(--text);
+}
+
+.pass-drawer-chevron {
+  display: inline-block;
+  width: 1em;
+  font-size: 0.75rem;
+  color: var(--accent);
+}
+
+.pass-drawer-label {
+  flex-shrink: 0;
+}
+
+.pass-drawer-sat {
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pass-drawer-count {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.pass-drawer-hint {
+  margin-left: auto;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  opacity: 0.75;
+}
+
+.pass-panel-drawer {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    max-height 0.22s ease,
+    opacity 0.18s ease;
+}
+
+#pass-panel.open .pass-panel-drawer {
+  max-height: min(40vh, 220px);
+  opacity: 1;
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+#pass-panel-table {
+  min-width: 640px;
+  width: 100%;
+}
+
+.pass-head,
+.pass-row-item {
+  display: grid;
+  grid-template-columns:
+    36px   /* # */
+    120px  /* AOS */
+    120px  /* LOS */
+    72px   /* max el */
+    80px   /* duration */
+    72px   /* aos az */
+    88px;  /* status */
+  gap: 0 10px;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pass-head {
+  height: 28px;
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.35px;
+  border-bottom: 1px solid var(--border);
+  background: #0e1218;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.pass-row-item {
+  height: 30px;
+  color: var(--text);
+  border-bottom: 1px solid rgba(48, 54, 61, 0.45);
+}
+
+.pass-row-item.in-pass {
+  background: rgba(63, 185, 80, 0.1);
+  outline: 1px solid rgba(63, 185, 80, 0.35);
+  outline-offset: -1px;
+}
+
+.pass-row-item.past {
+  opacity: 0.45;
+}
+
+.pass-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pass-idx {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  text-align: right;
+}
+
+.pass-time,
+.pass-num {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  text-align: right;
+}
+
+.pass-status {
+  font-weight: 700;
+  font-size: 0.72rem;
+  text-align: right;
+  color: var(--accent);
+}
+
+.pass-row-item.in-pass .pass-status {
+  color: var(--green);
+}
+
+.pass-panel-empty {
+  padding: 10px 14px;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+}

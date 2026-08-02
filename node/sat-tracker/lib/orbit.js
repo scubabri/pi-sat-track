@@ -7,6 +7,9 @@ const {
   PASS_STEP_SEC,
 } = require("./config");
 
+/** How many upcoming passes to compute for the UI drawer / state. */
+const MAX_PASSES = 5;
+
 function gmstFromDate(date) {
   return satellite.gstime(date);
 }
@@ -25,7 +28,7 @@ function eciToLatLon(positionEci, date) {
 
 function lookAngles(satrec, observer, date) {
   const pv = satellite.propagate(satrec, date);
-  if (!pv.position) return null;
+  if (!pv.position || typeof pv.position === "boolean") return null;
   const gmst = gmstFromDate(date);
   const positionEcf = satellite.eciToEcf(pv.position, gmst);
   const look = satellite.ecfToLookAngles(observer, positionEcf);
@@ -36,10 +39,6 @@ function lookAngles(satrec, observer, date) {
   };
 }
 
-/**
- * Approximate angular separation (degrees) between two az/el points.
- * Uses mean elevation for the azimuth component.
- */
 function angularDistanceDeg(a, b) {
   if (!a || !b) return 0;
   let daz = b.az - a.az;
@@ -49,10 +48,6 @@ function angularDistanceDeg(a, b) {
   return Math.sqrt((daz * cosEl) ** 2 + (b.el - a.el) ** 2);
 }
 
-/**
- * Return look angles approximately `leadDeg` ahead of `now` along the track.
- * Binary-searches time so angular distance is close to leadDeg.
- */
 function lookAnglesLead(satrec, observer, now, leadDeg) {
   if (!leadDeg || leadDeg <= 0) return lookAngles(satrec, observer, now);
 
@@ -154,9 +149,30 @@ function buildForwardTrack(satrec, now, orbits, stepSec) {
   return points;
 }
 
+/** Binary-search the horizon crossing to ~0.1 s (same idea as catalog horizonFlags). */
+function refineCrossing(satrec, observer, tLo, tHi, minEl, rising) {
+  let lo = tLo;
+  let hi = tHi;
+  for (let i = 0; i < 12; i++) {
+    const mid = (lo + hi) / 2;
+    const look = lookAngles(satrec, observer, new Date(mid));
+    const el = look ? look.el : -90;
+    if (rising) {
+      if (el >= minEl) hi = mid;
+      else lo = mid;
+    } else {
+      if (el < minEl) hi = mid;
+      else lo = mid;
+    }
+  }
+  return hi;
+}
+
 function findPasses(satrec, observer, now, minEl, hours, stepSec) {
   minEl = minEl != null ? minEl : MIN_EL;
   hours = hours != null ? hours : PASS_HOURS;
+  // LEO passes are sparse in geometry; 12h often yields only 1–2. Use at least 48h for MAX_PASSES.
+  if (hours < 48) hours = 48;
   stepSec = stepSec != null ? stepSec : PASS_STEP_SEC;
 
   const passes = [];
@@ -165,6 +181,7 @@ function findPasses(satrec, observer, now, minEl, hours, stepSec) {
   const start = new Date(now.getTime() - lookbackMs);
 
   let prevEl = null;
+  let prevT = null;
   let aosTime = null;
   let aosAz = null;
   let maxEl = minEl;
@@ -175,20 +192,26 @@ function findPasses(satrec, observer, now, minEl, hours, stepSec) {
     if (!look) continue;
     const el = look.el;
 
-    if (prevEl !== null) {
+    if (prevEl !== null && prevT != null) {
       if (prevEl < minEl && el >= minEl) {
-        aosTime = date;
-        aosAz = look.az;
+        // Refine AOS within [prevT, t]
+        const aosMs = refineCrossing(satrec, observer, prevT, t, minEl, true);
+        aosTime = new Date(aosMs);
+        const lookAos = lookAngles(satrec, observer, aosTime);
+        aosAz = lookAos ? lookAos.az : look.az;
         maxEl = el;
       } else if (prevEl >= minEl && el < minEl && aosTime) {
-        if (date.getTime() >= now.getTime() - stepSec * 1000) {
+        // Refine LOS within [prevT, t]
+        const losMs = refineCrossing(satrec, observer, prevT, t, minEl, false);
+        const losTime = new Date(losMs);
+        if (losMs >= now.getTime() - stepSec * 1000) {
           passes.push({
             aos: aosTime.toISOString(),
-            los: date.toISOString(),
+            los: losTime.toISOString(),
             maxEl,
             aosAz,
           });
-          if (passes.length >= 2) break;
+          if (passes.length >= MAX_PASSES) break;
         }
         aosTime = null;
         maxEl = minEl;
@@ -197,9 +220,10 @@ function findPasses(satrec, observer, now, minEl, hours, stepSec) {
       }
     }
     prevEl = el;
+    prevT = t;
   }
 
-  if (aosTime && passes.length < 2) {
+  if (aosTime && passes.length < MAX_PASSES) {
     const lookEnd = lookAngles(satrec, observer, end);
     if (lookEnd && lookEnd.el >= minEl) {
       passes.push({
@@ -223,7 +247,7 @@ function findPasses(satrec, observer, now, minEl, hours, stepSec) {
     passes.unshift(cur);
   }
 
-  return passes.slice(0, 2);
+  return passes.slice(0, MAX_PASSES);
 }
 
 function passSkyPath(satrec, observer, aosIso, losIso, stepSec) {
@@ -248,4 +272,5 @@ module.exports = {
   buildForwardTrack,
   findPasses,
   passSkyPath,
+  MAX_PASSES,
 };

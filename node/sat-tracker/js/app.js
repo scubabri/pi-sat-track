@@ -5,6 +5,8 @@ function initApp() {
   if (typeof initProfile === "function") initProfile();
   if (typeof initTimeToggle === "function") initTimeToggle();
   if (typeof initSatSelector === "function") initSatSelector();
+  if (typeof initFavPanel === "function") initFavPanel();
+  if (typeof initPassPanel === "function") initPassPanel();
   if (typeof initConfig === "function") initConfig();
   if (typeof connectTracker === "function") connectTracker();
   if (typeof updateStationStatus === "function") updateStationStatus();

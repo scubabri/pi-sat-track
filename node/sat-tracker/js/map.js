@@ -16,10 +16,10 @@ function initMap() {
     zoomControl: false,
   }).setView([20, 0], 2);
 
-  L.control.zoom({ position: "bottomleft" }).addTo(map);
+  L.control.zoom({ position: "topright" }).addTo(map);
 
   const CenterControl = L.Control.extend({
-    options: { position: "bottomleft" },
+    options: { position: "topright" },
     onAdd: function () {
       const container = L.DomUtil.create(
         "div",
@@ -84,8 +84,8 @@ function footprintRadiusM(heightKm) {
   if (!Number.isFinite(heightKm) || heightKm <= 0) return 0;
   const ratio = EARTH_RADIUS_KM / (EARTH_RADIUS_KM + heightKm);
   if (ratio >= 1) return 0;
-  const halfAngle = Math.acos(ratio); // radians
-  return EARTH_RADIUS_KM * halfAngle * 1000; // arc length on surface → meters
+  const halfAngle = Math.acos(ratio);
+  return EARTH_RADIUS_KM * halfAngle * 1000;
 }
 
 function centerOnStation() {
@@ -194,7 +194,6 @@ function updateMapTracking(state) {
         if (!map.hasLayer(satMarker)) satMarker.addTo(map);
       }
 
-      // Transparent footprint with thin border
       const hKm = state.position.heightKm;
       const rM = footprintRadiusM(hKm);
       if (rM > 0) {

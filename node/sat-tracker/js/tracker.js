@@ -1,16 +1,7 @@
+/* Tracker WebSocket, radio/antenna, station status, frequency panel */
 let ws = null;
 let reconnectTimer = null;
-let countdownTimer = null;
-
-let timeMode = localStorage.getItem("satTrackerTimeMode") || "utc";
-let satSortMode = localStorage.getItem("satTrackerSort") || "aos";
-let lastPass = null;
-let currentSatKey = localStorage.getItem("satTrackerSat") || null;
-let currentSatLabel = null;
-let lastSatList = null;
 let lastStateSat = null;
-let currentEl = null;
-let pendingSatKey = null;
 let lastModesKey = "";
 
 let radioOn = false;
@@ -19,53 +10,6 @@ let antennaOn = false;
 let fineStep = 100;
 let ulFineOffset = 0;
 let manualDlOffset = 0;
-
-function fmtFreq(hz) {
-  if (hz == null || !Number.isFinite(hz)) return "-";
-  hz = Math.round(hz);
-  const mhz = Math.floor(hz / 1e6);
-  const khz = Math.floor((hz % 1e6) / 1e3);
-  const hzz = Math.abs(hz % 1000);
-  return (
-    mhz +
-    "." +
-    String(khz).padStart(3, "0") +
-    "." +
-    String(hzz).padStart(3, "0")
-  );
-}
-
-function parseToHz(val) {
-  if (val == null || val === "-" || val === "") return null;
-  if (typeof val === "number" && Number.isFinite(val)) {
-    return val > 1e4 ? val : val * 1e6;
-  }
-  const s = String(val).trim();
-  const parts = s.split(".");
-  if (parts.length === 3) {
-    const mhz = parseInt(parts[0], 10);
-    const khz = parseInt(parts[1], 10);
-    const hz = parseInt(parts[2], 10);
-    if (![mhz, khz, hz].every(Number.isFinite)) return null;
-    return mhz * 1e6 + khz * 1e3 + hz;
-  }
-  const f = parseFloat(s);
-  if (!Number.isFinite(f)) return null;
-  return f * 1e6;
-}
-
-function fmtDopplerMHz(hzOffset) {
-  if (hzOffset == null || !Number.isFinite(hzOffset)) return "";
-  const mhz = hzOffset / 1e6;
-  const sign = mhz >= 0 ? "+" : "";
-  return sign + mhz.toFixed(6) + " MHz";
-}
-
-function fmtOffsetHz(hz) {
-  if (hz == null || !Number.isFinite(hz) || hz === 0) return "0 Hz";
-  const sign = hz > 0 ? "+" : "";
-  return sign + Math.round(hz) + " Hz";
-}
 
 function getObserverFromConfig() {
   const cfg = loadConfig();
@@ -128,249 +72,6 @@ function updateStationStatus() {
         : "-";
   }
 }
-
-function setSatButtonLabel(label) {
-  currentSatLabel = label;
-  const btn = document.getElementById("sat-name");
-  if (btn) btn.textContent = (label || "-") + " \u25BE";
-  document.querySelectorAll(".sat-option[data-sat]").forEach((el) => {
-    el.classList.toggle("active", el.dataset.sat === currentSatKey);
-  });
-}
-
-function aosSortKey(s) {
-  if (s.above) return -1e12;
-  if (s.key === currentSatKey && currentEl != null && currentEl >= 0)
-    return -1e12;
-
-  if (
-    typeof s.secToAos === "number" &&
-    Number.isFinite(s.secToAos) &&
-    s.secToAos >= 0
-  ) {
-    return s.secToAos;
-  }
-
-  if (s.soon) return 15 * 60;
-
-  return 1e12;
-}
-
-function sortHeardList(list) {
-  const arr = list.slice();
-
-  if (satSortMode === "alpha") {
-    arr.sort((a, b) =>
-      String(a.name || "").localeCompare(String(b.name || ""), undefined, {
-        sensitivity: "base",
-      }),
-    );
-    return arr;
-  }
-
-  arr.sort((a, b) => {
-    const ka = aosSortKey(a);
-    const kb = aosSortKey(b);
-    if (ka !== kb) return ka - kb;
-    return String(a.name || "").localeCompare(String(b.name || ""), undefined, {
-      sensitivity: "base",
-    });
-  });
-  return arr;
-}
-
-function toggleSatSort(e) {
-  if (e) {
-    e.preventDefault();
-    e.stopPropagation();
-  }
-  satSortMode = satSortMode === "aos" ? "alpha" : "aos";
-  localStorage.setItem("satTrackerSort", satSortMode);
-  if (lastSatList) renderSatMenu(lastSatList);
-}
-
-function applyLiveHorizon(sats) {
-  if (!sats || !currentSatKey) return sats;
-  return sats.map((s) => {
-    if (s.key !== currentSatKey) return s;
-    if (currentEl == null) return s;
-    const above = currentEl >= 0;
-    return Object.assign({}, s, {
-      above: above,
-      soon: above ? false : s.soon,
-      el: currentEl,
-    });
-  });
-}
-
-function satHorizonClass(s) {
-  if (s.above) return "sat-up";
-  if (
-    typeof s.secToAos === "number" &&
-    Number.isFinite(s.secToAos) &&
-    s.secToAos >= 0 &&
-    s.secToAos <= 5 * 60
-  ) {
-    return "sat-imminent";
-  }
-  if (
-    s.soon ||
-    (typeof s.secToAos === "number" &&
-      Number.isFinite(s.secToAos) &&
-      s.secToAos >= 0 &&
-      s.secToAos <= 15 * 60)
-  ) {
-    return "sat-soon";
-  }
-  return "sat-down";
-}
-
-function renderSatMenu(payload) {
-  const menu = document.getElementById("sat-menu");
-  if (!menu) return;
-
-  lastSatList = payload;
-  const sats = applyLiveHorizon(payload.satellites || []);
-
-  menu.innerHTML = "";
-
-  const browse = document.createElement("a");
-  browse.className = "sat-option sat-browse";
-  browse.href = "/sats.html";
-  browse.textContent = "Browse full catalog...";
-  browse.title = "Search all AMSAT satellites";
-  menu.appendChild(browse);
-
-  const headRow = document.createElement("div");
-  headRow.className = "sat-menu-head";
-
-  const head = document.createElement("div");
-  head.className = "sat-menu-section";
-  head.textContent = "Heard on AMSAT";
-  headRow.appendChild(head);
-
-  const sortBtn = document.createElement("button");
-  sortBtn.type = "button";
-  sortBtn.className = "sat-sort-btn";
-  sortBtn.title =
-    satSortMode === "aos"
-      ? "Sorted by AOS — click for A–Z"
-      : "Sorted A–Z — click for AOS";
-  sortBtn.textContent = satSortMode === "aos" ? "AOS" : "A–Z";
-  sortBtn.addEventListener("click", toggleSatSort);
-  headRow.appendChild(sortBtn);
-  menu.appendChild(headRow);
-
-  const heard = sats.filter((s) => s.heard);
-  let quick = [];
-  const seen = new Set();
-
-  function add(s) {
-    if (!s || !s.key || seen.has(s.key)) return;
-    seen.add(s.key);
-    quick.push(s);
-  }
-
-  heard.forEach(add);
-  if (currentSatKey) add(sats.find((s) => s.key === currentSatKey));
-
-  quick = sortHeardList(quick);
-
-  if (quick.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "sat-menu-empty";
-    empty.textContent = "No AMSAT reports loaded";
-    menu.appendChild(empty);
-  }
-
-  quick.slice(0, 40).forEach((s) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "sat-option";
-    if (s.key === currentSatKey) btn.classList.add("active");
-    btn.classList.add(satHorizonClass(s));
-    btn.classList.add("heard");
-    btn.dataset.sat = s.key;
-    btn.textContent = s.name;
-
-    let tip = s.name + "  (NORAD " + s.norad + ")";
-    if (s.above) tip += " — above horizon";
-    else if (
-      typeof s.secToAos === "number" &&
-      s.secToAos >= 0 &&
-      s.secToAos <= 5 * 60
-    ) {
-      tip += " — AOS < 5 min (~" + Math.round(s.secToAos / 60) + "m)";
-    } else if (
-      s.soon ||
-      (typeof s.secToAos === "number" && s.secToAos <= 15 * 60)
-    ) {
-      tip += " — AOS < 15 min";
-      if (typeof s.secToAos === "number")
-        tip += " (~" + Math.round(s.secToAos / 60) + "m)";
-    } else {
-      tip += " — heard (AMSAT)";
-    }
-    btn.title = tip;
-    btn.addEventListener("click", () => selectSatellite(s.key, s.name));
-    menu.appendChild(btn);
-  });
-
-  const statusCat = document.getElementById("status-catalog");
-  if (statusCat) {
-    statusCat.textContent =
-      (payload.satellites || []).length + " - " + (payload.catalogNote || "?");
-  }
-
-  if (currentSatKey) {
-    const match = sats.find((s) => s.key === currentSatKey);
-    if (match) setSatButtonLabel(match.name);
-    else if (!currentSatLabel) setSatButtonLabel(currentSatKey);
-  } else if (quick.length) {
-    currentSatKey = quick[0].key;
-    setSatButtonLabel(quick[0].name);
-  }
-}
-
-function refreshCurrentSatChip() {
-  if (!lastSatList) return;
-  const menu = document.getElementById("sat-menu");
-  if (menu && !menu.hidden) {
-    renderSatMenu(lastSatList);
-  } else {
-    document.querySelectorAll(".sat-option[data-sat]").forEach((el) => {
-      if (el.dataset.sat !== currentSatKey) return;
-      el.classList.remove("sat-up", "sat-soon", "sat-imminent", "sat-down");
-      if (currentEl != null && currentEl >= 0) el.classList.add("sat-up");
-      else el.classList.add("sat-down");
-    });
-  }
-}
-
-function selectSatellite(key, label) {
-  pendingSatKey = key;
-  currentSatKey = key;
-  setSatButtonLabel(label || key);
-  localStorage.setItem("satTrackerSat", key);
-  lastPass = null;
-  lastStateSat = null;
-  currentEl = null;
-  lastModesKey = "";
-  ulFineOffset = 0;
-  manualDlOffset = 0;
-  updateFineOffsetDisplay();
-
-  if (typeof clearProfileLock === "function") clearProfileLock();
-  if (typeof clearMapTracking === "function") clearMapTracking();
-
-  const menu = document.getElementById("sat-menu");
-  if (menu) menu.hidden = true;
-
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "sat", key: key }));
-  }
-}
-
 function updateModeSelect(modes, modeIndex) {
   const sel = document.getElementById("mode-select");
   if (!sel) return;
@@ -661,6 +362,7 @@ function connectTracker() {
       pendingSatKey = currentSatKey;
       ws.send(JSON.stringify({ type: "sat", key: currentSatKey }));
     }
+    if (typeof sendFavoritesToServer === "function") sendFavoritesToServer();
   };
 
   ws.onmessage = (ev) => {
@@ -690,6 +392,11 @@ function connectTracker() {
       if (msg.type === "tick") {
         if (pendingSatKey && msg.sat && msg.sat !== pendingSatKey) return;
         applyFreqAndLook(msg);
+        if (typeof updateFavPanelFromState === "function") {
+          updateFavPanelFromState(
+            Object.assign({ type: "tick", sat: msg.sat || currentSatKey }, msg),
+          );
+        }
         return;
       }
 
@@ -732,6 +439,8 @@ function connectTracker() {
       if (typeof updateProfile === "function") updateProfile(msg);
       updateSidebar(msg);
       updateSatelliteStatus(msg);
+      if (typeof updateFavPanelFromState === "function")
+        updateFavPanelFromState(msg);
     } catch (e) {
       console.warn("Bad state message", e);
     }
@@ -773,190 +482,10 @@ function updateSatelliteStatus(state) {
     orbitEl.textContent = state.orbit != null ? String(state.orbit) : "-";
   }
 }
-
-function formatPassTime(iso) {
-  const d = new Date(iso);
-  if (timeMode === "utc") {
-    return d.toISOString().substr(11, 8) + " UTC";
-  }
-  const opts = {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  };
-  return d.toLocaleTimeString([], opts) + " MT";
-}
-
-function renderPassTimes() {
-  if (!lastPass) return;
-  const aosEl = document.getElementById("pass-aos");
-  const losEl = document.getElementById("pass-los");
-  if (aosEl) aosEl.textContent = formatPassTime(lastPass.aos);
-  if (losEl) losEl.textContent = formatPassTime(lastPass.los);
-}
-
-function toggleTimeMode() {
-  timeMode = timeMode === "utc" ? "local" : "utc";
-  localStorage.setItem("satTrackerTimeMode", timeMode);
-  renderPassTimes();
-}
-
-function formatCountdown(sec) {
-  if (sec < 0 || !Number.isFinite(sec)) return "-";
-  sec = Math.floor(sec);
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
-  if (h > 0) {
-    return (
-      String(h).padStart(2, "0") +
-      ":" +
-      String(m).padStart(2, "0") +
-      ":" +
-      String(s).padStart(2, "0")
-    );
-  }
-  return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
-}
-
-function tickCountdown() {
-  const countdownEl = document.getElementById("countdown");
-  const labelEl = document.getElementById("pass-label");
-  const dot = document.querySelector("#pass-status .status-dot");
-  if (!countdownEl) return;
-
-  // Above horizon → in pass (green only here)
-  if (currentEl != null && currentEl >= 0) {
-    if (labelEl) labelEl.textContent = "LOS in";
-    if (dot) dot.className = "status-dot green";
-
-    if (lastPass && lastPass.los) {
-      const secToLos = (new Date(lastPass.los).getTime() - Date.now()) / 1000;
-      if (secToLos > 0) {
-        countdownEl.textContent = formatCountdown(secToLos);
-        return;
-      }
-    }
-    countdownEl.textContent = currentEl.toFixed(1) + "\u00B0";
-    return;
-  }
-
-  if (!lastPass || !lastPass.aos || !lastPass.los) {
-    if (labelEl) labelEl.textContent = "Next AOS in";
-    countdownEl.textContent = "-";
-    if (dot) dot.className = "status-dot";
-    return;
-  }
-
-  const now = Date.now();
-  const aosMs = new Date(lastPass.aos).getTime();
-  const losMs = new Date(lastPass.los).getTime();
-  const secToAos = (aosMs - now) / 1000;
-  const secToLos = (losMs - now) / 1000;
-
-  if (secToAos > 0) {
-    if (labelEl) labelEl.textContent = "Next AOS in";
-    countdownEl.textContent = formatCountdown(secToAos);
-    if (dot) {
-      if (secToAos <= 5 * 60) dot.className = "status-dot red";
-      else if (secToAos <= 15 * 60) dot.className = "status-dot yellow";
-      else dot.className = "status-dot";
-    }
-  } else if (secToLos > 0) {
-    if (labelEl) labelEl.textContent = "LOS in";
-    countdownEl.textContent = formatCountdown(secToLos);
-    if (dot) dot.className = "status-dot green";
-  } else {
-    lastPass = null;
-    if (labelEl) labelEl.textContent = "Next AOS in";
-    countdownEl.textContent = "-";
-    if (dot) dot.className = "status-dot";
-  }
-}
-
-function startCountdownTimer() {
-  if (countdownTimer) clearInterval(countdownTimer);
-  tickCountdown();
-  countdownTimer = setInterval(tickCountdown, 1000);
-}
-
-function updateSidebar(state) {
-  const tleEl = document.getElementById("status-tle");
-  if (tleEl) tleEl.textContent = state.tleNote || "-";
-
-  if (state.passes && state.passes.length) {
-    const p = state.passes[0];
-    const now = Date.now();
-
-    const needLock =
-      !lastPass ||
-      lastPass.sat !== state.sat ||
-      now > new Date(lastPass.los).getTime() + 2000 ||
-      Math.abs(new Date(p.aos).getTime() - new Date(lastPass.aos).getTime()) >
-        120000;
-
-    if (needLock) {
-      lastPass = {
-        sat: state.sat,
-        aos: p.aos,
-        los: p.los,
-        maxEl: p.maxEl,
-        aosAz: p.aosAz,
-      };
-    }
-
-    renderPassTimes();
-
-    const maxEl = document.getElementById("pass-maxel");
-    const durEl = document.getElementById("pass-duration");
-    if (maxEl)
-      maxEl.textContent = (lastPass.maxEl || p.maxEl).toFixed(1) + " deg";
-
-    if (durEl) {
-      const aos = new Date(lastPass.aos);
-      const los = new Date(lastPass.los);
-      const durSec = (los - aos) / 1000;
-      const durMin = Math.floor(durSec / 60);
-      const durS = Math.floor(durSec % 60);
-      durEl.textContent = durMin + "m " + durS + "s";
-    }
-
-    tickCountdown();
-  } else {
-    tickCountdown();
-  }
-}
-
 function notifyObserverChanged() {
   sendObserver();
   updateStationStatus();
 }
-
-function initTimeToggle() {
-  document.querySelectorAll(".time-toggle").forEach((el) => {
-    el.addEventListener("click", toggleTimeMode);
-  });
-}
-
-function initSatSelector() {
-  const btn = document.getElementById("sat-name");
-  const menu = document.getElementById("sat-menu");
-  if (!btn || !menu) return;
-
-  btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    menu.hidden = !menu.hidden;
-    if (!menu.hidden && lastSatList) renderSatMenu(lastSatList);
-  });
-
-  document.addEventListener("click", (e) => {
-    if (!menu.contains(e.target) && e.target !== btn) {
-      menu.hidden = true;
-    }
-  });
-}
-
 function initModeSelect() {
   const sel = document.getElementById("mode-select");
   if (!sel) return;
@@ -1035,16 +564,15 @@ function initRadioControls() {
   updateFineOffsetDisplay();
 }
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", function () {
-    startCountdownTimer();
-    updateStationStatus();
-    initModeSelect();
-    initRadioControls();
-  });
-} else {
+function initTrackerUi() {
   startCountdownTimer();
   updateStationStatus();
   initModeSelect();
   initRadioControls();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initTrackerUi);
+} else {
+  initTrackerUi();
 }

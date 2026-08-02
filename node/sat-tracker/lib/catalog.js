@@ -15,6 +15,34 @@ let catalogNote = "not loaded";
 let ACTIVE = new Set();
 let statusNote = "not loaded";
 
+/**
+ * Known FM CTCSS (Hz). access = talk tone; activation = timer arm (SO-50 only).
+ * Keys: designator, aliases, and NORAD as "N#####".
+ */
+const CTCSS_OVERRIDES = {
+  // SO-50 — dual tone
+  "SO-50": { access: 67.0, activation: 74.4 },
+  SO50: { access: 67.0, activation: 74.4 },
+  N27607: { access: 67.0, activation: 74.4 },
+
+  // ISS crossband FM repeater
+  ISS: { access: 67.0 },
+  "ZARYA": { access: 67.0 },
+  N25544: { access: 67.0 },
+
+  // IO-86 / LAPAN-A2
+  "IO-86": { access: 88.5 },
+  IO86: { access: 88.5 },
+  "LAPAN-A2": { access: 88.5 },
+  LAPANA2: { access: 88.5 },
+  N40931: { access: 88.5 },
+
+  // ASRTU-1
+  "ASRTU-1": { access: 67.0 },
+  ASRTU1: { access: 67.0 },
+  N61781: { access: 67.0 },
+};
+
 function ensureCacheDir() {
   if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 }
@@ -25,14 +53,12 @@ function norm(s) {
     .replace(/[^A-Z0-9]/g, "");
 }
 
-/** RS-44, AO-7, FO-29 from spaced/hyphenated names */
 function designator(name) {
   const m = String(name || "").match(/\b([A-Z]{1,4})[\s-]?(\d{1,3}[A-Z]?)\b/i);
   if (!m) return null;
   return (m[1] + "-" + m[2]).toUpperCase();
 }
 
-/** RS44 / AO7 callsigns → RS-44 / AO-7 */
 function callsignDesignator(cs) {
   if (!cs) return null;
   const s = String(cs).trim().toUpperCase();
@@ -48,7 +74,6 @@ function makeKey(name, norad, callsign) {
   return norm(name).slice(0, 16) || "UNKNOWN";
 }
 
-/** Prefer clean designator names (RS-44) over project names (DOSAAF-85) */
 function betterName(a, b) {
   if (!a) return b;
   if (!b) return a;
@@ -101,6 +126,73 @@ function isInverting(mode) {
   if (/INVERT/.test(m)) return true;
   if (/\bSSB\b|\bCW\b|\bLINEAR\b|\bA\b|\bB\b/.test(m)) return true;
   return true;
+}
+
+/**
+ * Extract CTCSS tones from mode text + known sat overrides.
+ * Returns { access, activation } in Hz (or null).
+ */
+function parseCtcss(modeStr, satKey, satName, norad) {
+  const result = { access: null, activation: null };
+  const m = String(modeStr || "");
+
+  // "CTCSS 67.0" / "67.0 Hz CTCSS" / "PL 67"
+  const tones = [];
+  const re =
+    /(?:CTCSS|PL|TONE)\s*[:=]?\s*(\d{2,3}(?:\.\d)?)|(\d{2,3}\.\d)\s*(?:Hz)?\s*(?:CTCSS|PL)/gi;
+  let match;
+  while ((match = re.exec(m)) !== null) {
+    const v = parseFloat(match[1] || match[2]);
+    if (Number.isFinite(v) && v >= 67 && v <= 254.1) tones.push(v);
+  }
+  if (!tones.length && /CTCSS|\bPL\b/i.test(m)) {
+    const bare = m.match(/\b(6[7-9]|[7-9]\d|1\d{2}|2[0-4]\d)(?:\.\d)?\b/);
+    if (bare) {
+      const v = parseFloat(bare[0]);
+      if (v >= 67 && v <= 254.1) tones.push(v);
+    }
+  }
+
+  if (tones.length >= 2) {
+    const act = tones.find((t) => Math.abs(t - 74.4) < 0.05);
+    if (act != null) {
+      result.activation = act;
+      result.access = tones.find((t) => t !== act) || tones[0];
+    } else {
+      result.access = tones[0];
+      result.activation = tones[1];
+    }
+  } else if (tones.length === 1) {
+    result.access = tones[0];
+  }
+
+  // Overrides win — catalog strings often omit tone for ISS etc.
+  const candidates = [
+    satKey,
+    satName,
+    designator(satName),
+    designator(satKey),
+    norad != null ? "N" + norad : null,
+  ]
+    .filter(Boolean)
+    .map((k) => String(k).toUpperCase());
+
+  // Also match "ISS" substring in name (e.g. "ISS (ZARYA)")
+  const nameU = String(satName || "").toUpperCase();
+  if (/\bISS\b/.test(nameU) || nameU.includes("ZARYA")) {
+    candidates.unshift("ISS");
+  }
+
+  for (const k of candidates) {
+    const o = CTCSS_OVERRIDES[k] || CTCSS_OVERRIDES[norm(k)];
+    if (o) {
+      if (o.access != null) result.access = o.access;
+      if (o.activation != null) result.activation = o.activation;
+      break;
+    }
+  }
+
+  return result;
 }
 
 function scoreRow(row) {
@@ -197,7 +289,6 @@ function parseAmsatJson(arr) {
       continue;
     }
 
-    // Prefer RS-44 over DOSAAF-85
     prev.name = betterName(prev.name, entry.name);
 
     if (entry.callsign && !prev.callsign) {
@@ -246,12 +337,28 @@ function parseAmsatJson(arr) {
         : fromCs || fromName || entry.name;
 
     let key = makeKey(entry.name, entry.norad, entry.callsign);
-    if (key.startsWith("N") && (fromCs || fromName)) {
+    // Prefer ISS as key for NORAD 25544
+    if (entry.norad === 25544) key = "ISS";
+    else if (key.startsWith("N") && (fromCs || fromName)) {
       key = fromCs || fromName;
     }
     entry.key = key;
-    entry.display = clean;
+    entry.display = entry.norad === 25544 ? "ISS" : clean;
     entry.trackable = !!entry.norad;
+
+    // Attach CTCSS to each mode (FM modes get override tones)
+    for (const mo of entry.modes) {
+      const tones = parseCtcss(mo.mode, key, entry.name, entry.norad);
+      // Only attach to FM-ish modes so linear modes stay clean
+      if (isFmMode(mo.mode) || tones.access != null || tones.activation != null) {
+        mo.ctcssAccess = tones.access;
+        mo.ctcssActivation = tones.activation;
+      } else {
+        mo.ctcssAccess = null;
+        mo.ctcssActivation = null;
+      }
+    }
+
     catalog[key] = entry;
   }
   return catalog;
@@ -292,6 +399,9 @@ function horizonFlags(norad, observer) {
   const above = el != null && el >= 0;
   if (above) return { above: true, soon: false, el, secToAos: 0 };
 
+  // Coarse 30s scan, then binary-refine so AOS has true second resolution
+  // (without this every sat lands on a multiple of 30 and client countdowns
+  // share the same second residual).
   const step = 30;
   let prev = el;
   let secToAos = null;
@@ -299,7 +409,19 @@ function horizonFlags(norad, observer) {
     const look2 = lookAngles(rec, observer, new Date(now.getTime() + s * 1000));
     if (!look2) continue;
     if (prev != null && prev < 0 && look2.el >= 0) {
-      secToAos = s;
+      let lo = s - step;
+      let hi = s;
+      for (let i = 0; i < 10; i++) {
+        const mid = (lo + hi) / 2;
+        const lookM = lookAngles(
+          rec,
+          observer,
+          new Date(now.getTime() + mid * 1000),
+        );
+        if (lookM && lookM.el >= 0) hi = mid;
+        else lo = mid;
+      }
+      secToAos = Math.round(hi);
       break;
     }
     prev = look2.el;
@@ -404,6 +526,14 @@ async function refreshCatalog() {
       );
     } else {
       console.warn("RS-44 not found in catalog keys");
+    }
+    const iss = catalog["ISS"];
+    if (iss) {
+      const fm = (iss.modes || []).filter((m) => isFmMode(m.mode));
+      console.log(
+        "ISS modes:",
+        (iss.modes || []).map((m) => m.mode + (m.ctcssAccess != null ? " CTCSS " + m.ctcssAccess : "")).join(" | "),
+      );
     }
   } catch (e) {
     if (fs.existsSync(CATALOG_CACHE)) {
@@ -515,6 +645,7 @@ module.exports = {
   centerFreqMHz,
   isFmMode,
   isInverting,
+  parseCtcss,
   formatFreqDisplay,
   formatFreqDisplayFromMode,
   isHeard,

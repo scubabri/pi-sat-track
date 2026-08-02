@@ -1,0 +1,98 @@
+/* ========== MAIN LAYOUT ========== */
+#main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#left-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  position: relative;
+}
+
+#map-container {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+
+#map {
+  width: 100%;
+  height: 100%;
+  background: #0a1628;
+}
+
+/* ========== RADAR + ROTOR GAUGES ========== */
+#radar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 500;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+#radar-canvas,
+#rotor-az-canvas {
+  display: block;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: rgba(13, 17, 23, 0.75);
+  border: 1px solid var(--border);
+}
+
+#rotor-el-canvas {
+  display: block;
+  width: 220px;
+  height: 220px;
+  border-radius: 0;
+  background: transparent;
+  border: none;
+}
+
+.rotor-gauge-wrap {
+  position: relative;
+  width: 220px;
+}
+
+.rotor-gauge-label {
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+  color: var(--text-dim);
+  background: rgba(13, 17, 23, 0.85);
+  padding: 1px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+/* EL semicircle sits lower in the 220 canvas — tuck label down a bit */
+.rotor-gauge-wrap:has(#rotor-el-canvas) .rotor-gauge-label {
+  top: 14px;
+}
+
+#pass-profile {
+  height: 120px;
+  flex-shrink: 0;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+}
+
+#profile-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}

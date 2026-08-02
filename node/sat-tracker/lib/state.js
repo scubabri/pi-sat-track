@@ -10,8 +10,9 @@ const {
   isFmMode,
   centerFreqMHz,
   listSatsPayload,
+  parseCtcss,
 } = require("./catalog");
-const { fetchTLE, cacheSatrec } = require("./tle");
+const { fetchTLE, cacheSatrec, getSatrecForNorad, getOrbitForNorad } = require("./tle");
 const {
   lookAngles,
   lookAnglesLead,
@@ -22,7 +23,7 @@ const {
   findPasses,
   passSkyPath,
 } = require("./orbit");
-const tci = require("./tci");
+const radios = require("./radios");
 const rotor = require("./rotor");
 
 let currentSatKey = null;
@@ -31,6 +32,8 @@ let satrec = null;
 let tleNote = "";
 let currentNorad = null;
 let currentOrbit = null;
+let favoriteKeys = [];
+let ulFixed = false;
 let observer = {
   latitude: satellite.degreesToRadians(40.5),
   longitude: satellite.degreesToRadians(-111.9),
@@ -42,13 +45,61 @@ let lastAosAz = null;
 
 function init(opts) {
   if (opts.broadcast) broadcastFn = opts.broadcast;
-  tci.init({
-    getContext: () => ({ satrec, observer, currentSatKey, currentModeIndex }),
-    broadcast: broadcastFn,
-  });
-  rotor.init({
-    broadcast: broadcastFn,
-  });
+  const ctx = () => ({ satrec, observer, currentSatKey, currentModeIndex });
+  radios.init({ getContext: ctx, broadcast: broadcastFn });
+  rotor.init({ broadcast: broadcastFn });
+}
+
+function radio() {
+  return radios.active();
+}
+
+function applyLockDefaultForMode(modeStr) {
+  const fm = isFmMode(modeStr);
+  const r = radio();
+  if (typeof r.applyDefaultLock === "function") r.applyDefaultLock(fm);
+  else if (typeof r.setLock === "function") r.setLock(fm);
+}
+
+function applyUlFixedDefaultForMode(active) {
+  const fm = isFmMode(active && active.mode);
+  const ulMHz = centerFreqMHz(active && active.uplink);
+  const ul = ulMHz != null ? parseFloat(ulMHz) : null;
+  ulFixed = !!(fm && ul != null && Number.isFinite(ul) && ul < 200);
+  console.log("UL fixed default", ulFixed, "(FM", fm, "UL", ul, "MHz)");
+}
+
+function setUlFixed(on) {
+  ulFixed = !!on;
+  console.log("UL fixed", ulFixed ? "ON (published)" : "OFF (Doppler)");
+}
+
+function applyCtcssDefaultForMode(info, active) {
+  let access = active && active.ctcssAccess;
+  let activation = active && active.ctcssActivation;
+  if (access == null && activation == null) {
+    const tones = parseCtcss(
+      active && active.mode,
+      currentSatKey,
+      info && (info.display || info.name),
+      info && info.norad,
+    );
+    access = tones.access;
+    activation = tones.activation;
+  }
+  const r = radio();
+  if (typeof r.applyDefaultCtcss === "function") {
+    r.applyDefaultCtcss(access, activation);
+  }
+  console.log(
+    "CTCSS defaults → access",
+    access,
+    "activation",
+    activation,
+    "(via",
+    r.meta && r.meta.id,
+    ")",
+  );
 }
 
 function setObserver(lat, lon, elevM) {
@@ -76,6 +127,8 @@ function getActiveMode(info) {
       uplink: info.uplink || "",
       downlink: info.downlink || "",
       beacon: info.beacon || "",
+      ctcssAccess: null,
+      ctcssActivation: null,
     };
   }
   const idx = Math.max(0, Math.min(currentModeIndex, modes.length - 1));
@@ -86,6 +139,10 @@ function setModeIndex(index) {
   const info = getCatalog()[currentSatKey];
   const max = info && info.modes ? info.modes.length - 1 : 0;
   currentModeIndex = Math.max(0, Math.min(Math.floor(index), max));
+  const active = getActiveMode(info);
+  applyLockDefaultForMode(active && active.mode);
+  applyCtcssDefaultForMode(info, active);
+  applyUlFixedDefaultForMode(active);
   return currentModeIndex;
 }
 
@@ -97,7 +154,7 @@ async function loadSatellite(key) {
   currentModeIndex = 0;
   currentNorad = info.norad;
   lastAosAz = null;
-  tci.resetOffsets();
+  radios.resetAllOffsets();
   const modes = info.modes || [];
   console.log(
     "Catalog freqs for",
@@ -124,6 +181,10 @@ async function loadSatellite(key) {
       tleNote +
       (currentOrbit != null ? " orbit " + currentOrbit : ""),
   );
+  const active = getActiveMode(info);
+  applyLockDefaultForMode(active && active.mode);
+  applyCtcssDefaultForMode(info, active);
+  applyUlFixedDefaultForMode(active);
 }
 
 function modesPayload(info) {
@@ -133,8 +194,16 @@ function modesPayload(info) {
     uplink: centerFreqMHz(m.uplink) || "-",
     downlink: centerFreqMHz(m.downlink) || "-",
     isFm: isFmMode(m.mode),
+    ctcssAccess: m.ctcssAccess != null ? m.ctcssAccess : null,
+    ctcssActivation: m.ctcssActivation != null ? m.ctcssActivation : null,
   }));
   if (!modes.length) {
+    const tones = parseCtcss(
+      info.mode,
+      currentSatKey,
+      info.display || info.name,
+      info.norad,
+    );
     modes = [
       {
         index: 0,
@@ -142,10 +211,124 @@ function modesPayload(info) {
         uplink: centerFreqMHz(info.uplink) || "-",
         downlink: centerFreqMHz(info.downlink) || "-",
         isFm: isFmMode(info.mode),
+        ctcssAccess: tones.access,
+        ctcssActivation: tones.activation,
       },
     ];
   }
+  for (const m of modes) {
+    if (m.ctcssAccess == null && m.ctcssActivation == null && m.isFm) {
+      const tones = parseCtcss(
+        m.mode,
+        currentSatKey,
+        info.display || info.name,
+        info.norad,
+      );
+      m.ctcssAccess = tones.access;
+      m.ctcssActivation = tones.activation;
+    }
+  }
   return modes;
+}
+
+function setFavorites(keys) {
+  if (!Array.isArray(keys)) keys = [];
+  favoriteKeys = keys
+    .filter((k) => typeof k === "string" && k)
+    .filter((k, i, a) => a.indexOf(k) === i)
+    .slice(0, 24);
+  favoriteKeys.forEach((key) => {
+    ensureSatrecForKey(key).catch(() => {});
+  });
+  console.log(
+    "Favorites set:",
+    favoriteKeys.length,
+    favoriteKeys.join(", ") || "(none)",
+  );
+}
+
+async function ensureSatrecForKey(key) {
+  if (!key) return null;
+  if (key === currentSatKey && satrec) return satrec;
+  const info = getCatalog()[key] || {};
+  const norad = info.norad != null ? String(info.norad) : null;
+  if (!norad) return null;
+  let rec = getSatrecForNorad(norad);
+  if (rec) return rec;
+  try {
+    const tle = await fetchTLE(norad);
+    if (!tle) return null;
+    rec = satellite.twoline2satrec(tle.l1, tle.l2);
+    cacheSatrec(norad, rec);
+    return rec;
+  } catch (e) {
+    return null;
+  }
+}
+
+function lookSnapshotForSatrec(rec, key) {
+  if (!rec) return null;
+  const now = new Date();
+  const look = lookAngles(rec, observer, now);
+  if (!look) return null;
+  const pos = groundPoint(rec, now);
+  const rr = rangeRateKmS(rec, observer, now);
+  const info = getCatalog()[key] || {};
+  let orbit = null;
+  if (key === currentSatKey && currentOrbit != null) {
+    orbit = currentOrbit;
+  } else if (info.norad != null) {
+    orbit = getOrbitForNorad(info.norad);
+  }
+  return {
+    key: key,
+    display: info.display || info.name || key,
+    norad: info.norad != null ? info.norad : null,
+    look: { az: look.az, el: look.el, rangeKm: look.rangeKm },
+    position: pos
+      ? { lat: pos.lat, lon: pos.lon, heightKm: pos.heightKm }
+      : null,
+    rangeRateKmS: rr,
+    above: look.el >= 0,
+    orbit: orbit,
+  };
+}
+
+function computeFavoritesLooks() {
+  const out = [];
+  const seen = new Set();
+  const keys = favoriteKeys.slice();
+  if (currentSatKey && !keys.includes(currentSatKey)) {
+    keys.unshift(currentSatKey);
+  }
+  for (const key of keys) {
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    let rec = null;
+    if (key === currentSatKey && satrec) {
+      rec = satrec;
+    } else {
+      const info = getCatalog()[key] || {};
+      const norad = info.norad != null ? String(info.norad) : null;
+      if (norad) rec = getSatrecForNorad(norad);
+    }
+    const snap = lookSnapshotForSatrec(rec, key);
+    if (snap) out.push(snap);
+    else {
+      const info = getCatalog()[key] || {};
+      out.push({
+        key: key,
+        display: info.display || info.name || key,
+        norad: info.norad != null ? info.norad : null,
+        look: null,
+        position: null,
+        rangeRateKmS: null,
+        above: false,
+        orbit: info.norad != null ? getOrbitForNorad(info.norad) : null,
+      });
+    }
+  }
+  return out;
 }
 
 function computeTick() {
@@ -154,7 +337,6 @@ function computeTick() {
   const look = lookAngles(satrec, observer, now);
   if (!look) return null;
 
-  // Leapfrog target for rotor (actual look still used for UI / Doppler / log)
   const leadDeg = config.ROTOR_LEAD_DEG || 0;
   const leadLook =
     leadDeg > 0 ? lookAnglesLead(satrec, observer, now, leadDeg) : look;
@@ -164,8 +346,22 @@ function computeTick() {
   const activeMode = getActiveMode(info);
   const freqs = formatFreqDisplayFromMode(activeMode);
   const inverting = isInverting(activeMode && activeMode.mode);
-  const radio = tci.getRadioState();
+  const rState = radio().getRadioState();
   const modes = modesPayload(info);
+
+  let ctcssAccessHz =
+    rState.ctcssAccessHz != null
+      ? rState.ctcssAccessHz
+      : modes[currentModeIndex] && modes[currentModeIndex].ctcssAccess != null
+        ? modes[currentModeIndex].ctcssAccess
+        : null;
+  let ctcssActivationHz =
+    rState.ctcssActivationHz != null
+      ? rState.ctcssActivationHz
+      : modes[currentModeIndex] &&
+          modes[currentModeIndex].ctcssActivation != null
+        ? modes[currentModeIndex].ctcssActivation
+        : null;
 
   let ulDopplerHz = null;
   let dlDopplerHz = null;
@@ -178,38 +374,57 @@ function computeTick() {
     const df = 1 - rr / C_MS;
     if (freqs.dlMHz != null) {
       const f0 = freqs.dlMHz * 1e6;
-      const fRx = f0 * df + radio.manualDlOffset;
+      const fRx =
+        f0 * df + (rState.manualDlOffset || 0) + (rState.dlFineOffset || 0);
       dlDopplerHz = f0 * df - f0;
       dlHz = Math.round(fRx);
       downlink = (fRx / 1e6).toFixed(6);
     }
     if (freqs.ulMHz != null) {
       const f0 = freqs.ulMHz * 1e6;
-      let fTx;
-      if (inverting) {
-        fTx = f0 * (2 - df) - radio.manualDlOffset + radio.ulFineOffset;
-        ulDopplerHz = f0 * (2 - df) - f0;
+      if (ulFixed) {
+        const fTx = f0 + (rState.ulFineOffset || 0);
+        ulDopplerHz = 0;
+        ulHz = Math.round(fTx);
+        uplink = (fTx / 1e6).toFixed(6);
       } else {
-        fTx = f0 * df + radio.manualDlOffset + radio.ulFineOffset;
-        ulDopplerHz = f0 * df - f0;
+        let fTx;
+        if (inverting) {
+          fTx =
+            f0 * (2 - df) -
+            (rState.manualDlOffset || 0) +
+            (rState.ulFineOffset || 0);
+          ulDopplerHz = f0 * (2 - df) - f0;
+        } else {
+          fTx =
+            f0 * df + (rState.manualDlOffset || 0) + (rState.ulFineOffset || 0);
+          ulDopplerHz = f0 * df - f0;
+        }
+        ulHz = Math.round(fTx);
+        uplink = (fTx / 1e6).toFixed(6);
       }
-      ulHz = Math.round(fTx);
-      uplink = (fTx / 1e6).toFixed(6);
     }
+  } else if (ulFixed && freqs.ulMHz != null) {
+    const fTx = freqs.ulMHz * 1e6 + (rState.ulFineOffset || 0);
+    ulHz = Math.round(fTx);
+    uplink = (fTx / 1e6).toFixed(6);
+    ulDopplerHz = 0;
   }
 
-  tci.pushFrequencies();
+  try {
+    const p = radio().pushFrequencies(ulHz, dlHz);
+    if (p && typeof p.catch === "function") {
+      p.catch((e) => console.warn("Radio push:", e.message));
+    }
+  } catch (e) {
+    console.warn("Radio push:", e.message);
+  }
 
-  // Rotor gets leapfrog target; park still uses current el gate
   const trackLook = leadLook || look;
   rotor.updateTracking(trackLook, lastAosAz);
 
   const r = rotor.getRotorState();
-
-  if (r.antennaOn) {
-    // Log true sat position (not the lead point)
-    rotor.logSample(look.az, look.el);
-  }
+  if (r.antennaOn) rotor.logSample(look.az, look.el);
 
   return {
     type: "tick",
@@ -217,6 +432,7 @@ function computeTick() {
     modeIndex: currentModeIndex,
     mode: freqs.mode,
     modes,
+    isFm: !!freqs.isFm,
     time: now.toISOString(),
     look: { az: look.az, el: look.el, rangeKm: look.rangeKm },
     leadLook: leadLook ? { az: leadLook.az, el: leadLook.el } : null,
@@ -235,15 +451,22 @@ function computeTick() {
       activeMode && activeMode.uplink ? String(activeMode.uplink) : "-",
     passbandDl:
       activeMode && activeMode.downlink ? String(activeMode.downlink) : "-",
-    radioOn: radio.radioOn,
-    tciConnected: radio.tciConnected,
-    manualDlOffset: radio.manualDlOffset,
-    ulFineOffset: radio.ulFineOffset,
+    radioOn: rState.radioOn,
+    locked: !!rState.locked,
+    ulFixed,
+    tciConnected: rState.tciConnected || rState.connected,
+    manualDlOffset: rState.manualDlOffset || 0,
+    ulFineOffset: rState.ulFineOffset || 0,
+    dlFineOffset: rState.dlFineOffset || 0,
+    ctcssMode: rState.ctcssMode || "off",
+    ctcssAccessHz,
+    ctcssActivationHz,
     antennaOn: r.antennaOn,
     rotorAz: r.az,
     rotorEl: r.el,
     rotorAzConnected: r.azConnected,
     rotorElConnected: r.elConnected,
+    favorites: computeFavoritesLooks(),
   };
 }
 
@@ -271,7 +494,7 @@ function computeState() {
 
   const info = getCatalog()[currentSatKey] || {};
   const tick = computeTick();
-  const radio = tci.getRadioState();
+  const rState = radio().getRadioState();
   const r = rotor.getRotorState();
 
   return {
@@ -283,6 +506,7 @@ function computeState() {
     modeIndex: tick ? tick.modeIndex : 0,
     mode: tick ? tick.mode : "",
     modes: tick ? tick.modes : [],
+    isFm: tick ? tick.isFm : false,
     uplink: tick ? tick.uplink : "-",
     downlink: tick ? tick.downlink : "-",
     ulHz: tick ? tick.ulHz : null,
@@ -303,15 +527,22 @@ function computeState() {
     trail,
     forward,
     passes,
-    radioOn: radio.radioOn,
-    tciConnected: radio.tciConnected,
-    manualDlOffset: radio.manualDlOffset,
-    ulFineOffset: radio.ulFineOffset,
+    radioOn: rState.radioOn,
+    locked: !!rState.locked,
+    ulFixed,
+    tciConnected: rState.tciConnected || rState.connected,
+    manualDlOffset: rState.manualDlOffset || 0,
+    ulFineOffset: rState.ulFineOffset || 0,
+    dlFineOffset: rState.dlFineOffset || 0,
+    ctcssMode: rState.ctcssMode || "off",
+    ctcssAccessHz: tick ? tick.ctcssAccessHz : null,
+    ctcssActivationHz: tick ? tick.ctcssActivationHz : null,
     antennaOn: r.antennaOn,
     rotorAz: r.az,
     rotorEl: r.el,
     rotorAzConnected: r.azConnected,
     rotorElConnected: r.elConnected,
+    favorites: computeFavoritesLooks(),
   };
 }
 
@@ -326,6 +557,8 @@ module.exports = {
   getCurrentKey,
   setModeIndex,
   loadSatellite,
+  setUlFixed,
+  setFavorites,
   computeTick,
   computeState,
   satsPayload,
