@@ -5,8 +5,10 @@
  *   1. Create lib/rotors/<name>.js (see INTERFACE.md)
  *   2. register(require("./name")) below
  *   3. Implement meta.match(config) — first match wins
+ *   4. Set meta.ports = 1 (single USB) or 2 (AZ+EL)
  *
  * state.js / server.js only use rotors.active() — no per-rotor if/else.
+ * UI dropdown is built from catalog() so new drivers appear automatically.
  */
 
 const config = require("../config");
@@ -16,7 +18,13 @@ const drivers = [];
 let broadcastFn = () => {};
 
 const nullDriver = {
-  meta: { id: "none", label: "No rotor", match: () => false },
+  meta: {
+    id: "none",
+    label: "No rotor",
+    ports: 0,
+    defaultBaud: 9600,
+    match: () => false,
+  },
   init() {},
   setAntenna() {},
   updateTracking() {},
@@ -49,8 +57,17 @@ function register(driver) {
     console.warn("Rotor driver already registered:", driver.meta.id);
     return;
   }
+  // Defaults for older drivers
+  if (driver.meta.ports == null) driver.meta.ports = 1;
+  if (driver.meta.defaultBaud == null) driver.meta.defaultBaud = 9600;
   drivers.push(driver);
-  console.log("Rotor registered:", driver.meta.id, "—", driver.meta.label || "");
+  console.log(
+    "Rotor registered:",
+    driver.meta.id,
+    "—",
+    driver.meta.label || "",
+    "(ports=" + driver.meta.ports + ")",
+  );
 }
 
 function resolve() {
@@ -72,6 +89,18 @@ function all() {
   return drivers.slice();
 }
 
+/** UI-friendly list derived from registered drivers. */
+function catalog() {
+  return drivers.map((d) => ({
+    id: d.meta.id,
+    label: d.meta.label || d.meta.id,
+    ports: d.meta.ports != null ? d.meta.ports : 1,
+    defaultBaud: d.meta.defaultBaud != null ? d.meta.defaultBaud : 9600,
+    defaultDevice: d.meta.defaultDevice || "/dev/ttyACM0",
+    hint: d.meta.hint || "",
+  }));
+}
+
 function get(id) {
   return drivers.find((d) => d.meta.id === id) || null;
 }
@@ -91,8 +120,6 @@ function init(opts) {
     ")",
   );
 }
-
-// ── Convenience wrappers (so callers can keep using rotor.setAntenna etc.) ──
 
 function setAntenna(on) {
   active().setAntenna(!!on);
@@ -121,8 +148,6 @@ function applyEndpointChange() {
 }
 
 // ── Built-in drivers (order = match priority) ─────────────────
-// More specific first
-
 register(require("./gs232"));
 register(require("./rt21"));
 
@@ -131,6 +156,7 @@ module.exports = {
   resolve,
   active,
   all,
+  catalog,
   get,
   init,
   setAntenna,
