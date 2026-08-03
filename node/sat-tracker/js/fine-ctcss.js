@@ -26,7 +26,10 @@
       dlEl.classList.toggle("nonzero", Math.abs(dlFineOffset) >= 1);
     }
     const stepEl = document.getElementById("fine-step");
-    if (stepEl) stepEl.value = String(fineStep);
+    // Don't overwrite while the user is typing a new step
+    if (stepEl && document.activeElement !== stepEl) {
+      stepEl.value = String(fineStep);
+    }
 
     const row = document.getElementById("ctcss-row");
     const has = ctcssAccessHz != null || ctcssActivationHz != null;
@@ -85,10 +88,10 @@
     }
   }
 
-  /** Toggle: active → off; inactive → that mode (exclusive). */
   function sendCtcss(which) {
+    // Toggle: click active mode again → off
     let next = which;
-    if (which === ctcssMode) next = "off";
+    if (ctcssMode === which) next = "off";
     ctcssMode = next;
     updateDisplays();
     if (typeof ws !== "undefined" && ws && ws.readyState === WebSocket.OPEN) {
@@ -154,7 +157,22 @@
     if (stepEl) {
       stepEl.addEventListener("change", () => {
         const step = parseInt(stepEl.value, 10);
-        if (Number.isFinite(step) && step > 0) fineStep = step;
+        if (!Number.isFinite(step) || step <= 0) {
+          stepEl.value = String(fineStep);
+          return;
+        }
+        fineStep = step;
+        // Persist to server so status broadcasts stop resetting the field
+        if (typeof ws !== "undefined" && ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(
+            JSON.stringify({
+              type: "fine",
+              delta: 0,
+              side: "ul",
+              step: fineStep,
+            }),
+          );
+        }
       });
       stepEl.addEventListener("dblclick", sendCenter);
     }
