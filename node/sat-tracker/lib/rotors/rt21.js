@@ -22,6 +22,10 @@ const config = require("../config");
 const meta = {
   id: "rt21",
   label: "Green Heron RT-21",
+  ports: 2,
+  defaultBaud: 4800,
+  defaultDevice: "/dev/ttyUSB0",
+  hint: "Two serial ports — one for AZ, one for EL.",
   match(cfg) {
     const t = String(
       (cfg && cfg.ROTOR_TYPE) || process.env.ROTOR_TYPE || "rt21",
