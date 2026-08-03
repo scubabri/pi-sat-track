@@ -407,6 +407,10 @@ function updateTracking(look, aosAz) {
   }
 }
 
+function logSample(/* satAz, satEl */) {
+  // GS-232 driver does not write a track log (optional later)
+}
+
 module.exports = {
   meta,
   init,
@@ -416,4 +420,5 @@ module.exports = {
   statusPayload,
   broadcastStatus,
   applyEndpointChange,
+  logSample,
 };
