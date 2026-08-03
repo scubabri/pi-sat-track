@@ -47,6 +47,7 @@ const nullDriver = {
   },
   broadcastStatus() {},
   applyEndpointChange() {},
+  logSample() {},
 };
 
 function register(driver) {
@@ -147,6 +148,11 @@ function applyEndpointChange() {
   }
 }
 
+function logSample(satAz, satEl) {
+  const d = active();
+  if (typeof d.logSample === "function") d.logSample(satAz, satEl);
+}
+
 // ── Built-in drivers (order = match priority) ─────────────────
 register(require("./gs232"));
 register(require("./rt21"));
@@ -165,5 +171,6 @@ module.exports = {
   statusPayload,
   broadcastStatus,
   applyEndpointChange,
+  logSample,
   nullDriver,
 };
