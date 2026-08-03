@@ -28,41 +28,41 @@ const meta = {
     const t = String(cfg.RADIO_TYPE || "").toLowerCase();
     return (
       cfg.RADIO_TRANSPORT === "tcp" &&
-      cfg.RADIO_PROTOCOL === "tci" &&
-      (t === "aethersdr" || t === "expertsdr")
+      (t === "aethersdr" || t === "expertsdr") &&
+      String(cfg.RADIO_PROTOCOL || "").toLowerCase() === "tci"
     );
   },
 };
 
 let tciWs = null;
 let tciConnected = false;
+let tciConnecting = false;
+let reconnectTimer = null;
 let radioOn = false;
-let connecting = false;
 let locked = false;
 let manualDlOffset = 0;
 let ulFineOffset = 0;
 let dlFineOffset = 0;
-let lastCmdDl = 0;
-let lastCmdUl = 0;
+let digitStep = 100;
+let lastCmdDl = null;
+let lastCmdUl = null;
 let lastModDl = "";
 let lastModUl = "";
-let digitStep = 100;
-let reconnectTimer = null;
+let vfoPollTimer = null;
+let broadcastFn = () => {};
 let ctcssMode = "off";
 let ctcssAccessHz = null;
 let ctcssActivationHz = null;
 let lastCtcssApplied = null;
 
-const UL_RX = 1;
-const CTCSS_MODE_TX = 2;
+const VFO_POLL_MS = 500;
+const VFO_THRESH_HZ = 80;
+const SYNC_WINDOW_MS = 12000;
+const SYNC_OK_STREAK = 2;
 
-const SYNC_WINDOW_MS = 10000;
-const SYNC_OK_STREAK = 3;
 let syncNeeded = false;
 let syncStartedAt = 0;
 let syncOkStreak = 0;
-
-const api = createApiClient();
 
 let getCtx = () => ({
   satrec: null,
@@ -70,19 +70,20 @@ let getCtx = () => ({
   currentSatKey: null,
   currentModeIndex: 0,
 });
-let broadcastFn = () => {};
+
+const api = createApiClient({
+  getHost: () => config.FLEX_API_HOST || "",
+  getPort: () => config.FLEX_API_PORT || 4992,
+  label: "TCI/API",
+});
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 function init(opts) {
-  if (opts.getContext) getCtx = opts.getContext;
-  if (opts.broadcast) broadcastFn = opts.broadcast;
-}
-
-function apiHost() {
-  return (config.FLEX_API_HOST || "").trim();
-}
-
-function apiPort() {
-  return config.FLEX_API_PORT || 4992;
+  if (opts && opts.broadcast) broadcastFn = opts.broadcast;
+  if (opts && opts.getContext) getCtx = opts.getContext;
 }
 
 function markSyncNeeded(reason) {
@@ -91,8 +92,8 @@ function markSyncNeeded(reason) {
   syncOkStreak = 0;
   lastModDl = "";
   lastModUl = "";
-  lastCmdDl = 0;
-  lastCmdUl = 0;
+  lastCmdDl = null;
+  lastCmdUl = null;
   console.log("TCI syncNeeded:", reason || "enable");
 }
 
@@ -109,7 +110,7 @@ function maybeClearSync(okThisTick) {
   else syncOkStreak = 0;
   const elapsed = Date.now() - syncStartedAt;
   if (syncOkStreak >= SYNC_OK_STREAK) {
-    clearSyncNeeded("streak " + syncOkStreak);
+    clearSyncNeeded("verified streak " + syncOkStreak);
   } else if (elapsed >= SYNC_WINDOW_MS && syncOkStreak >= 1) {
     clearSyncNeeded("window " + elapsed + "ms");
   } else if (elapsed >= SYNC_WINDOW_MS * 1.5) {
@@ -123,25 +124,20 @@ function statusPayload() {
     radioOn,
     locked,
     connected: tciConnected,
-    connecting,
+    connecting: tciConnecting,
     host: config.TCI_HOST,
     port: config.TCI_PORT,
-    uri: config.TCI_URI,
-    apiConnected: api.isConnected(),
-    apiHost: apiHost(),
-    apiPort: apiPort(),
     manualDlOffset,
     ulFineOffset,
     dlFineOffset,
     step: digitStep,
     lastCmdDl,
     lastCmdUl,
-    lastModDl,
-    lastModUl,
     ctcssMode,
     ctcssAccessHz,
     ctcssActivationHz,
     syncNeeded,
+    apiConnected: api.connected,
   };
 }
 
@@ -152,7 +148,6 @@ function broadcastStatus() {
 function tciSend(cmd) {
   if (!tciWs || tciWs.readyState !== WebSocket.OPEN) return false;
   try {
-    if (!cmd.endsWith(";")) cmd += ";";
     tciWs.send(cmd);
     return true;
   } catch (e) {
@@ -161,39 +156,81 @@ function tciSend(cmd) {
   }
 }
 
-function probePort(host, port, timeoutMs) {
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  if (!radioOn) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    if (radioOn && !tciConnected && !tciConnecting) open().catch(() => {});
+  }, 3000);
+}
+
+function open() {
+  if (tciWs && tciConnected) return Promise.resolve(true);
+  if (tciConnecting) return Promise.resolve(false);
+  const host = config.TCI_HOST || "127.0.0.1";
+  const port = config.TCI_PORT || 50001;
+  const url = "ws://" + host + ":" + port;
+  tciConnecting = true;
+  broadcastStatus();
   return new Promise((resolve) => {
-    const socket = new net.Socket();
-    let done = false;
-    const finish = (ok, err) => {
-      if (done) return;
-      done = true;
-      try {
-        socket.destroy();
-      } catch (_) {}
-      resolve({ ok, err: err || null });
+    let settled = false;
+    const done = (ok) => {
+      if (settled) return;
+      settled = true;
+      tciConnecting = false;
+      if (!ok) scheduleReconnect();
+      broadcastStatus();
+      resolve(ok);
     };
-    socket.setTimeout(timeoutMs || 1500);
-    socket.once("connect", () => finish(true));
-    socket.once("timeout", () => finish(false, "timeout"));
-    socket.once("error", (e) => finish(false, e.message));
-    socket.connect(port, host);
+    try {
+      const ws = new WebSocket(url);
+      const timer = setTimeout(() => {
+        try {
+          ws.close();
+        } catch (_) {}
+        done(false);
+      }, 4000);
+      ws.on("open", () => {
+        clearTimeout(timer);
+        tciWs = ws;
+        tciConnected = true;
+        markSyncNeeded("open");
+        console.log("TCI connected", url);
+        startVfoPoll();
+        done(true);
+      });
+      ws.on("close", () => {
+        tciConnected = false;
+        tciConnecting = false;
+        tciWs = null;
+        stopVfoPoll();
+        broadcastStatus();
+        if (radioOn) scheduleReconnect();
+      });
+      ws.on("error", (e) => {
+        console.warn("TCI error:", e.message);
+        if (!settled) {
+          clearTimeout(timer);
+          done(false);
+        }
+      });
+      ws.on("message", () => {});
+    } catch (e) {
+      console.warn("TCI open exception:", e.message);
+      done(false);
+    }
   });
 }
 
-function clearReconnect() {
+function close() {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
-}
-
-function disconnect() {
-  clearReconnect();
-  connecting = false;
+  stopVfoPoll();
   if (tciWs) {
     try {
-      tciWs.removeAllListeners();
       tciWs.close();
     } catch (_) {}
     tciWs = null;
@@ -211,9 +248,10 @@ function disconnect() {
 
 function modesForActive(active) {
   const modeStr = (active && active.mode) || "";
-  if (isFmMode(modeStr)) return { ul: "NFM", dl: "NFM" };
+  // AetherSDR expects FM (not NFM) for amateur FM sats / ISS
+  if (isFmMode(modeStr)) return { ul: "FM", dl: "FM" };
   const m = modeStr.toUpperCase();
-  if (/\bFM\b|NFM|CTCSS/.test(m)) return { ul: "NFM", dl: "NFM" };
+  if (/\bFM\b|NFM|CTCSS/.test(m)) return { ul: "FM", dl: "FM" };
   if (/\bCW\b/.test(m) && !/\bSSB\b/.test(m)) return { ul: "CW", dl: "CW" };
   return { ul: "LSB", dl: "USB" };
 }
@@ -248,218 +286,68 @@ function activeCtcssHz() {
 }
 
 function resolveUlHzForCtcss() {
-  if (lastCmdUl > 0) return lastCmdUl;
-  try {
-    const { currentSatKey, currentModeIndex } = getCtx();
-    const info = getCatalog()[currentSatKey] || {};
-    const active = getActiveModeObj(info, currentModeIndex);
-    const freqs = formatFreqDisplayFromMode(active);
-    if (freqs.ulMHz != null) return Math.round(freqs.ulMHz * 1e6);
-  } catch (_) {}
+  if (lastCmdUl != null && Number.isFinite(lastCmdUl)) return lastCmdUl;
+  const { currentSatKey, currentModeIndex } = getCtx();
+  const info = getCatalog()[currentSatKey] || {};
+  const modes = info.modes || [];
+  const active =
+    modes.length > 0
+      ? modes[Math.max(0, Math.min(currentModeIndex || 0, modes.length - 1))]
+      : {
+          mode: info.mode || "",
+          uplink: info.uplink || "",
+          downlink: info.downlink || "",
+        };
+  const freqs = formatFreqDisplayFromMode(active);
+  if (freqs.ulMHz != null) return Math.round(freqs.ulMHz * 1e6);
   return null;
 }
 
-async function applyCtcssToRadio(force) {
+async function applyCtcssToRadio() {
   const hz = activeCtcssHz();
   const key = hz != null ? String(hz) : "off";
-  if (!force && key === lastCtcssApplied) return;
+  if (key === lastCtcssApplied) return;
 
+  // Best-effort ExpertSDR TCI CTCSS (ignored by Aether)
   if (tciConnected) {
-    if (hz != null && Number.isFinite(hz) && hz > 0) {
-      const tone = Number(hz).toFixed(1);
-      tciSend(`CTCSS_TX_TONE:${UL_RX},${tone};`);
-      tciSend(`CTCSS_MODE:${UL_RX},${CTCSS_MODE_TX};`);
-      tciSend(`CTCSS_ENABLE:${UL_RX},true;`);
+    if (hz != null) {
+      tciSend(`CTCSS_ENABLE:1,true;`);
+      tciSend(`CTCSS_MODE:1,tenc;`);
+      tciSend(`CTCSS:1,${hz};`);
     } else {
-      tciSend(`CTCSS_ENABLE:${UL_RX},false;`);
+      tciSend(`CTCSS_ENABLE:1,false;`);
     }
   }
 
-  const h = apiHost();
-  if (!h) {
-    if (force) {
-      console.warn(
-        "TCI CTCSS: set Radio API host (Flex radio LAN IP:4992) in config — " +
-          "AetherSDR TCI does not apply tone on the radio by itself",
-      );
+  // Authoritative path for Aether: Flex API on radio LAN
+  try {
+    if (hz != null) {
+      const ulHz = resolveUlHzForCtcss();
+      await api.setCtcssTone(hz, { ulHz });
+      console.log("TCI/API CTCSS", hz, "Hz ON (UL slice)");
+    } else {
+      await api.setCtcssOff();
+      console.log("TCI/API CTCSS OFF");
     }
     lastCtcssApplied = key;
-    return;
-  }
-
-  if (!api.isConnected()) {
-    const ok = await api.connect(h, apiPort());
-    if (!ok) {
-      console.warn("TCI CTCSS: Flex API unreachable", h + ":" + apiPort());
-      return;
-    }
-  }
-
-  try {
-    const ulHz = resolveUlHzForCtcss();
-    await api.setCtcss(hz, ulHz);
-    lastCtcssApplied = key;
   } catch (e) {
-    console.warn("TCI CTCSS Flex API:", e.message);
+    console.warn("TCI/API CTCSS:", e.message);
   }
-}
-
-async function connect() {
-  if (
-    tciWs &&
-    (tciWs.readyState === WebSocket.OPEN ||
-      tciWs.readyState === WebSocket.CONNECTING)
-  ) {
-    return;
-  }
-  if (connecting) return;
-
-  connecting = true;
-  radioOn = true;
-  broadcastStatus();
-
-  const host = config.TCI_HOST;
-  const port = config.TCI_PORT;
-  const uri = config.TCI_URI;
-
-  console.log("TCI: probing", host + ":" + port + " ...");
-  const probe = await probePort(host, port, 1500);
-  if (!probe.ok) {
-    console.warn(
-      "TCI: nothing accepting TCP on",
-      host + ":" + port,
-      "(" + probe.err + ")",
-    );
-    connecting = false;
-    tciConnected = false;
-    scheduleReconnect();
-    broadcastStatus();
-    return;
-  }
-
-  try {
-    tciWs = new WebSocket(uri, { handshakeTimeout: 5000 });
-  } catch (e) {
-    connecting = false;
-    tciConnected = false;
-    scheduleReconnect();
-    broadcastStatus();
-    return;
-  }
-
-  tciWs.on("open", () => {
-    connecting = false;
-    tciConnected = true;
-    radioOn = true;
-    manualDlOffset = 0;
-    ulFineOffset = 0;
-    dlFineOffset = 0;
-    lastCtcssApplied = null;
-    markSyncNeeded("ws open");
-    clearReconnect();
-    console.log("TCI connected to", uri);
-    broadcastStatus();
-    const { currentSatKey, currentModeIndex } = getCtx();
-    const info = getCatalog()[currentSatKey] || {};
-    const active = getActiveModeObj(info, currentModeIndex);
-    pushModulation(active, true);
-
-    const h = apiHost();
-    if (h) {
-      api.connect(h, apiPort()).then(() => {
-        setTimeout(() => applyCtcssToRadio(true).catch(() => {}), 400);
-      });
-    } else {
-      setTimeout(() => applyCtcssToRadio(true).catch(() => {}), 300);
-    }
-  });
-
-  tciWs.on("message", (raw) => {
-    const msg = raw.toString().trim();
-    if (/^ctcss_/i.test(msg)) {
-      console.log("TCI <<", msg);
-    }
-    if (!msg.startsWith("vfo:")) return;
-    if (locked) return;
-    try {
-      const body = msg.replace(/;$/, "");
-      const parts = body.split(":")[1].split(",");
-      const rx = parseInt(parts[0], 10);
-      const ch = parseInt(parts[1], 10);
-      const freq = parseInt(parts[2], 10);
-      if (rx === 0 && ch === 0 && Number.isFinite(freq) && lastCmdDl > 0) {
-        if (Math.abs(freq - lastCmdDl) > 80) {
-          const { satrec, observer, currentSatKey, currentModeIndex } = getCtx();
-          const info = getCatalog()[currentSatKey] || {};
-          const active = getActiveModeObj(info, currentModeIndex);
-          const freqs = formatFreqDisplayFromMode(active);
-          if (freqs.dlMHz != null && satrec) {
-            const rr = rangeRateKmS(satrec, observer, new Date());
-            if (rr != null) {
-              const f0 = freqs.dlMHz * 1e6;
-              const df = 1 - rr / config.C_MS;
-              manualDlOffset = freq - f0 * df - dlFineOffset;
-              broadcastStatus();
-            }
-          }
-        }
-      }
-    } catch (_) {}
-  });
-
-  tciWs.on("close", () => {
-    connecting = false;
-    tciConnected = false;
-    tciWs = null;
-    lastModDl = "";
-    lastModUl = "";
-    lastCtcssApplied = null;
-    broadcastStatus();
-    if (radioOn) scheduleReconnect();
-  });
-
-  tciWs.on("error", (err) => {
-    console.warn("TCI error:", err.message);
-    connecting = false;
-    tciConnected = false;
-    broadcastStatus();
-  });
-}
-
-function scheduleReconnect() {
-  clearReconnect();
-  if (!radioOn) return;
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    if (radioOn && !tciConnected) connect();
-  }, 3000);
-}
-
-function getActiveModeObj(info, modeIndex) {
-  if (!info) return null;
-  const modes = info.modes || [];
-  if (!modes.length) {
-    return {
-      mode: info.mode || "",
-      uplink: info.uplink || "",
-      downlink: info.downlink || "",
-      beacon: info.beacon || "",
-    };
-  }
-  const idx = Math.max(0, Math.min(modeIndex || 0, modes.length - 1));
-  return modes[idx];
 }
 
 function setRadio(on) {
   if (on) {
     radioOn = true;
+    manualDlOffset = 0;
+    ulFineOffset = 0;
+    dlFineOffset = 0;
+    lastCtcssApplied = null;
     markSyncNeeded("setRadio");
-    connect();
+    broadcastStatus();
+    open().catch(() => {});
   } else {
-    radioOn = false;
-    disconnect();
+    close();
   }
-  broadcastStatus();
 }
 
 function setLock(on) {
@@ -472,54 +360,14 @@ function applyDefaultLock(isFm) {
   broadcastStatus();
 }
 
-function applyEndpointChange() {
-  api.close();
-  if (radioOn) {
-    disconnect();
-    radioOn = true;
-    markSyncNeeded("endpoint change");
-    connect();
-  } else broadcastStatus();
-}
-
-function adjustFine(delta, side) {
-  if (typeof delta !== "number") return;
-  if (side === "dl") dlFineOffset += delta;
-  else ulFineOffset += delta;
-  broadcastStatus();
-}
-
-function setStep(step) {
-  if (typeof step === "number" && step > 0) digitStep = Math.round(step);
-  broadcastStatus();
-}
-
-function center() {
-  manualDlOffset = 0;
-  ulFineOffset = 0;
-  dlFineOffset = 0;
-  broadcastStatus();
-}
-
-function resetOffsets() {
-  manualDlOffset = 0;
-  ulFineOffset = 0;
-  dlFineOffset = 0;
-  lastCmdDl = 0;
-  lastCmdUl = 0;
-  lastModDl = "";
-  lastModUl = "";
-  lastCtcssApplied = null;
-}
-
 function setCtcss(which) {
   if (which === "access" && ctcssAccessHz != null) ctcssMode = "access";
   else if (which === "activation" && ctcssActivationHz != null)
     ctcssMode = "activation";
   else ctcssMode = "off";
   lastCtcssApplied = null;
-  console.log("TCI setCtcss", ctcssMode, activeCtcssHz());
-  applyCtcssToRadio(true).catch(() => {});
+  console.log("TCI CTCSS", ctcssMode, activeCtcssHz());
+  applyCtcssToRadio().catch(() => {});
   broadcastStatus();
 }
 
@@ -537,43 +385,129 @@ function applyDefaultCtcss(accessHz, activationHz) {
     "act",
     ctcssActivationHz,
   );
-  applyCtcssToRadio(true).catch(() => {});
   broadcastStatus();
 }
 
-function pushFrequencies(ulHz, dlHz) {
-  if (!radioOn || !tciConnected) return;
+function getActiveModeObj(info, modeIndex) {
+  if (!info) return null;
+  const modes = info.modes || [];
+  if (!modes.length) {
+    return {
+      mode: info.mode || "",
+      uplink: info.uplink || "",
+      downlink: info.downlink || "",
+      beacon: info.beacon || "",
+    };
+  }
+  const idx = Math.max(0, Math.min(modeIndex || 0, modes.length - 1));
+  return modes[idx];
+}
+
+async function pushFrequencies(ulHz, dlHz) {
+  if (!radioOn) return;
+  if (!tciConnected) {
+    await open();
+    if (!tciConnected) {
+      maybeClearSync(false);
+      return;
+    }
+  }
 
   const force = syncNeeded;
   const { currentSatKey, currentModeIndex } = getCtx();
   const info = getCatalog()[currentSatKey] || {};
   const active = getActiveModeObj(info, currentModeIndex);
-  const modOk = pushModulation(active, force);
-  applyCtcssToRadio(false).catch(() => {});
 
-  let freqOk = true;
+  const modOk = pushModulation(active, force);
+
+  let ok = modOk;
   if (dlHz != null && Number.isFinite(dlHz)) {
     const target = Math.round(dlHz);
-    if (force || Math.abs(target - lastCmdDl) >= 1) {
+    if (force || lastCmdDl == null || Math.abs(target - lastCmdDl) >= 1) {
       if (tciSend(`vfo:0,0,${target};`)) {
         lastCmdDl = target;
+        if (force || syncNeeded) {
+          console.log("TCI VFO DL", (target / 1e6).toFixed(6), "MHz");
+        }
       } else {
-        freqOk = false;
+        ok = false;
       }
     }
   }
   if (ulHz != null && Number.isFinite(ulHz)) {
     const target = Math.round(ulHz);
-    if (force || Math.abs(target - lastCmdUl) >= 1) {
+    if (force || lastCmdUl == null || Math.abs(target - lastCmdUl) >= 1) {
       if (tciSend(`vfo:1,0,${target};`)) {
         lastCmdUl = target;
+        if (force || syncNeeded) {
+          console.log("TCI VFO UL", (target / 1e6).toFixed(6), "MHz");
+        }
       } else {
-        freqOk = false;
+        ok = false;
       }
     }
   }
 
-  maybeClearSync(modOk && freqOk);
+  await applyCtcssToRadio();
+  maybeClearSync(ok && tciConnected);
+}
+
+async function pollVfo() {
+  if (!radioOn || !tciConnected || locked) return;
+  if (lastCmdDl == null || lastCmdDl <= 0) return;
+  // TCI has no reliable VFO read-back; skip for now
+}
+
+function startVfoPoll() {
+  if (vfoPollTimer) return;
+  vfoPollTimer = setInterval(() => {
+    pollVfo().catch(() => {});
+  }, VFO_POLL_MS);
+}
+
+function stopVfoPoll() {
+  if (vfoPollTimer) {
+    clearInterval(vfoPollTimer);
+    vfoPollTimer = null;
+  }
+}
+
+function adjustFine(delta, side) {
+  if (typeof delta !== "number") return;
+  if (side === "dl") {
+    dlFineOffset += delta;
+    lastCmdDl = null;
+    console.log("TCI DL fine", delta, "→", dlFineOffset);
+  } else {
+    ulFineOffset += delta;
+    lastCmdUl = null;
+    console.log("TCI UL fine", delta, "→", ulFineOffset);
+  }
+  broadcastStatus();
+}
+
+function setStep(step) {
+  if (typeof step === "number" && step > 0) digitStep = Math.round(step);
+  broadcastStatus();
+}
+
+function center() {
+  manualDlOffset = 0;
+  ulFineOffset = 0;
+  dlFineOffset = 0;
+  lastCmdDl = null;
+  lastCmdUl = null;
+  broadcastStatus();
+}
+
+function resetOffsets() {
+  manualDlOffset = 0;
+  ulFineOffset = 0;
+  dlFineOffset = 0;
+  lastCmdDl = null;
+  lastCmdUl = null;
+  lastModDl = "";
+  lastModUl = "";
 }
 
 function getRadioState() {
@@ -582,14 +516,12 @@ function getRadioState() {
     locked,
     tciConnected,
     connected: tciConnected,
-    connecting,
+    connecting: tciConnecting,
     manualDlOffset,
     ulFineOffset,
     dlFineOffset,
     lastCmdDl,
     lastCmdUl,
-    lastModDl,
-    lastModUl,
     step: digitStep,
     ctcssMode,
     ctcssAccessHz,
@@ -598,19 +530,32 @@ function getRadioState() {
   };
 }
 
+function applyEndpointChange() {
+  const wasOn = radioOn;
+  close();
+  if (wasOn) {
+    radioOn = true;
+    markSyncNeeded("endpoint change");
+    open().catch(() => {});
+  }
+  broadcastStatus();
+}
+
 module.exports = {
   meta,
   init,
+  open,
+  close,
   setRadio,
   setLock,
   applyDefaultLock,
+  pushFrequencies,
   adjustFine,
   setStep,
   center,
   resetOffsets,
   setCtcss,
   applyDefaultCtcss,
-  pushFrequencies,
   getRadioState,
   statusPayload,
   broadcastStatus,
