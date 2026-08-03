@@ -456,6 +456,28 @@ function startLog() {
   }
 }
 
+function logSample(satAz, satEl) {
+  if (!logging || !antennaOn) return;
+  try {
+    const ts = new Date().toISOString();
+    const line =
+      [
+        ts,
+        satAz != null && Number.isFinite(satAz) ? satAz.toFixed(2) : "",
+        satEl != null && Number.isFinite(satEl) ? satEl.toFixed(2) : "",
+        az.pos != null ? az.pos.toFixed(2) : "",
+        el.pos != null ? el.pos.toFixed(2) : "",
+        az.lastCmd != null ? az.lastCmd.toFixed(2) : "",
+        el.lastCmd != null ? el.lastCmd.toFixed(2) : "",
+        az.state,
+        el.state,
+      ].join(",") + "\n";
+    fs.appendFileSync(LOG_PATH, line);
+  } catch (e) {
+    console.warn("Rotor log write failed:", e.message);
+  }
+}
+
 function setAntenna(on) {
   console.log("Rotor setAntenna(" + on + ")");
   if (on) {
@@ -529,4 +551,5 @@ module.exports = {
   statusPayload,
   broadcastStatus,
   applyEndpointChange,
+  logSample,
 };
