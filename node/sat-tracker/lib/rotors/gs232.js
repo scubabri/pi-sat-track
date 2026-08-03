@@ -19,6 +19,10 @@ const config = require("../config");
 const meta = {
   id: "gs232",
   label: "GS-232 (K3NG / Fox Delta)",
+  ports: 1,
+  defaultBaud: 9600,
+  defaultDevice: "/dev/ttyACM0",
+  hint: "Single USB serial. AZ and EL on one controller.",
   match(cfg) {
     const t = String(
       (cfg && cfg.ROTOR_TYPE) || process.env.ROTOR_TYPE || "rt21",
@@ -253,7 +257,6 @@ function openPort() {
         });
 
         console.log("GS-232 open", device, baudRate());
-        // Many Arduino-based controllers reset on open
         setTimeout(() => done(true), 1800);
       });
     } catch (e) {
