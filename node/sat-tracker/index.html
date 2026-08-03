@@ -242,6 +242,64 @@
               </div>
             </div>
 
+            <div class="form-section">
+              <div class="form-section-title">Rotor</div>
+
+              <div class="form-row">
+                <label for="cfg-rotor-type">Controller</label>
+                <select id="cfg-rotor-type" class="cfg-select">
+                </select>
+              </div>
+
+              <div id="cfg-rotor-single-block">
+                <div class="form-row">
+                  <label for="cfg-rotor-device">Serial device</label>
+                  <input
+                    type="text"
+                    id="cfg-rotor-device"
+                    placeholder="/dev/ttyACM0"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                </div>
+              </div>
+
+              <div id="cfg-rotor-dual-block" hidden>
+                <div class="form-row">
+                  <label for="cfg-rotor-az-device">AZ device</label>
+                  <input
+                    type="text"
+                    id="cfg-rotor-az-device"
+                    placeholder="/dev/ttyUSB0"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                </div>
+                <div class="form-row">
+                  <label for="cfg-rotor-el-device">EL device</label>
+                  <input
+                    type="text"
+                    id="cfg-rotor-el-device"
+                    placeholder="/dev/ttyUSB1"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                </div>
+              </div>
+
+              <div class="form-row">
+                <label for="cfg-rotor-baud">Baud</label>
+                <input
+                  type="number"
+                  id="cfg-rotor-baud"
+                  placeholder="9600"
+                  min="1200"
+                  step="1"
+                />
+              </div>
+              <p class="form-hint" id="cfg-rotor-hint"></p>
+            </div>
+
             <div id="config-actions">
               <button class="btn active" id="btn-save-config">Save</button>
             </div>
@@ -362,89 +420,28 @@
           <div class="fine-tune-block">
             <div class="fine-row">
               <span class="fine-side">UL</span>
-              <button
-                type="button"
-                id="btn-fine-ul-minus"
-                class="btn-fine"
-                title="UL −"
-              >
-                −
-              </button>
-              <button
-                type="button"
-                id="btn-fine-ul-plus"
-                class="btn-fine"
-                title="UL +"
-              >
-                +
-              </button>
+              <button type="button" id="btn-fine-ul-minus" class="btn-fine" title="UL −">−</button>
+              <button type="button" id="btn-fine-ul-plus" class="btn-fine" title="UL +">+</button>
               <span id="fine-offset-ul" class="fine-offset">0 Hz</span>
             </div>
             <div class="fine-row">
               <span class="fine-side">DL</span>
-              <button
-                type="button"
-                id="btn-fine-dl-minus"
-                class="btn-fine"
-                title="DL −"
-              >
-                −
-              </button>
-              <button
-                type="button"
-                id="btn-fine-dl-plus"
-                class="btn-fine"
-                title="DL +"
-              >
-                +
-              </button>
+              <button type="button" id="btn-fine-dl-minus" class="btn-fine" title="DL −">−</button>
+              <button type="button" id="btn-fine-dl-plus" class="btn-fine" title="DL +">+</button>
               <span id="fine-offset-dl" class="fine-offset">0 Hz</span>
             </div>
             <div class="fine-row">
               <span class="fine-side">Step</span>
-              <input
-                type="number"
-                id="fine-step"
-                value="100"
-                min="1"
-                step="1"
-                title="Fine step (Hz). Double-click to center."
-              />
+              <input type="number" id="fine-step" value="100" min="1" step="1" title="Fine step (Hz). Double-click to center." />
               <span class="unit">Hz</span>
-              <button
-                type="button"
-                id="btn-fine-center"
-                class="btn-fine-center"
-                title="Center offsets"
-              >
-                ⌖
-              </button>
-              <button
-                type="button"
-                id="btn-ul-fixed"
-                class="btn-ul-fixed"
-                hidden
-                title="Fix UL at published frequency (no Doppler)"
-              >
-                Fix UL
-              </button>
-              <button
-                type="button"
-                id="btn-lock"
-                class="btn-lock"
-                title="Lock VFO — ignore operator DL tunes (FM default ON)"
-              >
-                LOCK
-              </button>
+              <button type="button" id="btn-fine-center" class="btn-fine-center" title="Center offsets">⌖</button>
+              <button type="button" id="btn-ul-fixed" class="btn-ul-fixed" hidden title="Fix UL at published frequency (no Doppler)">Fix UL</button>
+              <button type="button" id="btn-lock" class="btn-lock" title="Lock VFO — ignore operator DL tunes (FM default ON)">LOCK</button>
             </div>
             <div id="ctcss-row" class="ctcss-row" hidden>
               <span class="ctcss-label">CTCSS</span>
-              <button type="button" id="btn-ctcss-access" class="btn-ctcss">
-                Access
-              </button>
-              <button type="button" id="btn-ctcss-activation" class="btn-ctcss">
-                Activate
-              </button>
+              <button type="button" id="btn-ctcss-access" class="btn-ctcss">Access</button>
+              <button type="button" id="btn-ctcss-activation" class="btn-ctcss">Activate</button>
             </div>
           </div>
 
@@ -496,8 +493,7 @@
             <span class="label">Elevation</span><span id="station-elev">-</span>
           </div>
           <div class="status-item">
-            <span class="label">Radio</span
-            ><span id="status-tci">Disconnected</span>
+            <span class="label">Radio</span><span id="status-tci">Disconnected</span>
           </div>
           <div class="status-item">
             <span class="label">Rotor AZ</span><span id="rotor-az">-</span>
