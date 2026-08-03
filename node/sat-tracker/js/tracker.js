@@ -1,7 +1,7 @@
-/* Tracker WebSocket, radio/antenna, station status, frequency panel */
-let ws = null;
-let reconnectTimer = null;
-let lastStateSat = null;
+/* Tracker WebSocket, radio/antenna, station status, fine tune (legacy UL-only bindings) */
+
+let currentEl = null;
+let currentSatKey = null;
 let lastModesKey = "";
 
 let radioOn = false;
@@ -13,155 +13,135 @@ let manualDlOffset = 0;
 
 function getObserverFromConfig() {
   const cfg = loadConfig();
-  if (!cfg.grid) return null;
-  const pos = maidenheadToLatLon(cfg.grid);
-  if (!pos) return null;
-  return {
-    lat: pos.lat,
-    lon: pos.lon,
-    elevM: cfg.elevation || 0,
-    callsign: cfg.callsign || "",
-    grid: cfg.grid || "",
-  };
+  const grid = (cfg.grid || "").trim().toUpperCase();
+  if (grid.length >= 4 && typeof gridToLatLon === "function") {
+    const ll = gridToLatLon(grid);
+    if (ll) {
+      return {
+        lat: ll.lat,
+        lon: ll.lon,
+        elevM: cfg.elevation != null ? Number(cfg.elevation) : 0,
+      };
+    }
+  }
+  return { lat: 39.7392, lon: -104.9903, elevM: 1600 };
 }
 
-function sendObserver() {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  const obs = getObserverFromConfig();
-  if (obs) {
+function notifyObserverChanged() {
+  const o = getObserverFromConfig();
+  if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(
       JSON.stringify({
         type: "observer",
-        lat: obs.lat,
-        lon: obs.lon,
-        elevM: obs.elevM,
+        lat: o.lat,
+        lon: o.lon,
+        elevM: o.elevM,
       }),
     );
   }
 }
 
-function updateStationStatus() {
-  const cfg = loadConfig();
-  const callEl = document.getElementById("station-call");
-  const gridEl = document.getElementById("station-grid");
-  const latEl = document.getElementById("station-lat");
-  const lonEl = document.getElementById("station-lon");
-  const elevEl = document.getElementById("station-elev");
-
-  if (callEl) callEl.textContent = cfg.callsign || "-";
-  if (gridEl) gridEl.textContent = (cfg.grid || "").toUpperCase() || "-";
-
-  if (cfg.grid) {
-    const pos = maidenheadToLatLon(cfg.grid);
-    if (pos) {
-      if (latEl) latEl.textContent = pos.lat.toFixed(4) + "\u00B0";
-      if (lonEl) lonEl.textContent = pos.lon.toFixed(4) + "\u00B0";
-    } else {
-      if (latEl) latEl.textContent = "-";
-      if (lonEl) lonEl.textContent = "-";
-    }
-  } else {
-    if (latEl) latEl.textContent = "-";
-    if (lonEl) lonEl.textContent = "-";
-  }
-
-  if (elevEl) {
-    elevEl.textContent =
-      cfg.elevation != null && cfg.elevation !== ""
-        ? cfg.elevation + " m"
-        : "-";
-  }
-}
-function updateModeSelect(modes, modeIndex) {
-  const sel = document.getElementById("mode-select");
-  if (!sel) return;
-
-  const key = (modes || [])
-    .map((m) => m.mode + "|" + m.uplink + "|" + m.downlink)
-    .join(";");
-  if (key !== lastModesKey) {
-    lastModesKey = key;
-    sel.innerHTML = "";
-    if (!modes || !modes.length) {
-      const opt = document.createElement("option");
-      opt.value = "0";
-      opt.textContent = "—";
-      sel.appendChild(opt);
-      sel.disabled = true;
-    } else {
-      sel.disabled = modes.length < 2;
-      modes.forEach((m, i) => {
-        const opt = document.createElement("option");
-        opt.value = String(m.index != null ? m.index : i);
-        const label = m.mode || "(mode " + (i + 1) + ")";
-        const freqs = [];
-        if (m.uplink && m.uplink !== "-") freqs.push("UL " + m.uplink);
-        if (m.downlink && m.downlink !== "-") freqs.push("DL " + m.downlink);
-        opt.textContent = freqs.length
-          ? label + "  ·  " + freqs.join(" / ")
-          : label;
-        sel.appendChild(opt);
-      });
-    }
-  }
-
-  if (modeIndex != null && sel.options.length) {
-    sel.value = String(modeIndex);
-  }
-}
-
-function updateFineOffsetDisplay() {
-  const el = document.getElementById("fine-offset");
-  if (!el) return;
-  el.textContent = fmtOffsetHz(ulFineOffset);
-  el.classList.toggle("nonzero", Math.abs(ulFineOffset) >= 1);
-  el.title =
-    "UL fine offset applied to uplink frequency" +
-    (manualDlOffset ? " · DL manual " + fmtOffsetHz(manualDlOffset) : "");
-}
-
 function updateRadioUi(on, connected) {
   radioOn = !!on;
   tciConnected = !!connected;
-
+  const btn = document.getElementById("btn-radio");
   const toggle = document.getElementById("toggle-radio");
+  const status = document.getElementById("status-tci");
+  if (btn) btn.classList.toggle("active", radioOn);
   if (toggle) toggle.checked = radioOn;
-
-  const topBtn = document.getElementById("btn-radio");
-  if (topBtn) {
-    topBtn.classList.toggle("active", radioOn);
-    if (radioOn && tciConnected) topBtn.textContent = "Radio ON";
-    else if (radioOn) topBtn.textContent = "Radio…";
-    else topBtn.textContent = "Radio";
-  }
-
-  const tciEl = document.getElementById("status-tci");
-  if (tciEl) {
-    if (radioOn && tciConnected) tciEl.textContent = "Connected";
-    else if (radioOn) tciEl.textContent = "Connecting…";
-    else tciEl.textContent = "Disconnected";
+  if (status) {
+    status.textContent = radioOn
+      ? connected
+        ? "Connected"
+        : "Connecting…"
+      : "Disconnected";
   }
 }
 
-function updateAntennaUi(on, azConnected, elConnected) {
+function updateAntennaUi(on) {
   antennaOn = !!on;
-
+  const btn = document.getElementById("btn-antenna");
   const toggle = document.getElementById("toggle-antenna");
+  if (btn) btn.classList.toggle("active", antennaOn);
   if (toggle) toggle.checked = antennaOn;
+}
 
-  const topBtn = document.getElementById("btn-antenna");
-  if (topBtn) {
-    topBtn.classList.toggle("active", antennaOn);
-    if (antennaOn && azConnected && elConnected)
-      topBtn.textContent = "Antenna ON";
-    else if (antennaOn) topBtn.textContent = "Antenna…";
-    else topBtn.textContent = "Antenna";
+function updateFineOffsetDisplay() {
+  // Legacy single-offset display — fine-ctcss.js owns the dual UL/DL UI
+  const el = document.getElementById("fine-offset");
+  if (!el) return;
+  const v = ulFineOffset || 0;
+  el.textContent = (v >= 0 ? "+" : "") + Math.round(v) + " Hz";
+}
+
+function applyTciStatus(msg) {
+  updateRadioUi(msg.radioOn, msg.connected);
+  if (typeof msg.ulFineOffset === "number") {
+    ulFineOffset = msg.ulFineOffset;
+    updateFineOffsetDisplay();
   }
+  if (typeof msg.manualDlOffset === "number") {
+    manualDlOffset = msg.manualDlOffset;
+    updateFineOffsetDisplay();
+  }
+  if (typeof msg.step === "number") {
+    fineStep = msg.step;
+    const stepEl = document.getElementById("fine-step");
+    // Don't overwrite while the user is editing the step field
+    if (stepEl && document.activeElement !== stepEl) {
+      stepEl.value = String(fineStep);
+    }
+  }
+}
+
+function applyFreqAndLook(msg) {
+  if (msg.look && typeof msg.look.el === "number") {
+    const prevAbove = currentEl != null && currentEl >= 0;
+    currentEl = msg.look.el;
+  }
+  if (typeof applyPassUi === "function") applyPassUi(msg);
+  if (typeof applyFreqUi === "function") applyFreqUi(msg);
+}
+
+function applyStationStatus(msg) {
+  const call = document.getElementById("station-call");
+  const grid = document.getElementById("station-grid");
+  const latEl = document.getElementById("station-lat");
+  const lonEl = document.getElementById("station-lon");
+  const elevEl = document.getElementById("station-elev");
+  if (call && msg.callsign) call.textContent = msg.callsign;
+  if (grid && msg.grid) grid.textContent = msg.grid;
+  if (latEl && msg.lat != null) latEl.textContent = Number(msg.lat).toFixed(4);
+  if (lonEl && msg.lon != null) lonEl.textContent = Number(msg.lon).toFixed(4);
+  if (elevEl && msg.elevM != null) elevEl.textContent = Math.round(msg.elevM) + " m";
+}
+
+function applySatStatus(msg) {
+  const nameEl = document.getElementById("sat-common");
+  const noradEl = document.getElementById("sat-norad");
+  const azEl = document.getElementById("sat-az");
+  const elEl = document.getElementById("sat-el");
+  const rangeEl = document.getElementById("sat-range");
+  const orbitEl = document.getElementById("sat-orbit");
+  const tleEl = document.getElementById("status-tle");
+  const catEl = document.getElementById("status-catalog");
+
+  if (msg.name && nameEl) nameEl.textContent = msg.name;
+  if (msg.norad != null && noradEl) noradEl.textContent = String(msg.norad);
+  if (msg.look) {
+    if (azEl && msg.look.az != null)
+      azEl.textContent = Number(msg.look.az).toFixed(1) + "\u00B0";
+    if (elEl && msg.look.el != null)
+      elEl.textContent = Number(msg.look.el).toFixed(1) + "\u00B0";
+    if (rangeEl && msg.look.rangeKm != null)
+      rangeEl.textContent = Number(msg.look.rangeKm).toFixed(0) + " km";
+  }
+  if (orbitEl && msg.orbit != null) orbitEl.textContent = String(msg.orbit);
+  if (tleEl && msg.tleAge != null) tleEl.textContent = msg.tleAge;
+  if (catEl && msg.catalogStatus) catEl.textContent = msg.catalogStatus;
 }
 
 function applyRotorStatus(msg) {
-  updateAntennaUi(msg.antennaOn, msg.azConnected, msg.elConnected);
-
   const azEl = document.getElementById("rotor-az");
   const elEl = document.getElementById("rotor-el");
   if (azEl) {
@@ -182,143 +162,19 @@ function applyRotorStatus(msg) {
   }
 }
 
-function applyTciStatus(msg) {
-  updateRadioUi(msg.radioOn, msg.connected);
-  if (typeof msg.ulFineOffset === "number") {
-    ulFineOffset = msg.ulFineOffset;
-    updateFineOffsetDisplay();
-  }
-  if (typeof msg.manualDlOffset === "number") {
-    manualDlOffset = msg.manualDlOffset;
-    updateFineOffsetDisplay();
-  }
-  if (typeof msg.step === "number") {
-    fineStep = msg.step;
-    const stepEl = document.getElementById("fine-step");
-    if (stepEl) stepEl.value = String(fineStep);
-  }
-}
-
-function applyFreqAndLook(msg) {
-  if (msg.look && typeof msg.look.el === "number") {
-    const prevAbove = currentEl != null && currentEl >= 0;
-    currentEl = msg.look.el;
-    const nowAbove = currentEl >= 0;
-    if (prevAbove !== nowAbove) {
-      refreshCurrentSatChip();
-    }
-  }
-
-  if (msg.modes) {
-    updateModeSelect(msg.modes, msg.modeIndex);
-  }
-
-  if (typeof msg.ulFineOffset === "number") {
-    ulFineOffset = msg.ulFineOffset;
-    updateFineOffsetDisplay();
-  }
-  if (typeof msg.manualDlOffset === "number") {
-    manualDlOffset = msg.manualDlOffset;
-    updateFineOffsetDisplay();
-  }
-
-  const ulEl = document.getElementById("freq-ul");
-  const dlEl = document.getElementById("freq-dl");
-  const ulDopEl = document.getElementById("freq-ul-doppler");
-  const dlDopEl = document.getElementById("freq-dl-doppler");
-  const pbUl = document.getElementById("passband-ul");
-  const pbDl = document.getElementById("passband-dl");
-
-  let ulHz =
-    msg.ulHz != null && Number.isFinite(msg.ulHz)
-      ? msg.ulHz
-      : parseToHz(msg.uplink);
-  let dlHz =
-    msg.dlHz != null && Number.isFinite(msg.dlHz)
-      ? msg.dlHz
-      : parseToHz(msg.downlink);
-
-  if (ulEl) ulEl.textContent = fmtFreq(ulHz);
-  if (dlEl) dlEl.textContent = fmtFreq(dlHz);
-
-  let ulDop = msg.ulDopplerHz;
-  let dlDop = msg.dlDopplerHz;
-  if (ulDop == null && msg.ulBase != null && ulHz != null) {
-    const base = parseToHz(msg.ulBase);
-    if (base != null) ulDop = ulHz - base;
-  }
-  if (dlDop == null && msg.dlBase != null && dlHz != null) {
-    const base = parseToHz(msg.dlBase);
-    if (base != null) dlDop = dlHz - base;
-  }
-
-  if (ulDopEl)
-    ulDopEl.textContent =
-      ulDop != null ? "Doppler " + fmtDopplerMHz(ulDop) : "";
-  if (dlDopEl)
-    dlDopEl.textContent =
-      dlDop != null ? "Doppler " + fmtDopplerMHz(dlDop) : "";
-
-  if (ulEl && ulDop != null) ulEl.title = "Doppler " + fmtDopplerMHz(ulDop);
-  if (dlEl && dlDop != null) dlEl.title = "Doppler " + fmtDopplerMHz(dlDop);
-
-  if (pbUl) pbUl.textContent = msg.passbandUl || "-";
-  if (pbDl) pbDl.textContent = msg.passbandDl || "-";
-
-  const ulLabelEl =
-    document.querySelector("#freq-ul") &&
-    document.querySelector("#freq-ul").previousElementSibling;
-  const dlLabelEl =
-    document.querySelector("#freq-dl") &&
-    document.querySelector("#freq-dl").previousElementSibling;
-  if (ulLabelEl && msg.ulLabel) ulLabelEl.textContent = msg.ulLabel;
-  if (dlLabelEl && msg.dlLabel) dlLabelEl.textContent = msg.dlLabel;
-
-  if (msg.look) {
-    const azEl = document.getElementById("sat-az");
-    const elEl = document.getElementById("sat-el");
-    const rangeEl = document.getElementById("sat-range");
-    if (azEl) azEl.textContent = msg.look.az.toFixed(1) + "\u00B0";
-    if (elEl) elEl.textContent = msg.look.el.toFixed(1) + "\u00B0";
-    if (rangeEl && msg.look.rangeKm != null) {
-      rangeEl.textContent = msg.look.rangeKm.toFixed(1) + " km";
-    }
-  }
-
-  if (typeof msg.radioOn === "boolean") {
-    updateRadioUi(msg.radioOn, msg.tciConnected);
-  }
-
-  if (typeof msg.antennaOn === "boolean") {
-    updateAntennaUi(msg.antennaOn, msg.rotorAzConnected, msg.rotorElConnected);
-  }
-
-  if (msg.rotorAz != null || msg.rotorEl != null) {
-    const azEl = document.getElementById("rotor-az");
-    const elEl = document.getElementById("rotor-el");
-    if (azEl && msg.rotorAz != null)
-      azEl.textContent = Number(msg.rotorAz).toFixed(1) + "\u00B0";
-    if (elEl && msg.rotorEl != null)
-      elEl.textContent = Number(msg.rotorEl).toFixed(1) + "\u00B0";
-    if (typeof updateRotorGauges === "function") {
-      updateRotorGauges(msg.rotorAz, msg.rotorEl);
-    }
-  }
-}
-
-function sendRadio(on) {
-  console.log("Client sendRadio", on);
+function toggleRadio() {
+  const next = !radioOn;
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "radio", on: !!on }));
+    ws.send(JSON.stringify({ type: "radio", on: next }));
   } else {
     console.warn("WebSocket not open — cannot toggle radio");
   }
 }
 
-function sendAntenna(on) {
-  console.log("Client sendAntenna", on);
+function toggleAntenna() {
+  const next = !antennaOn;
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "antenna", on: !!on }));
+    ws.send(JSON.stringify({ type: "antenna", on: next }));
   } else {
     console.warn("WebSocket not open — cannot toggle antenna");
   }
@@ -346,275 +202,59 @@ function sendCenter() {
   }
 }
 
-function connectTracker() {
-  const proto = location.protocol === "https:" ? "wss" : "ws";
-  const url = proto + "://" + location.host + "/ws";
+function handleTrackerMessage(msg) {
+  if (!msg || typeof msg !== "object") return;
 
-  console.log("Connecting to", url);
-  ws = new WebSocket(url);
-
-  ws.onopen = () => {
-    console.log("Tracker WebSocket connected");
-    sendObserver();
-    // Server pushes "profiles" on connect (source of truth for favorites + config).
-    // Do not push localStorage favorites/endpoints here — that overwrote server state.
-    if (typeof pushSavedEndpoints === "function") pushSavedEndpoints();
-    updateStationStatus();
-    if (currentSatKey) {
-      pendingSatKey = currentSatKey;
-      ws.send(JSON.stringify({ type: "sat", key: currentSatKey }));
-    }
-  };
-
-  ws.onmessage = (ev) => {
-    try {
-      const msg = JSON.parse(ev.data);
-
-      if (msg.type === "sats") {
-        renderSatMenu(msg);
-        return;
-      }
-
-      if (msg.type === "tci") {
-        applyTciStatus(msg);
-        return;
-      }
-
-      if (msg.type === "rotor") {
-        applyRotorStatus(msg);
-        return;
-      }
-
-      if (msg.type === "error") {
-        console.warn("Server error:", msg.message);
-        return;
-      }
-
-      if (msg.type === "profiles") {
-        if (typeof applyProfilesMessage === "function") {
-          applyProfilesMessage(msg);
-        }
-        return;
-      }
-
-      if (msg.type === "tick") {
-        if (pendingSatKey && msg.sat && msg.sat !== pendingSatKey) return;
-        applyFreqAndLook(msg);
-        if (typeof updateFavPanelFromState === "function") {
-          updateFavPanelFromState(
-            Object.assign({ type: "tick", sat: msg.sat || currentSatKey }, msg),
-          );
-        }
-        return;
-      }
-
-      if (msg.type !== "state") return;
-
-      if (pendingSatKey && msg.sat && msg.sat !== pendingSatKey) {
-        return;
-      }
-      if (pendingSatKey && msg.sat === pendingSatKey) {
-        pendingSatKey = null;
-      }
-
-      if (msg.sat) {
-        if (msg.sat !== lastStateSat) {
-          lastPass = null;
-          lastStateSat = msg.sat;
-          currentEl = null;
-          lastModesKey = "";
-          if (typeof clearProfileLock === "function") clearProfileLock();
-          if (typeof clearMapTracking === "function") clearMapTracking();
-        }
-        currentSatKey = msg.sat;
-        setSatButtonLabel(msg.display || msg.sat);
-      }
-
-      applyFreqAndLook(msg);
-
-      if (typeof updateMapTracking === "function") updateMapTracking(msg);
-
-      if (msg.look) {
-        const sky =
-          msg.passes && msg.passes[0] && msg.passes[0].sky
-            ? msg.passes[0].sky
-            : null;
-        if (typeof updateRadar === "function") {
-          updateRadar(msg.look.az, msg.look.el, sky);
-        }
-      }
-
-      if (typeof updateProfile === "function") updateProfile(msg);
-      updateSidebar(msg);
-      updateSatelliteStatus(msg);
-      if (typeof updateFavPanelFromState === "function")
-        updateFavPanelFromState(msg);
-    } catch (e) {
-      console.warn("Bad state message", e);
-    }
-  };
-
-  ws.onclose = () => {
-    console.log("Tracker WebSocket closed - reconnecting in 2s");
-    clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(connectTracker, 2000);
-  };
-
-  ws.onerror = () => {
-    ws.close();
-  };
-}
-
-/** Client cache: NORAD string → sat_id or null after lookup. */
-const satnogsIdCache = new Map();
-/** Tracks which NORAD the name link is currently for (avoids race on sat switch). */
-let satnogsLinkNorad = null;
-
-function satnogsDbUrl(satId) {
-  return "https://db.satnogs.org/satellite/" + encodeURIComponent(satId);
-}
-
-/**
- * Resolve SatNOGS sat_id for a NORAD catalog number via our server proxy
- * (db.satnogs.org does not send CORS headers).
- */
-function resolveSatnogsId(norad) {
-  const key = String(norad || "").trim();
-  if (!key) return Promise.resolve(null);
-  if (satnogsIdCache.has(key)) {
-    return Promise.resolve(satnogsIdCache.get(key));
+  if (msg.type === "tci" || msg.type === "icom" || msg.type === "flex") {
+    applyTciStatus(msg);
   }
-  return fetch("/api/satnogs?norad=" + encodeURIComponent(key))
-    .then((r) => (r.ok ? r.json() : null))
-    .then((j) => {
-      const id = j && j.sat_id ? String(j.sat_id) : null;
-      satnogsIdCache.set(key, id);
-      return id;
-    })
-    .catch(() => {
-      satnogsIdCache.set(key, null);
-      return null;
-    });
-}
-
-function setSatNamePlain(nameEl, name) {
-  if (!nameEl) return;
-  nameEl.textContent = name;
-}
-
-function setSatNameLink(nameEl, name, satId) {
-  if (!nameEl || !satId) {
-    setSatNamePlain(nameEl, name);
-    return;
+  if (msg.type === "rotor") {
+    applyRotorStatus(msg);
+    updateAntennaUi(!!msg.antennaOn);
   }
-  nameEl.textContent = "";
-  const a = document.createElement("a");
-  a.href = satnogsDbUrl(satId);
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
-  a.className = "sat-name-link";
-  a.textContent = name;
-  a.title = "Open in SatNOGS DB";
-  nameEl.appendChild(a);
-}
-
-function updateSatelliteStatus(state) {
-  const nameEl = document.getElementById("sat-common");
-  const noradEl = document.getElementById("sat-norad");
-  const orbitEl = document.getElementById("sat-orbit");
-
-  const name = state.display || state.sat || "-";
-  const norad = state.norad != null ? String(state.norad) : null;
-
-  if (noradEl) noradEl.textContent = norad || "-";
-
-  if (nameEl) {
-    // Show name immediately; upgrade to link when sat_id resolves.
-    if (norad && name !== "-") {
-      const cached = satnogsIdCache.has(norad)
-        ? satnogsIdCache.get(norad)
-        : undefined;
-      if (cached) {
-        satnogsLinkNorad = norad;
-        setSatNameLink(nameEl, name, cached);
-      } else {
-        satnogsLinkNorad = norad;
-        setSatNamePlain(nameEl, name);
-        if (cached === undefined) {
-          resolveSatnogsId(norad).then((satId) => {
-            if (satnogsLinkNorad !== norad) return;
-            if (satId) setSatNameLink(nameEl, name, satId);
-          });
-        }
-      }
-    } else {
-      satnogsLinkNorad = null;
-      setSatNamePlain(nameEl, name);
+  if (msg.type === "tick" || msg.type === "state") {
+    applyFreqAndLook(msg);
+    applySatStatus(msg);
+    if (msg.observer) applyStationStatus(msg.observer);
+    if (typeof msg.radioOn === "boolean") {
+      updateRadioUi(msg.radioOn, msg.tciConnected || msg.connected);
+    }
+    if (typeof applyFineCtcssFromTick === "function") {
+      applyFineCtcssFromTick(msg);
     }
   }
-
-  if (state.look) {
-    const azEl = document.getElementById("sat-az");
-    const elEl = document.getElementById("sat-el");
-    const rangeEl = document.getElementById("sat-range");
-    if (azEl) azEl.textContent = state.look.az.toFixed(1) + "\u00B0";
-    if (elEl) elEl.textContent = state.look.el.toFixed(1) + "\u00B0";
-    if (rangeEl) {
-      const km = state.look.rangeKm;
-      rangeEl.textContent = km != null ? km.toFixed(1) + " km" : "-";
-    }
+  if (msg.type === "sats" && typeof applySatsMessage === "function") {
+    applySatsMessage(msg);
   }
-
-  if (orbitEl) {
-    orbitEl.textContent = state.orbit != null ? String(state.orbit) : "-";
+  if (msg.type === "profiles" && typeof applyProfilesMessage === "function") {
+    applyProfilesMessage(msg);
+  }
+  if (msg.type === "endpoints" && typeof fillForm === "function") {
+    // Server confirmed endpoints — refresh form cache if needed
+  }
+  if (msg.type === "error") {
+    console.warn("Server error:", msg.message);
   }
 }
-function notifyObserverChanged() {
-  sendObserver();
-  updateStationStatus();
-}
-function initModeSelect() {
-  const sel = document.getElementById("mode-select");
-  if (!sel) return;
-  sel.addEventListener("change", () => {
-    const idx = parseInt(sel.value, 10);
-    if (!Number.isFinite(idx)) return;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "mode", index: idx }));
-    }
-  });
-}
 
-function initRadioControls() {
-  const toggle = document.getElementById("toggle-radio");
-  if (toggle) {
-    toggle.addEventListener("change", () => {
-      console.log("toggle-radio change", toggle.checked);
-      sendRadio(toggle.checked);
+function initTrackerUi() {
+  const btnRadio = document.getElementById("btn-radio");
+  const toggleRadio = document.getElementById("toggle-radio");
+  const btnAntenna = document.getElementById("btn-antenna");
+  const toggleAntenna = document.getElementById("toggle-antenna");
+
+  if (btnRadio) btnRadio.addEventListener("click", toggleRadio);
+  if (toggleRadio) {
+    toggleRadio.addEventListener("change", () => {
+      const next = !!toggleRadio.checked;
+      if (next !== radioOn) toggleRadio();
     });
   }
-
-  const topBtn = document.getElementById("btn-radio");
-  if (topBtn) {
-    topBtn.addEventListener("click", () => {
-      console.log("btn-radio click, currently", radioOn);
-      sendRadio(!radioOn);
-    });
-  }
-
-  const antToggle = document.getElementById("toggle-antenna");
-  if (antToggle) {
-    antToggle.addEventListener("change", () => {
-      console.log("toggle-antenna change", antToggle.checked);
-      sendAntenna(antToggle.checked);
-    });
-  }
-
-  const antBtn = document.getElementById("btn-antenna");
-  if (antBtn) {
-    antBtn.addEventListener("click", () => {
-      console.log("btn-antenna click, currently", antennaOn);
-      sendAntenna(!antennaOn);
+  if (btnAntenna) btnAntenna.addEventListener("click", toggleAntenna);
+  if (toggleAntenna) {
+    toggleAntenna.addEventListener("change", () => {
+      const next = !!toggleAntenna.checked;
+      if (next !== antennaOn) toggleAntenna();
     });
   }
 
@@ -640,22 +280,25 @@ function initRadioControls() {
   if (stepEl) {
     stepEl.addEventListener("change", () => {
       const step = parseInt(stepEl.value, 10);
-      if (Number.isFinite(step) && step > 0) fineStep = step;
+      if (!Number.isFinite(step) || step <= 0) {
+        stepEl.value = String(fineStep);
+        return;
+      }
+      fineStep = step;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "fine", delta: 0, step: fineStep }));
+      }
     });
     stepEl.addEventListener("dblclick", () => {
       sendCenter();
     });
-    stepEl.title = "UL fine step (Hz). Double-click to center/reset offsets.";
+    stepEl.title = "Fine step (Hz). Double-click to center/reset offsets.";
   }
 
-  updateFineOffsetDisplay();
-}
-
-function initTrackerUi() {
-  startCountdownTimer();
-  updateStationStatus();
-  initModeSelect();
-  initRadioControls();
+  // Expose for app.js / ws handler
+  window.handleTrackerMessage = handleTrackerMessage;
+  window.notifyObserverChanged = notifyObserverChanged;
+  window.getObserverFromConfig = getObserverFromConfig;
 }
 
 if (document.readyState === "loading") {
