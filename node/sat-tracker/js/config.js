@@ -32,6 +32,78 @@ const SERIAL_CATALOG = {
   },
 };
 
+/** Filled from server host/endpoints message (rotors.catalog()). */
+let ROTOR_CATALOG = [
+  {
+    id: "rt21",
+    label: "Green Heron RT-21",
+    ports: 2,
+    defaultBaud: 4800,
+    defaultDevice: "/dev/ttyUSB0",
+    hint: "Two serial ports — one for AZ, one for EL.",
+  },
+  {
+    id: "gs232",
+    label: "GS-232 (K3NG / Fox Delta)",
+    ports: 1,
+    defaultBaud: 9600,
+    defaultDevice: "/dev/ttyACM0",
+    hint: "Single USB serial. AZ and EL on one controller.",
+  },
+];
+
+function findRotorDriver(id) {
+  const key = String(id || "").toLowerCase();
+  return ROTOR_CATALOG.find((d) => d.id === key) || null;
+}
+
+function setRotorCatalog(list) {
+  if (Array.isArray(list) && list.length) {
+    ROTOR_CATALOG = list.slice();
+  }
+}
+
+function populateRotorTypes(selected) {
+  const el = document.getElementById("cfg-rotor-type");
+  if (!el) return;
+  const prev = selected || el.value || "rt21";
+  el.innerHTML = "";
+  ROTOR_CATALOG.forEach((d) => {
+    const opt = document.createElement("option");
+    opt.value = d.id;
+    opt.textContent = d.label || d.id;
+    el.appendChild(opt);
+  });
+  if (ROTOR_CATALOG.some((d) => d.id === prev)) el.value = prev;
+  else if (ROTOR_CATALOG.length) el.value = ROTOR_CATALOG[0].id;
+  updateRotorFormVisibility();
+}
+
+function updateRotorFormVisibility() {
+  const type = val("cfg-rotor-type") || "rt21";
+  const info = findRotorDriver(type);
+  const ports = info && info.ports != null ? info.ports : 2;
+  const single = document.getElementById("cfg-rotor-single-block");
+  const dual = document.getElementById("cfg-rotor-dual-block");
+  const hint = document.getElementById("cfg-rotor-hint");
+  if (single) single.hidden = ports !== 1;
+  if (dual) dual.hidden = ports !== 2;
+  if (hint) hint.textContent = info && info.hint ? info.hint : "";
+}
+
+function onRotorTypeChange() {
+  const type = val("cfg-rotor-type") || "rt21";
+  const info = findRotorDriver(type);
+  updateRotorFormVisibility();
+  if (!info) return;
+  if (info.defaultBaud) setVal("cfg-rotor-baud", info.defaultBaud);
+  if (info.ports === 1) {
+    if (info.defaultDevice) setVal("cfg-rotor-device", info.defaultDevice);
+  } else {
+    if (info.defaultDevice) setVal("cfg-rotor-az-device", info.defaultDevice);
+  }
+}
+
 function loadConfig() {
   try {
     const cfg = JSON.parse(localStorage.getItem(CONFIG_KEY)) || {};
@@ -66,6 +138,10 @@ function defaultsEndpoints() {
     rotorHost: "127.0.0.1",
     rotorAzPort: 4535,
     rotorElPort: 4536,
+    rotorType: "rt21",
+    rotorAzDevice: "/dev/ttyUSB0",
+    rotorElDevice: "/dev/ttyUSB1",
+    rotorBaud: 4800,
   };
 }
 
@@ -259,6 +335,30 @@ function readFormConfig() {
     rotorHost: prev.rotorHost,
     rotorAzPort: prev.rotorAzPort,
     rotorElPort: prev.rotorElPort,
+
+    rotorType: (function () {
+      const t = val("cfg-rotor-type") || "rt21";
+      return t;
+    })(),
+    rotorAzDevice: (function () {
+      const t = val("cfg-rotor-type") || "rt21";
+      const info = findRotorDriver(t);
+      const ports = info && info.ports != null ? info.ports : 2;
+      if (ports === 1) {
+        return val("cfg-rotor-device").trim() || "/dev/ttyACM0";
+      }
+      return val("cfg-rotor-az-device").trim() || "/dev/ttyUSB0";
+    })(),
+    rotorElDevice: (function () {
+      const t = val("cfg-rotor-type") || "rt21";
+      const info = findRotorDriver(t);
+      const ports = info && info.ports != null ? info.ports : 2;
+      if (ports === 1) {
+        return val("cfg-rotor-device").trim() || "/dev/ttyACM0";
+      }
+      return val("cfg-rotor-el-device").trim() || "/dev/ttyUSB1";
+    })(),
+    rotorBaud: parseInt(val("cfg-rotor-baud"), 10) || 4800,
   };
 }
 
@@ -287,6 +387,13 @@ function fillForm(cfg) {
 
   populateSerialMakes(d.serialMake || "icom");
   populateSerialModels(d.serialMake || "icom", d.serialModel || "ic-705");
+
+  populateRotorTypes(d.rotorType || "rt21");
+  setVal("cfg-rotor-device", d.rotorAzDevice || "/dev/ttyACM0");
+  setVal("cfg-rotor-az-device", d.rotorAzDevice || "/dev/ttyUSB0");
+  setVal("cfg-rotor-el-device", d.rotorElDevice || "/dev/ttyUSB1");
+  setVal("cfg-rotor-baud", d.rotorBaud != null ? d.rotorBaud : 4800);
+  updateRotorFormVisibility();
 
   updateRadioFormVisibility();
 }
@@ -385,6 +492,10 @@ function sendEndpointsToServer(cfg) {
       rotorHost: cfg.rotorHost,
       rotorAzPort: cfg.rotorAzPort,
       rotorElPort: cfg.rotorElPort,
+      rotorType: cfg.rotorType,
+      rotorAzDevice: cfg.rotorAzDevice,
+      rotorElDevice: cfg.rotorElDevice,
+      rotorBaud: cfg.rotorBaud,
     }),
   );
 }
@@ -570,6 +681,9 @@ function initConfig() {
   const modelEl = document.getElementById("cfg-serial-model");
   if (makeEl) makeEl.addEventListener("change", onSerialMakeChange);
   if (modelEl) modelEl.addEventListener("change", onSerialModelChange);
+
+  const rotorTypeEl = document.getElementById("cfg-rotor-type");
+  if (rotorTypeEl) rotorTypeEl.addEventListener("change", onRotorTypeChange);
 
   const saveBtn = document.getElementById("btn-save-config");
   if (saveBtn) {
