@@ -4,7 +4,22 @@ Drop a new file in `lib/radios/`, implement the methods below, then
 `register(require("./yourradio"))` in `index.js`.
 
 **Do not** edit `state.js` or `server.js` for a new radio — the registry
-picks the active driver via `meta.match(config)`.
+picks the active driver(s) via `meta.match(config)`.
+
+## Dual-path UL / DL
+
+Config may set independent `radioUl` and `radioDl` sides. The registry:
+
+1. Matches a driver **per side** (`activeUl()` / `activeDl()`).
+2. If both sides resolve to the **same** driver → that driver is used once
+   (classic behaviour: one connection, both VFOs).
+3. If they differ (e.g. UL=TCI, DL=rigctl) → **both** drivers run.
+   `pushFrequencies(ulHz, null)` goes to the UL driver and
+   `pushFrequencies(null, dlHz)` to the DL driver.
+4. `radios.active()` returns a facade that merges state and routes
+   setRadio / lock / CTCSS / fine so `state.js` stays dual-unaware.
+
+Drivers should treat a `null` frequency as "do not touch that side".
 
 ## Required exports
 
@@ -16,6 +31,9 @@ module.exports = {
     /**
      * Return true when this driver should handle the current config.
      * Checked in registration order — first match wins.
+     * `config` may be the live module or a synthetic object built from
+     * one side (radioUl / radioDl) with RADIO_TRANSPORT / TYPE / PROTOCOL
+     * and useFlexCat / useTci / useRigctl helpers.
      */
     match(config) {
       return config.RADIO_TRANSPORT === "tcp" && /* ... */;
@@ -28,9 +46,8 @@ module.exports = {
   applyEndpointChange(/* optional flags */) {},
 
   // Doppler / VFO
+  // ulHz or dlHz may be null when this driver only owns one side.
   pushFrequencies(ulHz, dlHz) {},  // async ok; called every tick when radioOn
-  // TCI-style drivers may ignore args and compute freqs themselves:
-  // pushFrequencies() {}
 
   // Operator controls
   setLock(on) {},
@@ -77,7 +94,9 @@ Put more specific matchers first.
 ## Config helpers
 
 Prefer reading live values from `require("../config")` getters
-(`FLEX_UL_HOST`, `CAT_DEVICE`, `RIGCTL_HOST`, …) rather than caching at init time.
+(`FLEX_UL_HOST`, `CAT_DEVICE`, `RIGCTL_HOST`, `TCI_HOST`, …) rather than
+caching at init time. Dual-side endpoints are mapped into those globals by
+`lib/config.mapSidesToGlobals()`.
 
 ## Optional
 
