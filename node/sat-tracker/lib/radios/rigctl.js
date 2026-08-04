@@ -13,6 +13,9 @@
  *
  * If only the primary is set, both UL and DL frequencies are sent to it
  * (useful for split-capable radios or RX-only SDR++ monitoring DL).
+ *
+ * Dual-path: when only one side is assigned to this driver, the other
+ * frequency arg is null and is ignored.
  */
 
 const net = require("net");
@@ -42,6 +45,7 @@ function makeLink(name) {
     lastMode: null,
     reconnectTimer: null,
     wanted: false,
+    setCount: 0,
   };
 }
 
@@ -59,7 +63,10 @@ let ctcssMode = "off";
 let ctcssAccessHz = null;
 let ctcssActivationHz = null;
 
-const FREQ_THRESH_HZ = 50;
+/** Skip resend when commanded freq is within this of last successful set. */
+const FREQ_THRESH_HZ = 25;
+const CONNECT_TIMEOUT_MS = 4000;
+const CMD_TIMEOUT_MS = 1200;
 
 let getCtx = () => ({
   satrec: null,
@@ -95,8 +102,7 @@ function hasSeparateUl() {
 }
 
 function statusPayload() {
-  const both =
-    dl.connected && (!hasSeparateUl() || ul.connected);
+  const both = dl.connected && (!hasSeparateUl() || ul.connected);
   return {
     type: "rigctl",
     radioOn,
@@ -139,7 +145,7 @@ function sendCmd(link, cmd) {
     if (link.busy) {
       setTimeout(() => {
         sendCmd(link, cmd).then(resolve);
-      }, 40);
+      }, 30);
       return;
     }
 
@@ -151,7 +157,11 @@ function sendCmd(link, cmd) {
       settled = true;
       clearTimeout(timer);
       link.busy = false;
-      if (link.socket) link.socket.removeListener("data", onData);
+      if (link.socket) {
+        try {
+          link.socket.removeListener("data", onData);
+        } catch (_) {}
+      }
       resolve(val);
     };
 
@@ -165,11 +175,13 @@ function sendCmd(link, cmd) {
       }
     };
 
-    const timer = setTimeout(() => finish(null), 1500);
+    const timer = setTimeout(() => finish(null), CMD_TIMEOUT_MS);
 
     link.socket.on("data", onData);
     try {
-      link.socket.write(cmd + "\n");
+      link.socket.write(cmd + "\n", (err) => {
+        if (err) finish(null);
+      });
     } catch (e) {
       finish(null);
     }
@@ -177,7 +189,7 @@ function sendCmd(link, cmd) {
 }
 
 function openLink(link, side) {
-  if (link.connected || link.connecting) return Promise.resolve(link.connected);
+  if (link.connected || link.connecting) return Promise.resolve(!!link.connected);
   const ep = hostPort(side);
   if (!ep) return Promise.resolve(false);
 
@@ -191,42 +203,76 @@ function openLink(link, side) {
       if (settled) return;
       settled = true;
       link.connecting = false;
-      if (!ok) scheduleReconnect(link, side);
+      if (!ok) {
+        link.connected = false;
+        link.socket = null;
+        scheduleReconnect(link, side);
+      }
       broadcastStatus();
       resolve(ok);
     };
 
-    const sock = net.connect({ host: ep.host, port: ep.port }, () => {
+    let sock;
+    try {
+      sock = net.connect({ host: ep.host, port: ep.port });
+    } catch (e) {
+      console.warn("rigctl", link.name, "connect exception:", e.message);
+      done(false);
+      return;
+    }
+
+    // Connect-phase timeout only — cleared on successful connect.
+    // Leaving setTimeout active after connect was killing idle sockets
+    // every 4s (no unsolicited data from SDR++/rigctld) → reconnect loop.
+    sock.setTimeout(CONNECT_TIMEOUT_MS);
+
+    sock.once("connect", () => {
+      sock.setTimeout(0); // disable idle timeout permanently
       link.socket = sock;
       link.connected = true;
       link.buf = "";
-      console.log(
-        "rigctl", link.name, "connected", ep.host + ":" + ep.port,
-      );
+      link.busy = false;
+      // Force a fresh freq set after (re)connect
+      link.lastFreqHz = null;
+      link.lastMode = null;
+      console.log("rigctl", link.name, "connected", ep.host + ":" + ep.port);
       done(true);
     });
 
-    sock.setTimeout(4000);
-    sock.on("timeout", () => {
-      sock.destroy();
+    sock.once("timeout", () => {
+      console.warn("rigctl", link.name, "connect timeout", ep.host + ":" + ep.port);
+      try {
+        sock.destroy();
+      } catch (_) {}
       if (!settled) done(false);
     });
+
     sock.on("error", (e) => {
       console.warn("rigctl", link.name, "error:", e.message);
       link.connected = false;
-      link.socket = null;
-      if (!settled) done(false);
-      else {
+      if (link.socket === sock) link.socket = null;
+      if (!settled) {
+        done(false);
+      } else {
         broadcastStatus();
         if (radioOn && link.wanted) scheduleReconnect(link, side);
       }
     });
+
     sock.on("close", () => {
-      link.connected = false;
-      link.socket = null;
-      link.busy = false;
-      broadcastStatus();
-      if (radioOn && link.wanted) scheduleReconnect(link, side);
+      const wasConnected = link.connected || link.socket === sock;
+      if (link.socket === sock) {
+        link.socket = null;
+        link.connected = false;
+        link.busy = false;
+        link.lastFreqHz = null; // force re-set after reconnect
+      }
+      if (!settled) {
+        done(false);
+      } else if (wasConnected) {
+        broadcastStatus();
+        if (radioOn && link.wanted) scheduleReconnect(link, side);
+      }
     });
   });
 }
@@ -239,7 +285,7 @@ function scheduleReconnect(link, side) {
     if (radioOn && link.wanted && !link.connected && !link.connecting) {
       openLink(link, side).catch(() => {});
     }
-  }, 3000);
+  }, 2500);
 }
 
 function closeLink(link) {
@@ -250,6 +296,7 @@ function closeLink(link) {
   }
   if (link.socket) {
     try {
+      link.socket.removeAllListeners();
       link.socket.destroy();
     } catch (_) {}
     link.socket = null;
@@ -318,17 +365,6 @@ function applyDefaultCtcss(accessHz, activationHz) {
   broadcastStatus();
 }
 
-function modeForActive(active) {
-  const modeStr = (active && active.mode) || "";
-  if (isFmMode(modeStr)) return "FM";
-  const m = String(modeStr).toUpperCase();
-  if (/\bFM\b|NFM|CTCSS/.test(m)) return "FM";
-  if (/\bCW\b/.test(m) && !/\bSSB\b/.test(m)) return "CW";
-  if (/LSB/.test(m)) return "LSB";
-  if (/USB/.test(m)) return "USB";
-  return "USB";
-}
-
 async function setFreq(link, hz) {
   if (!link.connected || hz == null || !Number.isFinite(hz)) return false;
   const target = Math.round(hz);
@@ -339,12 +375,28 @@ async function setFreq(link, hz) {
     return true;
   }
   const resp = await sendCmd(link, "F " + target);
-  if (resp == null) return false;
+  if (resp == null) {
+    // Timeout / no reply — do not update lastFreqHz so we retry next tick
+    return false;
+  }
   if (/^RPRT\s+-/.test(resp)) {
     console.warn("rigctl", link.name, "set_freq error:", resp);
     return false;
   }
+  const prev = link.lastFreqHz;
   link.lastFreqHz = target;
+  link.setCount = (link.setCount || 0) + 1;
+  // Log first few sets and occasional updates so Doppler tracking is visible
+  if (link.setCount <= 5 || link.setCount % 40 === 0 || prev == null) {
+    console.log(
+      "rigctl",
+      link.name,
+      "freq",
+      (target / 1e6).toFixed(6),
+      "MHz",
+      prev == null ? "(initial)" : "",
+    );
+  }
   return true;
 }
 
@@ -359,34 +411,36 @@ async function setMode(link, mode) {
     return false;
   }
   link.lastMode = mode;
+  console.log("rigctl", link.name, "mode →", mode);
   return true;
 }
 
 async function pushFrequencies(ulHz, dlHz) {
   if (!radioOn) return;
-  if (!dl.connected) {
-    await openAll();
-    if (!dl.connected) return;
+
+  // Ensure DL link when we have a DL (or single-endpoint UL) target
+  const needDl =
+    (dlHz != null && Number.isFinite(dlHz)) ||
+    (ulHz != null && Number.isFinite(ulHz) && !hasSeparateUl());
+  if (needDl && !dl.connected && !dl.connecting) {
+    await openLink(dl, "dl");
   }
 
   // DL (or single) endpoint
-  if (dlHz != null && Number.isFinite(dlHz)) {
+  if (dlHz != null && Number.isFinite(dlHz) && dl.connected) {
     await setFreq(dl, dlHz);
   }
 
   // UL
   if (ulHz != null && Number.isFinite(ulHz)) {
     if (hasSeparateUl()) {
-      if (!ul.connected) await openLink(ul, "ul");
+      if (!ul.connected && !ul.connecting) await openLink(ul, "ul");
       if (ul.connected) await setFreq(ul, ulHz);
-    } else {
-      // Single endpoint: for RX-only (SDR++) the interesting VFO is DL.
-      // Prefer keeping DL on the downlink; only touch UL when no DL given.
-      if (dlHz == null || !Number.isFinite(dlHz)) {
-        await setFreq(dl, ulHz);
-      }
-      // When both are present on one endpoint, leave DL as the active VFO.
+    } else if (dlHz == null || !Number.isFinite(dlHz)) {
+      // Single endpoint, UL-only push (no DL this tick)
+      if (dl.connected) await setFreq(dl, ulHz);
     }
+    // When both present on one endpoint, DL is the active VFO — leave it.
   }
 }
 
@@ -428,8 +482,7 @@ function resetOffsets() {
 }
 
 function getRadioState() {
-  const both =
-    dl.connected && (!hasSeparateUl() || ul.connected);
+  const both = dl.connected && (!hasSeparateUl() || ul.connected);
   return {
     radioOn,
     locked,
