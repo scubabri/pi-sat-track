@@ -266,6 +266,7 @@ wss.on("connection", (ws) => {
         if (typeof msg.step === "number" && r.setStep) r.setStep(msg.step);
         if (typeof msg.delta === "number" && r.adjustFine)
           r.adjustFine(msg.delta, side);
+        // Persist UL/DL fine for this sat so next load restores it
         if (typeof state.persistCurrentOffsets === "function")
           state.persistCurrentOffsets();
         pushNow();
@@ -273,6 +274,7 @@ wss.on("connection", (ws) => {
 
       if (msg.type === "center") {
         radios.active().center();
+        // Center = clear saved calibration for current sat
         if (typeof state.clearPersistedOffsets === "function")
           state.clearPersistedOffsets();
         pushNow();
@@ -411,7 +413,7 @@ wss.on("connection", (ws) => {
 
       if (msg.type === "profile-save") {
         const patch = {};
-        if (Array.isArray(msg.favorites) ) patch.favorites = msg.favorites;
+        if (Array.isArray(msg.favorites)) patch.favorites = msg.favorites;
         if (msg.config && typeof msg.config === "object") patch.config = msg.config;
         if (msg.lastSat !== undefined) patch.lastSat = msg.lastSat;
         profiles.updateActive(patch);

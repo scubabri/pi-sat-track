@@ -101,20 +101,16 @@
                 id="cfg-callsign"
                 placeholder="N0CALL"
                 maxlength="10"
-                autocomplete="off"
-                spellcheck="false"
               />
             </div>
 
             <div class="form-row">
-              <label for="cfg-grid">Grid square</label>
+              <label for="cfg-grid">Gridsquare</label>
               <input
                 type="text"
                 id="cfg-grid"
                 placeholder="DN40"
                 maxlength="8"
-                autocomplete="off"
-                spellcheck="false"
               />
             </div>
 
@@ -172,30 +168,33 @@
                 <div id="cfg-ul-rigctl-block" hidden>
                   <div class="form-row">
                     <label for="cfg-ul-rigctl-endpoint">rigctl endpoint</label>
-                    <input type="text" id="cfg-ul-rigctl-endpoint" placeholder="127.0.0.1:4532" autocomplete="off" spellcheck="false" />
+                    <input type="text" id="cfg-ul-rigctl-endpoint" placeholder="127.0.0.1:4532" autocomplete="off" spellcheck="false" title="SDR++ RigCTL or remote rigctld host:port" />
                   </div>
+                  <p class="form-hint">Hamlib/rigctl TCP — SDR++, remote rigctld, any net rigctl server.</p>
                 </div>
 
-                <div id="cfg-ul-cat-block">
+                <div id="cfg-ul-cat-block" hidden>
                   <div class="form-row">
                     <label for="cfg-ul-cat-endpoint">CAT endpoint</label>
                     <input type="text" id="cfg-ul-cat-endpoint" placeholder="172.17.18.229:60002" autocomplete="off" spellcheck="false" />
                   </div>
                 </div>
 
-                <div id="cfg-ul-api-block">
+                <div id="cfg-ul-api-block" hidden>
                   <div class="form-row">
-                    <label for="cfg-ul-api-endpoint">API endpoint (optional)</label>
-                    <input type="text" id="cfg-ul-api-endpoint" placeholder="172.17.18.46:4992" autocomplete="off" spellcheck="false" />
+                    <label for="cfg-ul-api-endpoint">Radio API (CTCSS)</label>
+                    <input type="text" id="cfg-ul-api-endpoint" placeholder="172.17.18.46:4992" autocomplete="off" spellcheck="false" title="Flex radio LAN IP. Port 4992." />
                   </div>
                 </div>
               </div>
 
               <div id="cfg-ul-serial-block" hidden>
                 <div class="form-row">
-                  <label for="cfg-ul-serial-make">Make</label>
+                  <label for="cfg-ul-serial-make">Manufacturer</label>
                   <select id="cfg-ul-serial-make" class="cfg-select">
                     <option value="icom">Icom</option>
+                    <option value="kenwood">Kenwood</option>
+                    <option value="yaesu">Yaesu</option>
                   </select>
                 </div>
                 <div class="form-row">
@@ -205,12 +204,12 @@
                   </select>
                 </div>
                 <div class="form-row">
-                  <label for="cfg-ul-serial-device">Device</label>
-                  <input type="text" id="cfg-ul-serial-device" placeholder="/dev/ttyACM0" autocomplete="off" spellcheck="false" />
+                  <label for="cfg-ul-serial-device">Serial device</label>
+                  <input type="text" id="cfg-ul-serial-device" placeholder="/dev/ttyACM0" autocomplete="off" />
                 </div>
                 <div class="form-row">
                   <label for="cfg-ul-serial-baud">Baud</label>
-                  <input type="number" id="cfg-ul-serial-baud" value="19200" step="1" />
+                  <input type="number" id="cfg-ul-serial-baud" placeholder="19200" min="1200" step="1" />
                 </div>
               </div>
             </div>
@@ -254,30 +253,33 @@
                 <div id="cfg-dl-rigctl-block" hidden>
                   <div class="form-row">
                     <label for="cfg-dl-rigctl-endpoint">rigctl endpoint</label>
-                    <input type="text" id="cfg-dl-rigctl-endpoint" placeholder="127.0.0.1:4532" autocomplete="off" spellcheck="false" />
+                    <input type="text" id="cfg-dl-rigctl-endpoint" placeholder="127.0.0.1:4532" autocomplete="off" spellcheck="false" title="SDR++ RigCTL or remote rigctld host:port" />
                   </div>
+                  <p class="form-hint">Hamlib/rigctl TCP — SDR++, remote rigctld, any net rigctl server.</p>
                 </div>
 
-                <div id="cfg-dl-cat-block">
+                <div id="cfg-dl-cat-block" hidden>
                   <div class="form-row">
                     <label for="cfg-dl-cat-endpoint">CAT endpoint</label>
                     <input type="text" id="cfg-dl-cat-endpoint" placeholder="172.17.18.229:60001" autocomplete="off" spellcheck="false" />
                   </div>
                 </div>
 
-                <div id="cfg-dl-api-block">
+                <div id="cfg-dl-api-block" hidden>
                   <div class="form-row">
-                    <label for="cfg-dl-api-endpoint">API endpoint (optional)</label>
-                    <input type="text" id="cfg-dl-api-endpoint" placeholder="172.17.18.46:4992" autocomplete="off" spellcheck="false" />
+                    <label for="cfg-dl-api-endpoint">Radio API (CTCSS)</label>
+                    <input type="text" id="cfg-dl-api-endpoint" placeholder="172.17.18.46:4992" autocomplete="off" spellcheck="false" title="Flex radio LAN IP. Port 4992." />
                   </div>
                 </div>
               </div>
 
               <div id="cfg-dl-serial-block" hidden>
                 <div class="form-row">
-                  <label for="cfg-dl-serial-make">Make</label>
+                  <label for="cfg-dl-serial-make">Manufacturer</label>
                   <select id="cfg-dl-serial-make" class="cfg-select">
                     <option value="icom">Icom</option>
+                    <option value="kenwood">Kenwood</option>
+                    <option value="yaesu">Yaesu</option>
                   </select>
                 </div>
                 <div class="form-row">
@@ -287,80 +289,329 @@
                   </select>
                 </div>
                 <div class="form-row">
-                  <label for="cfg-dl-serial-device">Device</label>
-                  <input type="text" id="cfg-dl-serial-device" placeholder="/dev/ttyACM0" autocomplete="off" spellcheck="false" />
+                  <label for="cfg-dl-serial-device">Serial device</label>
+                  <input type="text" id="cfg-dl-serial-device" placeholder="/dev/ttyACM0" autocomplete="off" />
                 </div>
                 <div class="form-row">
                   <label for="cfg-dl-serial-baud">Baud</label>
-                  <input type="number" id="cfg-dl-serial-baud" value="19200" step="1" />
+                  <input type="number" id="cfg-dl-serial-baud" placeholder="19200" min="1200" step="1" />
                 </div>
               </div>
             </div>
 
-            <div class="form-row">
-              <button type="button" class="btn" id="btn-save-config">Save</button>
+            <div id="config-actions">
+              <button class="btn active" id="btn-save-config">Save</button>
             </div>
           </div>
         </div>
       </div>
     </header>
 
-    <main id="main">
-      <div id="map-wrap">
-        <div id="map"></div>
-        <div id="radar-wrap">
-          <canvas id="radar" width="220" height="220"></canvas>
+    <div id="fav-panel">
+      <button
+        type="button"
+        id="fav-drawer-toggle"
+        class="fav-drawer-toggle"
+        aria-expanded="false"
+        title="Show or hide favorites"
+      >
+        <span class="fav-drawer-chevron">&#9662;</span>
+        <span class="fav-drawer-label">Favorites</span>
+        <span id="fav-drawer-count" class="fav-drawer-count">—</span>
+        <span class="fav-drawer-hint">sorted by AOS</span>
+      </button>
+      <div id="fav-panel-drawer" class="fav-panel-drawer">
+        <div id="fav-panel-table">
+          <div class="fav-head">
+            <span class="fav-cell fav-name">Satellite Name</span>
+            <span class="fav-cell fav-norad">Number</span>
+            <span class="fav-cell fav-vis">Visible</span>
+            <span class="fav-cell fav-num">Azimuth</span>
+            <span class="fav-cell fav-num">Elevation</span>
+            <span class="fav-cell fav-num">Range</span>
+            <span class="fav-cell fav-num">Range Rate</span>
+            <span class="fav-cell fav-num">Latitude</span>
+            <span class="fav-cell fav-num">Longitude</span>
+            <span class="fav-cell fav-num">Altitude</span>
+            <span class="fav-cell fav-num">Orbit</span>
+            <span class="fav-cell fav-next">AOS</span>
+          </div>
+          <div id="fav-panel-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="pass-panel">
+      <button
+        type="button"
+        id="pass-drawer-toggle"
+        class="pass-drawer-toggle"
+        aria-expanded="false"
+        title="Show or hide next passes"
+      >
+        <span class="pass-drawer-chevron">&#9662;</span>
+        <span class="pass-drawer-label">Next Passes</span>
+        <span id="pass-drawer-sat" class="pass-drawer-sat"></span>
+        <span id="pass-drawer-count" class="pass-drawer-count">—</span>
+        <span class="pass-drawer-hint">next 5 for selected sat</span>
+      </button>
+      <div id="pass-panel-drawer" class="pass-panel-drawer">
+        <div id="pass-panel-table">
+          <div class="pass-head">
+            <span class="pass-cell pass-idx">#</span>
+            <span class="pass-cell pass-time">AOS</span>
+            <span class="pass-cell pass-time">LOS</span>
+            <span class="pass-cell pass-num">Max El</span>
+            <span class="pass-cell pass-num">Duration</span>
+            <span class="pass-cell pass-num">AOS Az</span>
+            <span class="pass-cell pass-status">AOS</span>
+          </div>
+          <div id="pass-panel-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="main">
+      <div id="left-column">
+        <div id="map-container">
+          <div id="map"></div>
+          <div id="radar">
+            <canvas id="radar-canvas" width="220" height="220"></canvas>
+            <div class="rotor-gauge-wrap">
+              <div class="rotor-gauge-label">Rotor AZ</div>
+              <canvas id="rotor-az-canvas" width="220" height="220"></canvas>
+            </div>
+            <div class="rotor-gauge-wrap">
+              <div class="rotor-gauge-label">Rotor EL</div>
+              <canvas id="rotor-el-canvas" width="220" height="220"></canvas>
+            </div>
+          </div>
+        </div>
+        <div id="pass-profile">
+          <canvas id="profile-canvas"></canvas>
         </div>
       </div>
 
       <aside id="sidebar">
-        <div id="freq-panel">
-          <div class="freq-row">
-            <span class="freq-label" id="ul-label">Uplink</span>
-            <span class="freq-value" id="ul-freq">-</span>
-            <span class="freq-doppler" id="ul-doppler"></span>
+        <section class="panel-section">
+          <h3>Frequencies</h3>
+          <div class="freq-block">
+            <div class="freq-label">Mode</div>
+            <select
+              id="mode-select"
+              class="mode-select"
+              title="Transponder / mode"
+            >
+              <option value="0">—</option>
+            </select>
           </div>
-          <div class="freq-row">
-            <span class="freq-label" id="dl-label">Downlink</span>
-            <span class="freq-value" id="dl-freq">-</span>
-            <span class="freq-doppler" id="dl-doppler"></span>
+          <div class="freq-block">
+            <div class="freq-label" id="freq-ul-label">Uplink (LSB)</div>
+            <div class="freq-value uplink" id="freq-ul">-</div>
+            <div class="freq-doppler" id="freq-ul-doppler"></div>
           </div>
-          <div class="freq-row fine-row">
-            <span class="fine-label">Fine UL</span>
-            <span class="fine-value nonzero" id="fine-offset-ul">0</span>
-            <span class="fine-label">Fine DL</span>
-            <span class="fine-value" id="fine-offset-dl">0</span>
+          <div class="freq-block">
+            <div class="freq-label" id="freq-dl-label">Downlink (USB)</div>
+            <div class="freq-value downlink" id="freq-dl">-</div>
+            <div class="freq-doppler" id="freq-dl-doppler"></div>
           </div>
-          <div id="fine-ctcss-panel"></div>
-        </div>
 
-        <div id="mode-panel">
-          <div id="mode-list"></div>
-        </div>
+          <div class="fine-tune-block">
+            <div class="fine-row">
+              <span class="fine-side">UL</span>
+              <button
+                type="button"
+                id="btn-fine-ul-minus"
+                class="btn-fine"
+                title="UL −"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                id="btn-fine-ul-plus"
+                class="btn-fine"
+                title="UL +"
+              >
+                +
+              </button>
+              <span id="fine-offset-ul" class="fine-offset">0 Hz</span>
+            </div>
+            <div class="fine-row">
+              <span class="fine-side">DL</span>
+              <button
+                type="button"
+                id="btn-fine-dl-minus"
+                class="btn-fine"
+                title="DL −"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                id="btn-fine-dl-plus"
+                class="btn-fine"
+                title="DL +"
+              >
+                +
+              </button>
+              <span id="fine-offset-dl" class="fine-offset">0 Hz</span>
+            </div>
+            <div class="fine-row">
+              <span class="fine-side">Step</span>
+              <input
+                type="number"
+                id="fine-step"
+                value="100"
+                min="1"
+                step="1"
+                title="Fine step (Hz). Double-click to center."
+              />
+              <span class="unit">Hz</span>
+              <button
+                type="button"
+                id="btn-fine-center"
+                class="btn-fine-center"
+                title="Center offsets"
+              >
+                ⌖
+              </button>
+              <button
+                type="button"
+                id="btn-ul-fixed"
+                class="btn-ul-fixed"
+                hidden
+                title="Fix UL at published frequency (no Doppler)"
+              >
+                Fix UL
+              </button>
+              <button
+                type="button"
+                id="btn-lock"
+                class="btn-lock"
+                title="Lock VFO — ignore operator DL tunes (FM default ON)"
+              >
+                LOCK
+              </button>
+            </div>
+            <div id="ctcss-row" class="ctcss-row" hidden>
+              <span class="ctcss-label">CTCSS</span>
+              <button type="button" id="btn-ctcss-access" class="btn-ctcss">
+                Access
+              </button>
+              <button type="button" id="btn-ctcss-activation" class="btn-ctcss">
+                Activate
+              </button>
+            </div>
+          </div>
 
-        <div id="pass-panel"></div>
+          <div class="passband" id="passband">
+            <div class="passband-row">
+              <span class="passband-label">UL passband</span>
+              <span class="passband-value" id="passband-ul">-</span>
+            </div>
+            <div class="passband-row">
+              <span class="passband-label">DL passband</span>
+              <span class="passband-value" id="passband-dl">-</span>
+            </div>
+          </div>
+        </section>
 
-        <div id="fav-panel"></div>
+        <section class="panel-section">
+          <h3>Controls</h3>
+          <div class="toggle-row">
+            <span class="toggle-label">Radio</span>
+            <label class="switch">
+              <input type="checkbox" id="toggle-radio" />
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <span class="toggle-label">Antenna (Rotor)</span>
+            <label class="switch">
+              <input type="checkbox" id="toggle-antenna" />
+              <span class="slider"></span>
+            </label>
+          </div>
+        </section>
 
-        <div id="rotor-gauges"></div>
+        <section class="panel-section">
+          <h3>Station Status</h3>
+          <div class="status-item">
+            <span class="label">Callsign</span><span id="station-call">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Grid</span><span id="station-grid">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Latitude</span><span id="station-lat">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Longitude</span><span id="station-lon">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Elevation</span><span id="station-elev">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Radio</span
+            ><span id="status-tci">Disconnected</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Rotor AZ</span><span id="rotor-az">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Rotor EL</span><span id="rotor-el">-</span>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <h3>Satellite Status</h3>
+          <div class="status-item">
+            <span class="label">Name</span><span id="sat-common">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">NORAD</span><span id="sat-norad">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Azimuth</span><span id="sat-az">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Elevation</span><span id="sat-el">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Range</span><span id="sat-range">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Orbit</span><span id="sat-orbit">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">TLE age</span><span id="status-tle">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Catalog</span><span id="status-catalog">-</span>
+          </div>
+        </section>
       </aside>
-    </main>
+    </div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
       integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-      crossorigin=""></script>
+      crossorigin=""
+    ></script>
+
     <script src="js/maidenhead.js"></script>
-    <script src="js/freq-utils.js"></script>
-    <script src="js/config.js"></script>
     <script src="js/map.js"></script>
     <script src="js/radar.js"></script>
-    <script src="js/pass-ui.js"></script>
-    <script src="js/pass-panel.js"></script>
+    <script src="js/rotor-gauges.js"></script>
+    <script src="js/profile.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/freq-utils.js"></script>
     <script src="js/sat-menu.js"></script>
     <script src="js/fav-panel.js"></script>
-    <script src="js/rotor-gauges.js"></script>
+    <script src="js/pass-panel.js"></script>
+    <script src="js/pass-ui.js"></script>
     <script src="js/tracker.js"></script>
-    <script src="js/profile.js"></script>
     <script src="js/lock-ui.js"></script>
     <script src="js/fine-ctcss.js"></script>
     <script src="js/ul-fixed.js"></script>
