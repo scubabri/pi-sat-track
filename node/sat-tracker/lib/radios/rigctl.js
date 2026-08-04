@@ -418,6 +418,18 @@ async function setFreq(link, hz) {
   return true;
 }
 
+async function readFreq(link) {
+  if (!link.connected) return null;
+  // Discard any leftover RPRT from fire-and-forget F writes
+  link.buf = "";
+  const resp = await sendCmd(link, "f");
+  if (resp == null) return null;
+  // Hamlib: plain Hz integer, or "RPRT n" on error
+  if (/^RPRT\s+-/.test(resp)) return null;
+  const hz = parseInt(String(resp).trim(), 10);
+  return Number.isFinite(hz) && hz > 0 ? hz : null;
+}
+
 function getActiveModeObj(info, modeIndex) {
   if (!info) return null;
   const modes = info.modes || [];
@@ -476,9 +488,35 @@ async function pushFrequencies(ulHz, dlHz) {
     await openLink(dl, "dl");
   }
 
-  // DL (or single) endpoint — mode then freq
+  // DL (or single) endpoint — mode, optional dial absorb, then freq
   if (dlHz != null && Number.isFinite(dlHz) && dl.connected) {
     await setMode(dl, mods.dl);
+
+    // Unlocked: if operator tuned SDR++/rig away from our last command,
+    // absorb the delta into manualDlOffset (same idea as TCI vfo: handler).
+    // Locked: force Doppler and ignore external dial changes.
+    if (!locked && dl.lastFreqHz != null) {
+      const reported = await readFreq(dl);
+      if (reported != null && Math.abs(reported - dl.lastFreqHz) > 80) {
+        // dlHz already includes current manualDlOffset + dlFineOffset
+        const dopplerOnly = dlHz - manualDlOffset - dlFineOffset;
+        manualDlOffset = reported - dopplerOnly - dlFineOffset;
+        dl.lastFreqHz = reported;
+        console.log(
+          "rigctl",
+          dl.name,
+          "dial absorb → offset",
+          Math.round(manualDlOffset),
+          "Hz (reported",
+          (reported / 1e6).toFixed(6),
+          "MHz)",
+        );
+        broadcastStatus();
+        // Skip force this tick; next tick state.js recomputes with new offset
+        return;
+      }
+    }
+
     await setFreq(dl, dlHz);
   }
 
@@ -488,6 +526,24 @@ async function pushFrequencies(ulHz, dlHz) {
       if (!ul.connected && !ul.connecting) await openLink(ul, "ul");
       if (ul.connected) {
         await setMode(ul, mods.ul);
+        if (!locked && ul.lastFreqHz != null) {
+          const reported = await readFreq(ul);
+          if (reported != null && Math.abs(reported - ul.lastFreqHz) > 80) {
+            // ulHz includes ulFineOffset; fold dial into ulFineOffset
+            const withoutFine = ulHz - ulFineOffset;
+            ulFineOffset = reported - withoutFine;
+            ul.lastFreqHz = reported;
+            console.log(
+              "rigctl",
+              ul.name,
+              "dial absorb → ulFine",
+              Math.round(ulFineOffset),
+              "Hz",
+            );
+            broadcastStatus();
+            return;
+          }
+        }
         await setFreq(ul, ulHz);
       }
     } else if (dlHz == null || !Number.isFinite(dlHz)) {
