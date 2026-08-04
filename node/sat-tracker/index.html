@@ -119,178 +119,173 @@
               <input type="number" id="cfg-elev" placeholder="1324" step="1" />
             </div>
 
-            <div class="form-section">
-              <div class="form-section-title">Radio</div>
+            <div class="form-section" id="cfg-ul-section">
+              <div class="form-section-title">Radio UL (TX)</div>
 
               <div class="form-row">
-                <label for="cfg-radio-transport">Connection</label>
-                <select id="cfg-radio-transport" class="cfg-select">
+                <label for="cfg-ul-transport">Connection</label>
+                <select id="cfg-ul-transport" class="cfg-select cfg-side-transport" data-side="ul">
                   <option value="tcp">TCP</option>
                   <option value="serial">Serial</option>
                 </select>
               </div>
 
-              <div id="cfg-tcp-block">
+              <div id="cfg-ul-tcp-block">
                 <div class="form-row">
-                  <label for="cfg-radio-type">Radio / software</label>
-                  <select id="cfg-radio-type" class="cfg-select">
+                  <label for="cfg-ul-type">Radio / software</label>
+                  <select id="cfg-ul-type" class="cfg-select cfg-side-type" data-side="ul">
                     <option value="smartsdr">SmartSDR (Flex)</option>
                     <option value="aethersdr">AetherSDR</option>
                     <option value="rigctl">rigctl (SDR++ / Hamlib)</option>
                   </select>
                 </div>
 
-                <div class="form-row">
-                  <label for="cfg-radio-protocol">Protocol</label>
-                  <select id="cfg-radio-protocol" class="cfg-select">
+                <div class="form-row" id="cfg-ul-protocol-row">
+                  <label for="cfg-ul-protocol">Protocol</label>
+                  <select id="cfg-ul-protocol" class="cfg-select cfg-side-protocol" data-side="ul">
                     <option value="cat">CAT</option>
                     <option value="tci">TCI</option>
                   </select>
                 </div>
 
-                <div id="cfg-tci-block">
+                <div id="cfg-ul-tci-block" hidden>
                   <div class="form-row">
-                    <label for="cfg-tci-endpoint">TCI endpoint</label>
-                    <input
-                      type="text"
-                      id="cfg-tci-endpoint"
-                      placeholder="127.0.0.1:50001"
-                      autocomplete="off"
-                      spellcheck="false"
-                    />
+                    <label for="cfg-ul-tci-endpoint">TCI endpoint</label>
+                    <input type="text" id="cfg-ul-tci-endpoint" placeholder="127.0.0.1:50001" autocomplete="off" spellcheck="false" />
                   </div>
                 </div>
 
-                <div id="cfg-rigctl-block" hidden>
+                <div id="cfg-ul-rigctl-block" hidden>
                   <div class="form-row">
-                    <label for="cfg-rigctl-endpoint">rigctl (primary / DL)</label>
-                    <input
-                      type="text"
-                      id="cfg-rigctl-endpoint"
-                      placeholder="127.0.0.1:4532"
-                      autocomplete="off"
-                      spellcheck="false"
-                      title="SDR++ RigCTL or remote rigctld host:port"
-                    />
+                    <label for="cfg-ul-rigctl-endpoint">rigctl endpoint</label>
+                    <input type="text" id="cfg-ul-rigctl-endpoint" placeholder="127.0.0.1:4532" autocomplete="off" spellcheck="false" title="SDR++ RigCTL or remote rigctld host:port" />
                   </div>
-                  <div class="form-row">
-                    <label for="cfg-rigctl-ul-endpoint">rigctl UL (optional)</label>
-                    <input
-                      type="text"
-                      id="cfg-rigctl-ul-endpoint"
-                      placeholder="leave blank for single endpoint"
-                      autocomplete="off"
-                      spellcheck="false"
-                    />
-                  </div>
-                  <p class="form-hint">
-                    Hamlib/rigctl TCP — SDR++, remote rigctld, or any net rigctl server.
-                  </p>
+                  <p class="form-hint">Hamlib/rigctl TCP — SDR++, remote rigctld, any net rigctl server.</p>
                 </div>
 
-                <div id="cfg-flex-cat-block">
+                <div id="cfg-ul-cat-block" hidden>
                   <div class="form-row">
-                    <label for="cfg-flex-ul-endpoint">Uplink (TX)</label>
-                    <input
-                      type="text"
-                      id="cfg-flex-ul-endpoint"
-                      placeholder="172.17.18.229:60002"
-                      autocomplete="off"
-                      spellcheck="false"
-                    />
-                  </div>
-                  <div class="form-row">
-                    <label for="cfg-flex-dl-endpoint">Downlink (RX)</label>
-                    <input
-                      type="text"
-                      id="cfg-flex-dl-endpoint"
-                      placeholder="172.17.18.229:60001"
-                      autocomplete="off"
-                      spellcheck="false"
-                    />
+                    <label for="cfg-ul-cat-endpoint">CAT endpoint</label>
+                    <input type="text" id="cfg-ul-cat-endpoint" placeholder="172.17.18.229:60002" autocomplete="off" spellcheck="false" />
                   </div>
                 </div>
 
-                <div id="cfg-flex-api-block">
+                <div id="cfg-ul-api-block" hidden>
                   <div class="form-row">
-                    <label for="cfg-flex-api-endpoint">Radio API (CTCSS)</label>
-                    <input
-                      type="text"
-                      id="cfg-flex-api-endpoint"
-                      placeholder="172.17.18.46:4992"
-                      autocomplete="off"
-                      spellcheck="false"
-                      title="Flex radio LAN IP (not SmartSDR/Aether host). Port 4992."
-                    />
+                    <label for="cfg-ul-api-endpoint">Radio API (CTCSS)</label>
+                    <input type="text" id="cfg-ul-api-endpoint" placeholder="172.17.18.46:4992" autocomplete="off" spellcheck="false" title="Flex radio LAN IP. Port 4992." />
                   </div>
-                  <p class="form-hint">
-                    Flex radio LAN IP for CTCSS (SmartSDR CAT and AetherSDR
-                    TCI).
-                  </p>
                 </div>
               </div>
 
-              <div id="cfg-serial-block" hidden>
+              <div id="cfg-ul-serial-block" hidden>
                 <div class="form-row">
-                  <label for="cfg-serial-make">Manufacturer</label>
-                  <select id="cfg-serial-make" class="cfg-select">
+                  <label for="cfg-ul-serial-make">Manufacturer</label>
+                  <select id="cfg-ul-serial-make" class="cfg-select">
                     <option value="icom">Icom</option>
                     <option value="kenwood">Kenwood</option>
                     <option value="yaesu">Yaesu</option>
                   </select>
                 </div>
                 <div class="form-row">
-                  <label for="cfg-serial-model">Model</label>
-                  <select id="cfg-serial-model" class="cfg-select">
+                  <label for="cfg-ul-serial-model">Model</label>
+                  <select id="cfg-ul-serial-model" class="cfg-select">
                     <option value="ic-705">IC-705</option>
                   </select>
                 </div>
+                <div class="form-row">
+                  <label for="cfg-ul-serial-device">Serial device</label>
+                  <input type="text" id="cfg-ul-serial-device" placeholder="/dev/ttyACM0" autocomplete="off" />
+                </div>
+                <div class="form-row">
+                  <label for="cfg-ul-serial-baud">Baud</label>
+                  <input type="number" id="cfg-ul-serial-baud" placeholder="19200" min="1200" step="1" />
+                </div>
+              </div>
+            </div>
 
-                <div class="form-section-title" style="margin-top:0.6em">Radio 1 (DL / primary)</div>
+            <div class="form-section" id="cfg-dl-section">
+              <div class="form-section-title">Radio DL (RX)</div>
+
+              <div class="form-row">
+                <label for="cfg-dl-transport">Connection</label>
+                <select id="cfg-dl-transport" class="cfg-select cfg-side-transport" data-side="dl">
+                  <option value="tcp">TCP</option>
+                  <option value="serial">Serial</option>
+                </select>
+              </div>
+
+              <div id="cfg-dl-tcp-block">
                 <div class="form-row">
-                  <label for="cfg-serial-device">Serial device</label>
-                  <input
-                    type="text"
-                    id="cfg-serial-device"
-                    placeholder="/dev/ttyACM0"
-                    autocomplete="off"
-                  />
-                </div>
-                <div class="form-row">
-                  <label for="cfg-serial-baud">Baud</label>
-                  <input
-                    type="number"
-                    id="cfg-serial-baud"
-                    placeholder="19200"
-                    min="1200"
-                    step="1"
-                  />
+                  <label for="cfg-dl-type">Radio / software</label>
+                  <select id="cfg-dl-type" class="cfg-select cfg-side-type" data-side="dl">
+                    <option value="smartsdr">SmartSDR (Flex)</option>
+                    <option value="aethersdr">AetherSDR</option>
+                    <option value="rigctl">rigctl (SDR++ / Hamlib)</option>
+                  </select>
                 </div>
 
-                <div class="form-section-title" style="margin-top:0.6em">Radio 2 (UL / optional)</div>
+                <div class="form-row" id="cfg-dl-protocol-row">
+                  <label for="cfg-dl-protocol">Protocol</label>
+                  <select id="cfg-dl-protocol" class="cfg-select cfg-side-protocol" data-side="dl">
+                    <option value="cat">CAT</option>
+                    <option value="tci">TCI</option>
+                  </select>
+                </div>
+
+                <div id="cfg-dl-tci-block" hidden>
+                  <div class="form-row">
+                    <label for="cfg-dl-tci-endpoint">TCI endpoint</label>
+                    <input type="text" id="cfg-dl-tci-endpoint" placeholder="127.0.0.1:50001" autocomplete="off" spellcheck="false" />
+                  </div>
+                </div>
+
+                <div id="cfg-dl-rigctl-block" hidden>
+                  <div class="form-row">
+                    <label for="cfg-dl-rigctl-endpoint">rigctl endpoint</label>
+                    <input type="text" id="cfg-dl-rigctl-endpoint" placeholder="127.0.0.1:4532" autocomplete="off" spellcheck="false" title="SDR++ RigCTL or remote rigctld host:port" />
+                  </div>
+                  <p class="form-hint">Hamlib/rigctl TCP — SDR++, remote rigctld, any net rigctl server.</p>
+                </div>
+
+                <div id="cfg-dl-cat-block" hidden>
+                  <div class="form-row">
+                    <label for="cfg-dl-cat-endpoint">CAT endpoint</label>
+                    <input type="text" id="cfg-dl-cat-endpoint" placeholder="172.17.18.229:60001" autocomplete="off" spellcheck="false" />
+                  </div>
+                </div>
+
+                <div id="cfg-dl-api-block" hidden>
+                  <div class="form-row">
+                    <label for="cfg-dl-api-endpoint">Radio API (CTCSS)</label>
+                    <input type="text" id="cfg-dl-api-endpoint" placeholder="172.17.18.46:4992" autocomplete="off" spellcheck="false" title="Flex radio LAN IP. Port 4992." />
+                  </div>
+                </div>
+              </div>
+
+              <div id="cfg-dl-serial-block" hidden>
                 <div class="form-row">
-                  <label for="cfg-serial-device2">Serial device</label>
-                  <input
-                    type="text"
-                    id="cfg-serial-device2"
-                    placeholder="leave blank for SPLIT"
-                    autocomplete="off"
-                  />
+                  <label for="cfg-dl-serial-make">Manufacturer</label>
+                  <select id="cfg-dl-serial-make" class="cfg-select">
+                    <option value="icom">Icom</option>
+                    <option value="kenwood">Kenwood</option>
+                    <option value="yaesu">Yaesu</option>
+                  </select>
                 </div>
                 <div class="form-row">
-                  <label for="cfg-serial-baud2">Baud</label>
-                  <input
-                    type="number"
-                    id="cfg-serial-baud2"
-                    placeholder="19200"
-                    min="1200"
-                    step="1"
-                  />
+                  <label for="cfg-dl-serial-model">Model</label>
+                  <select id="cfg-dl-serial-model" class="cfg-select">
+                    <option value="ic-705">IC-705</option>
+                  </select>
                 </div>
-                <p class="form-hint" id="cfg-serial-hint">
-                  Leave Radio 2 blank → single radio SPLIT (VFO A=DL, VFO B=UL).
-                  Fill Radio 2 → dual radios (R1=DL only, no SPLIT; R2=UL).
-                </p>
+                <div class="form-row">
+                  <label for="cfg-dl-serial-device">Serial device</label>
+                  <input type="text" id="cfg-dl-serial-device" placeholder="/dev/ttyACM0" autocomplete="off" />
+                </div>
+                <div class="form-row">
+                  <label for="cfg-dl-serial-baud">Baud</label>
+                  <input type="number" id="cfg-dl-serial-baud" placeholder="19200" min="1200" step="1" />
+                </div>
               </div>
             </div>
 
