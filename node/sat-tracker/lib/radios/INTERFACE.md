@@ -70,13 +70,14 @@ Drivers are matched in registration order in `index.js`:
 1. `flex` — TCP + CAT + SmartSDR/AetherSDR
 2. `icom` — serial transport
 3. `tci` — TCP + TCI + AetherSDR
+4. `rigctl` — TCP + RADIO_PROTOCOL=rigctl (SDR++, remote rigctld, any Hamlib net server)
 
 Put more specific matchers first.
 
 ## Config helpers
 
 Prefer reading live values from `require("../config")` getters
-(`FLEX_UL_HOST`, `CAT_DEVICE`, …) rather than caching at init time.
+(`FLEX_UL_HOST`, `CAT_DEVICE`, `RIGCTL_HOST`, …) rather than caching at init time.
 
 ## Optional
 
