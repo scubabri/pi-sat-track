@@ -290,6 +290,7 @@ wss.on("connection", (ws) => {
 
       if (msg.type === "endpoints") {
         const ep = {
+          singleRadio: !!msg.singleRadio,
           radioUl: msg.radioUl,
           radioDl: msg.radioDl,
           radioTransport: msg.radioTransport,
@@ -410,7 +411,7 @@ wss.on("connection", (ws) => {
 
       if (msg.type === "profile-save") {
         const patch = {};
-        if (Array.isArray(msg.favorites)) patch.favorites = msg.favorites;
+        if (Array.isArray(msg.favorites) ) patch.favorites = msg.favorites;
         if (msg.config && typeof msg.config === "object") patch.config = msg.config;
         if (msg.lastSat !== undefined) patch.lastSat = msg.lastSat;
         profiles.updateActive(patch);
