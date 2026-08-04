@@ -20,7 +20,7 @@
 
 const net = require("net");
 const config = require("../config");
-const { isFmMode } = require("../catalog");
+const { isFmMode, getCatalog } = require("../catalog");
 
 const meta = {
   id: "rigctl",
@@ -418,6 +418,32 @@ async function setFreq(link, hz) {
   return true;
 }
 
+function getActiveModeObj(info, modeIndex) {
+  if (!info) return null;
+  const modes = info.modes || [];
+  if (!modes.length) {
+    return {
+      mode: info.mode || "",
+      uplink: info.uplink || "",
+      downlink: info.downlink || "",
+      beacon: info.beacon || "",
+    };
+  }
+  const idx = Math.max(0, Math.min(modeIndex || 0, modes.length - 1));
+  return modes[idx];
+}
+
+/** Map catalog mode string → Hamlib mode names for UL / DL. */
+function modesForActive(active) {
+  const modeStr = (active && active.mode) || "";
+  if (isFmMode(modeStr)) return { ul: "FM", dl: "FM" };
+  const m = modeStr.toUpperCase();
+  if (/\bFM\b|NFM|GFSK|CTCSS|C4FM|DSTAR|DMR/.test(m)) return { ul: "FM", dl: "FM" };
+  if (/\bCW\b/.test(m) && !/\bSSB\b/.test(m)) return { ul: "CW", dl: "CW" };
+  // Linear SSB invert: UL LSB, DL USB (same as TCI / Flex)
+  return { ul: "LSB", dl: "USB" };
+}
+
 async function setMode(link, mode) {
   if (!link.connected || !mode) return false;
   if (link.lastMode === mode) return true;
@@ -436,6 +462,12 @@ async function setMode(link, mode) {
 async function pushFrequencies(ulHz, dlHz) {
   if (!radioOn) return;
 
+  // Resolve catalog mode once per tick (same logic as TCI / Flex)
+  const { currentSatKey, currentModeIndex } = getCtx();
+  const info = getCatalog()[currentSatKey] || {};
+  const active = getActiveModeObj(info, currentModeIndex);
+  const mods = modesForActive(active);
+
   // Ensure DL link when we have a DL (or single-endpoint UL) target
   const needDl =
     (dlHz != null && Number.isFinite(dlHz)) ||
@@ -444,8 +476,9 @@ async function pushFrequencies(ulHz, dlHz) {
     await openLink(dl, "dl");
   }
 
-  // DL (or single) endpoint
+  // DL (or single) endpoint — mode then freq
   if (dlHz != null && Number.isFinite(dlHz) && dl.connected) {
+    await setMode(dl, mods.dl);
     await setFreq(dl, dlHz);
   }
 
@@ -453,12 +486,18 @@ async function pushFrequencies(ulHz, dlHz) {
   if (ulHz != null && Number.isFinite(ulHz)) {
     if (hasSeparateUl()) {
       if (!ul.connected && !ul.connecting) await openLink(ul, "ul");
-      if (ul.connected) await setFreq(ul, ulHz);
+      if (ul.connected) {
+        await setMode(ul, mods.ul);
+        await setFreq(ul, ulHz);
+      }
     } else if (dlHz == null || !Number.isFinite(dlHz)) {
       // Single endpoint, UL-only push (no DL this tick)
-      if (dl.connected) await setFreq(dl, ulHz);
+      if (dl.connected) {
+        await setMode(dl, mods.ul);
+        await setFreq(dl, ulHz);
+      }
     }
-    // When both present on one endpoint, DL is the active VFO — leave it.
+    // When both present on one endpoint, DL is the active VFO — mode already set.
   }
 }
 
