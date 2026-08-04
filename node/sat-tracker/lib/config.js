@@ -25,6 +25,133 @@ let RADIO_PROTOCOL = process.env.RADIO_PROTOCOL || "cat";
 
 if (RADIO_TYPE === "flex") RADIO_TYPE = "smartsdr";
 
+/** Per-side radio config (UL TX / DL RX). Drivers still read mapped globals. */
+let RADIO_UL = null;
+let RADIO_DL = null;
+
+function defaultSideConfig(side) {
+  return {
+    transport: "tcp",
+    type: "smartsdr",
+    protocol: "cat",
+    tciEndpoint: "127.0.0.1:50001",
+    rigctlEndpoint: "127.0.0.1:4532",
+    catEndpoint: side === "ul" ? "172.17.18.229:60002" : "172.17.18.229:60001",
+    apiEndpoint: "",
+    serialMake: "icom",
+    serialModel: "ic-705",
+    serialDevice: "/dev/ttyACM0",
+    serialBaud: 19200,
+  };
+}
+
+function normalizeSide(s, side) {
+  const d = Object.assign(defaultSideConfig(side), s || {});
+  d.transport = String(d.transport || "tcp").toLowerCase();
+  d.type = normalizeRadioType(d.type || "smartsdr");
+  d.protocol = String(d.protocol || "cat").toLowerCase();
+  if (d.type === "rigctl") d.protocol = "rigctl";
+  if (d.type === "smartsdr" && d.protocol === "tci") d.protocol = "cat";
+  return d;
+}
+
+function parseEp(str, defaultHost, defaultPort) {
+  const s = String(str || "").trim();
+  if (!s) return { host: defaultHost, port: defaultPort };
+  const idx = s.lastIndexOf(":");
+  if (idx > 0) {
+    const host = s.slice(0, idx).trim();
+    const p = parseInt(s.slice(idx + 1).trim(), 10);
+    if (host && Number.isFinite(p) && p > 0 && p < 65536) return { host, port: p };
+  }
+  return { host: s || defaultHost, port: defaultPort };
+}
+
+/** Map dual side configs onto legacy single-driver globals. */
+function mapSidesToGlobals() {
+  const ul = RADIO_UL || defaultSideConfig("ul");
+  const dl = RADIO_DL || defaultSideConfig("dl");
+
+  // Prefer DL for "primary" RADIO_* used by single-driver matchers
+  RADIO_TRANSPORT = dl.transport || ul.transport || "tcp";
+  RADIO_TYPE = dl.type || ul.type || "smartsdr";
+  RADIO_PROTOCOL = dl.protocol || ul.protocol || "cat";
+
+  // TCI — either side
+  for (const s of [dl, ul]) {
+    if (s.protocol === "tci" || (s.type === "aethersdr" && s.protocol === "tci")) {
+      const ep = parseEp(s.tciEndpoint, "127.0.0.1", 50001);
+      TCI_HOST = ep.host;
+      TCI_PORT = ep.port;
+      break;
+    }
+  }
+
+  // rigctl — DL primary, UL optional second endpoint
+  if (dl.protocol === "rigctl" || dl.type === "rigctl") {
+    const ep = parseEp(dl.rigctlEndpoint, "127.0.0.1", 4532);
+    RIGCTL_HOST = ep.host;
+    RIGCTL_PORT = ep.port;
+  }
+  if (ul.protocol === "rigctl" || ul.type === "rigctl") {
+    const ep = parseEp(ul.rigctlEndpoint, "127.0.0.1", 4532);
+    if (dl.protocol === "rigctl" || dl.type === "rigctl") {
+      RIGCTL_UL_HOST = ep.host;
+      RIGCTL_UL_PORT = ep.port;
+    } else {
+      // Only UL is rigctl — use primary slot
+      RIGCTL_HOST = ep.host;
+      RIGCTL_PORT = ep.port;
+      RIGCTL_UL_HOST = "";
+      RIGCTL_UL_PORT = 0;
+    }
+  } else {
+    RIGCTL_UL_HOST = "";
+    RIGCTL_UL_PORT = 0;
+  }
+
+  // Flex/SmartSDR CAT endpoints
+  if (ul.protocol === "cat" && (ul.type === "smartsdr" || ul.type === "aethersdr")) {
+    const ep = parseEp(ul.catEndpoint, "172.17.18.229", 60002);
+    FLEX_UL_HOST = ep.host;
+    FLEX_UL_PORT = ep.port;
+    FLEX_HOST = ep.host;
+    FLEX_PORT = ep.port;
+  }
+  if (dl.protocol === "cat" && (dl.type === "smartsdr" || dl.type === "aethersdr")) {
+    const ep = parseEp(dl.catEndpoint, "172.17.18.229", 60001);
+    FLEX_DL_HOST = ep.host;
+    FLEX_DL_PORT = ep.port;
+  }
+
+  // API from either side
+  for (const s of [dl, ul]) {
+    if (s.apiEndpoint) {
+      const ep = parseEp(s.apiEndpoint, "", 4992);
+      if (ep.host) {
+        FLEX_API_HOST = ep.host;
+        FLEX_API_PORT = ep.port;
+        break;
+      }
+    }
+  }
+
+  // Serial: DL = primary device, UL = device2
+  if (dl.transport === "serial") {
+    CAT_DEVICE = dl.serialDevice || "/dev/ttyACM0";
+    CAT_BAUD = dl.serialBaud || 19200;
+    SERIAL_MAKE = (dl.serialMake || "icom").toLowerCase();
+    SERIAL_MODEL = (dl.serialModel || "ic-705").toLowerCase();
+  }
+  if (ul.transport === "serial") {
+    CAT2_DEVICE = ul.serialDevice || "";
+    CAT2_BAUD = ul.serialBaud || 19200;
+  } else if (dl.transport === "serial") {
+    // single serial radio — leave CAT2 blank for SPLIT mode
+    CAT2_DEVICE = "";
+  }
+}
+
 const _serDef = defaultSerialSelection();
 let SERIAL_MAKE = (process.env.SERIAL_MAKE || _serDef.make).toLowerCase();
 let SERIAL_MODEL = (process.env.SERIAL_MODEL || _serDef.model).toLowerCase();
@@ -132,28 +259,57 @@ function normalizeRadioType(t) {
   return t;
 }
 
+function sideIsFlexCat(s) {
+  if (!s || s.transport !== "tcp") return false;
+  const t = normalizeRadioType(s.type);
+  return s.protocol === "cat" && (t === "smartsdr" || t === "aethersdr");
+}
+
+function sideIsTci(s) {
+  if (!s || s.transport !== "tcp") return false;
+  return s.protocol === "tci" && normalizeRadioType(s.type) === "aethersdr";
+}
+
+function sideIsRigctl(s) {
+  if (!s || s.transport !== "tcp") return false;
+  return s.protocol === "rigctl" || normalizeRadioType(s.type) === "rigctl";
+}
+
+function sideIsSerial(s) {
+  return !!(s && s.transport === "serial");
+}
+
 function useFlexCat() {
-  const t = normalizeRadioType(RADIO_TYPE);
-  return (
+  return sideIsFlexCat(RADIO_UL) || sideIsFlexCat(RADIO_DL) || (
+    !RADIO_UL && !RADIO_DL &&
     RADIO_TRANSPORT === "tcp" &&
     RADIO_PROTOCOL === "cat" &&
-    (t === "smartsdr" || t === "aethersdr")
+    (normalizeRadioType(RADIO_TYPE) === "smartsdr" ||
+      normalizeRadioType(RADIO_TYPE) === "aethersdr")
   );
 }
 
 function useTci() {
-  const t = normalizeRadioType(RADIO_TYPE);
-  return (
-    RADIO_TRANSPORT === "tcp" && RADIO_PROTOCOL === "tci" && t === "aethersdr"
+  return sideIsTci(RADIO_UL) || sideIsTci(RADIO_DL) || (
+    !RADIO_UL && !RADIO_DL &&
+    RADIO_TRANSPORT === "tcp" &&
+    RADIO_PROTOCOL === "tci" &&
+    normalizeRadioType(RADIO_TYPE) === "aethersdr"
   );
 }
 
 function useRigctl() {
-  return RADIO_TRANSPORT === "tcp" && RADIO_PROTOCOL === "rigctl";
+  return sideIsRigctl(RADIO_UL) || sideIsRigctl(RADIO_DL) || (
+    !RADIO_UL && !RADIO_DL &&
+    RADIO_TRANSPORT === "tcp" &&
+    RADIO_PROTOCOL === "rigctl"
+  );
 }
 
 function useSerialCat() {
-  return RADIO_TRANSPORT === "serial";
+  return sideIsSerial(RADIO_UL) || sideIsSerial(RADIO_DL) || (
+    !RADIO_UL && !RADIO_DL && RADIO_TRANSPORT === "serial"
+  );
 }
 
 function useIcomSerial() {
@@ -179,6 +335,8 @@ function isDualCat() {
 
 function getEndpoints() {
   return {
+    radioUl: RADIO_UL || defaultSideConfig("ul"),
+    radioDl: RADIO_DL || defaultSideConfig("dl"),
     radioTransport: RADIO_TRANSPORT,
     radioType: normalizeRadioType(RADIO_TYPE),
     radioProtocol: RADIO_PROTOCOL,
@@ -235,6 +393,22 @@ function applyEndpoints(ep) {
       rigctlChanged,
       radioSelChanged,
     };
+  }
+
+  // Dual-side radio config (preferred)
+  if (ep.radioUl && typeof ep.radioUl === "object") {
+    RADIO_UL = normalizeSide(ep.radioUl, "ul");
+    radioSelChanged = true;
+  }
+  if (ep.radioDl && typeof ep.radioDl === "object") {
+    RADIO_DL = normalizeSide(ep.radioDl, "dl");
+    radioSelChanged = true;
+  }
+  if (RADIO_UL || RADIO_DL) {
+    if (!RADIO_UL) RADIO_UL = defaultSideConfig("ul");
+    if (!RADIO_DL) RADIO_DL = defaultSideConfig("dl");
+    mapSidesToGlobals();
+    // continue to allow rotor / misc overrides below
   }
 
   if (typeof ep.radioTransport === "string" && ep.radioTransport.trim()) {
@@ -492,6 +666,12 @@ module.exports = {
   },
   get RADIO_PROTOCOL() {
     return RADIO_PROTOCOL;
+  },
+  get RADIO_UL() {
+    return RADIO_UL || defaultSideConfig("ul");
+  },
+  get RADIO_DL() {
+    return RADIO_DL || defaultSideConfig("dl");
   },
   get SERIAL_MAKE() {
     return SERIAL_MAKE;
