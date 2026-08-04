@@ -64,9 +64,9 @@ let ctcssAccessHz = null;
 let ctcssActivationHz = null;
 
 /** Skip resend when commanded freq is within this of last successful set. */
-const FREQ_THRESH_HZ = 25;
+const FREQ_THRESH_HZ = 1;  // match TCI — satellite Doppler needs fine steps
 const CONNECT_TIMEOUT_MS = 4000;
-const CMD_TIMEOUT_MS = 1200;
+const CMD_TIMEOUT_MS = 400;
 
 let getCtx = () => ({
   satrec: null,
@@ -365,6 +365,17 @@ function applyDefaultCtcss(accessHz, activationHz) {
   broadcastStatus();
 }
 
+function writeCmd(link, cmd) {
+  if (!link.socket || !link.connected) return false;
+  try {
+    if (!cmd.endsWith("\n")) cmd += "\n";
+    link.socket.write(cmd);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 async function setFreq(link, hz) {
   if (!link.connected || hz == null || !Number.isFinite(hz)) return false;
   const target = Math.round(hz);
@@ -374,20 +385,27 @@ async function setFreq(link, hz) {
   ) {
     return true;
   }
-  const resp = await sendCmd(link, "F " + target);
-  if (resp == null) {
-    // Timeout / no reply — do not update lastFreqHz so we retry next tick
-    return false;
+
+  // Continuous Doppler: fire-and-forget (same idea as TCI vfo:).
+  // Awaiting RPRT every 250ms tick serializes behind network RTT and lags.
+  // First set after connect still uses request/response as a sanity check.
+  const isInitial = link.lastFreqHz == null;
+  if (isInitial) {
+    const resp = await sendCmd(link, "F " + target);
+    if (resp == null) return false;
+    if (/^RPRT\s+-/.test(resp)) {
+      console.warn("rigctl", link.name, "set_freq error:", resp);
+      return false;
+    }
+  } else {
+    if (link.busy) return false;
+    if (!writeCmd(link, "F " + target)) return false;
   }
-  if (/^RPRT\s+-/.test(resp)) {
-    console.warn("rigctl", link.name, "set_freq error:", resp);
-    return false;
-  }
+
   const prev = link.lastFreqHz;
   link.lastFreqHz = target;
   link.setCount = (link.setCount || 0) + 1;
-  // Log first few sets and occasional updates so Doppler tracking is visible
-  if (link.setCount <= 5 || link.setCount % 40 === 0 || prev == null) {
+  if (link.setCount <= 8 || link.setCount % 20 === 0 || prev == null) {
     console.log(
       "rigctl",
       link.name,
