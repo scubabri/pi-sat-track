@@ -104,7 +104,7 @@ function statusPayload() {
     connected: both,
     tciConnected: both,
     connecting: dl.connecting || ul.connecting,
-    host: (config.RIGCTL_HOST || "127.0.0.1"),
+    host: config.RIGCTL_HOST || "127.0.0.1",
     port: config.RIGCTL_PORT || 4532,
     ulHost: config.RIGCTL_UL_HOST || "",
     ulPort: config.RIGCTL_UL_PORT || 0,
@@ -125,62 +125,54 @@ function broadcastStatus() {
   broadcastFn(statusPayload());
 }
 
+/**
+ * Send one rigctl command and wait for a single-line reply.
+ * Serializes per-link so commands do not interleave.
+ */
 function sendCmd(link, cmd) {
   return new Promise((resolve) => {
     if (!link.socket || !link.connected) {
       resolve(null);
       return;
     }
+
     if (link.busy) {
-      // simple serialize: wait briefly
       setTimeout(() => {
         sendCmd(link, cmd).then(resolve);
       }, 40);
       return;
     }
+
     link.busy = true;
     let settled = false;
+
     const finish = (val) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       link.busy = false;
       if (link.socket) link.socket.removeListener("data", onData);
       resolve(val);
     };
+
     const onData = (chunk) => {
       link.buf += chunk.toString("utf8");
-      if (link.buf.indexOf("\n") >= 0) {
+      // Reply is one line (value or "RPRT n")
+      if (link.buf.indexOf("\n") >= 0 || /RPRT\s+-?\d+/.test(link.buf)) {
         const line = link.buf.split(/\r?\n/)[0].trim();
         link.buf = "";
         finish(line);
       }
     };
+
     const timer = setTimeout(() => finish(null), 1500);
+
     link.socket.on("data", onData);
     try {
       link.socket.write(cmd + "\n");
     } catch (e) {
-      clearTimeout(timer);
       finish(null);
-      return;
     }
-    // most set commands reply with RPRT 0 or empty; get returns value
-    // onData will clear the timer via finish
-    const origFinish = finish;
-    // re-bind so timer is cleared
-    const finish2 = (v) => {
-      clearTimeout(timer);
-      origFinish(v);
-    };
-    link.socket.removeListener("data", onData);
-    link.socket.on("data", (chunk) => {
-      link.buf += chunk.toString("utf8");
-      if (link.buf.indexOf("\n") >= 0 || link.buf.indexOf("RPRT") >= 0) {
-        const line = link.buf.split(/\r?\n/)[0].trim();
-        link.buf = "";
-        finish2(line);
-      }
-    });
   });
 }
 
@@ -334,7 +326,6 @@ function modeForActive(active) {
   if (/\bCW\b/.test(m) && !/\bSSB\b/.test(m)) return "CW";
   if (/LSB/.test(m)) return "LSB";
   if (/USB/.test(m)) return "USB";
-  // linear sats default: UL LSB, DL USB — caller may push twice
   return "USB";
 }
 
@@ -348,7 +339,6 @@ async function setFreq(link, hz) {
     return true;
   }
   const resp = await sendCmd(link, "F " + target);
-  // Accept RPRT 0, empty, or numeric echo
   if (resp == null) return false;
   if (/^RPRT\s+-/.test(resp)) {
     console.warn("rigctl", link.name, "set_freq error:", resp);
@@ -361,8 +351,7 @@ async function setFreq(link, hz) {
 async function setMode(link, mode) {
   if (!link.connected || !mode) return false;
   if (link.lastMode === mode) return true;
-  // Hamlib: M <mode> <passband>
-  // passband 0 = default
+  // Hamlib: M <mode> <passband>; passband 0 = default
   const resp = await sendCmd(link, "M " + mode + " 0");
   if (resp == null) return false;
   if (/^RPRT\s+-/.test(resp)) {
@@ -391,16 +380,12 @@ async function pushFrequencies(ulHz, dlHz) {
       if (!ul.connected) await openLink(ul, "ul");
       if (ul.connected) await setFreq(ul, ulHz);
     } else {
-      // single endpoint: also push UL (split / last-wins depending on server)
-      // Prefer leaving DL as the "main" VFO; only set UL if no separate link
-      // and caller wants both — many RX-only SDR++ setups only care about DL.
-      // Still send UL so TX-capable rigctld radios stay in sync when possible.
-      await setFreq(dl, ulHz);
-      // immediately restore DL so RX stays on downlink
-      if (dlHz != null && Number.isFinite(dlHz)) {
-        await sleep(30);
-        await setFreq(dl, dlHz);
+      // Single endpoint: for RX-only (SDR++) the interesting VFO is DL.
+      // Prefer keeping DL on the downlink; only touch UL when no DL given.
+      if (dlHz == null || !Number.isFinite(dlHz)) {
+        await setFreq(dl, ulHz);
       }
+      // When both are present on one endpoint, leave DL as the active VFO.
     }
   }
 }
