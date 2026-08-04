@@ -32,6 +32,13 @@ let SERIAL_MODEL = (process.env.SERIAL_MODEL || _serDef.model).toLowerCase();
 let TCI_HOST = process.env.TCI_HOST || "127.0.0.1";
 let TCI_PORT = parseInt(process.env.TCI_PORT || "50001", 10);
 
+// Hamlib / rigctl TCP (SDR++, remote rigctld, etc.)
+let RIGCTL_HOST = process.env.RIGCTL_HOST || "127.0.0.1";
+let RIGCTL_PORT = parseInt(process.env.RIGCTL_PORT || "4532", 10);
+// Optional second endpoint for uplink (empty = single endpoint)
+let RIGCTL_UL_HOST = (process.env.RIGCTL_UL_HOST || "").trim();
+let RIGCTL_UL_PORT = parseInt(process.env.RIGCTL_UL_PORT || "0", 10);
+
 let ROTOR_AZ_DEVICE = process.env.ROTOR_AZ_DEVICE || "/dev/ttyUSB0";
 let ROTOR_EL_DEVICE = process.env.ROTOR_EL_DEVICE || "/dev/ttyUSB1";
 const ROTOR_BAUD = parseInt(process.env.ROTOR_BAUD || "4800", 10);
@@ -146,6 +153,10 @@ function useTci() {
   );
 }
 
+function useRigctl() {
+  return RADIO_TRANSPORT === "tcp" && RADIO_PROTOCOL === "rigctl";
+}
+
 function useSerialCat() {
   return RADIO_TRANSPORT === "serial";
 }
@@ -184,6 +195,10 @@ function getEndpoints() {
     serialModel: SERIAL_MODEL,
     tciHost: TCI_HOST,
     tciPort: TCI_PORT,
+    rigctlHost: RIGCTL_HOST,
+    rigctlPort: RIGCTL_PORT,
+    rigctlUlHost: RIGCTL_UL_HOST,
+    rigctlUlPort: RIGCTL_UL_PORT,
     rotorAzDevice: ROTOR_AZ_DEVICE,
     rotorElDevice: ROTOR_EL_DEVICE,
     catDevice: CAT_DEVICE,
@@ -218,6 +233,7 @@ function applyEndpoints(ep) {
   let rotorChanged = false;
   let catChanged = false;
   let flexChanged = false;
+  let rigctlChanged = false;
   let radioSelChanged = false;
   if (!ep || typeof ep !== "object") {
     return {
@@ -225,6 +241,7 @@ function applyEndpoints(ep) {
       rotorChanged,
       catChanged,
       flexChanged,
+      rigctlChanged,
       radioSelChanged,
     };
   }
@@ -246,7 +263,7 @@ function applyEndpoints(ep) {
   if (typeof ep.radioProtocol === "string" && ep.radioProtocol.trim()) {
     let v = ep.radioProtocol.trim().toLowerCase();
     if (normalizeRadioType(RADIO_TYPE) === "smartsdr") v = "cat";
-    if ((v === "cat" || v === "tci") && v !== RADIO_PROTOCOL) {
+    if ((v === "cat" || v === "tci" || v === "rigctl") && v !== RADIO_PROTOCOL) {
       RADIO_PROTOCOL = v;
       radioSelChanged = true;
     }
@@ -286,6 +303,35 @@ function applyEndpoints(ep) {
     if (p > 0 && p < 65536 && p !== TCI_PORT) {
       TCI_PORT = p;
       tciChanged = true;
+    }
+  }
+
+  if (typeof ep.rigctlHost === "string" && ep.rigctlHost.trim()) {
+    const h = ep.rigctlHost.trim();
+    if (h !== RIGCTL_HOST) {
+      RIGCTL_HOST = h;
+      rigctlChanged = true;
+    }
+  }
+  if (ep.rigctlPort != null && Number.isFinite(Number(ep.rigctlPort))) {
+    const p = parseInt(ep.rigctlPort, 10);
+    if (p > 0 && p < 65536 && p !== RIGCTL_PORT) {
+      RIGCTL_PORT = p;
+      rigctlChanged = true;
+    }
+  }
+  if (typeof ep.rigctlUlHost === "string") {
+    const h = ep.rigctlUlHost.trim();
+    if (h !== RIGCTL_UL_HOST) {
+      RIGCTL_UL_HOST = h;
+      rigctlChanged = true;
+    }
+  }
+  if (ep.rigctlUlPort != null && Number.isFinite(Number(ep.rigctlUlPort))) {
+    const p = parseInt(ep.rigctlUlPort, 10);
+    if (p >= 0 && p < 65536 && p !== RIGCTL_UL_PORT) {
+      RIGCTL_UL_PORT = p;
+      rigctlChanged = true;
     }
   }
 
@@ -424,7 +470,14 @@ function applyEndpoints(ep) {
     ROTOR_EL_PORT = parseInt(ep.rotorElPort, 10);
   }
 
-  return { tciChanged, rotorChanged, catChanged, flexChanged, radioSelChanged };
+  return {
+    tciChanged,
+    rotorChanged,
+    catChanged,
+    flexChanged,
+    rigctlChanged,
+    radioSelChanged,
+  };
 }
 
 module.exports = {
@@ -458,6 +511,18 @@ module.exports = {
   },
   get TCI_URI() {
     return tciUri();
+  },
+  get RIGCTL_HOST() {
+    return RIGCTL_HOST;
+  },
+  get RIGCTL_PORT() {
+    return RIGCTL_PORT;
+  },
+  get RIGCTL_UL_HOST() {
+    return RIGCTL_UL_HOST;
+  },
+  get RIGCTL_UL_PORT() {
+    return RIGCTL_UL_PORT;
   },
   get ROTOR_AZ_DEVICE() {
     return ROTOR_AZ_DEVICE;
@@ -548,6 +613,7 @@ module.exports = {
   tciUri,
   useFlexCat,
   useTci,
+  useRigctl,
   useSerialCat,
   useIcomSerial,
   getSerialModelInfo,
