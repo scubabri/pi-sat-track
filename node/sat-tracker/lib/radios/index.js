@@ -174,6 +174,9 @@ register(icom);
 
 register(require("./tci"));
 
+// Generic Hamlib/rigctl over TCP (SDR++, remote rigctld, etc.)
+register(require("./rigctl"));
+
 // register(require("./kenwood"));
 // register(require("./yaesu"));
 
