@@ -240,6 +240,20 @@ function applyFreqAndLook(msg) {
   if (ulEl) ulEl.textContent = fmtFreq(ulHz);
   if (dlEl) dlEl.textContent = fmtFreq(dlHz);
 
+  // Mode-aware side labels (FM vs SSB linear)
+  const ulLab = document.getElementById("freq-ul-label");
+  const dlLab = document.getElementById("freq-dl-label");
+  if (ulLab) {
+    ulLab.textContent =
+      msg.ulLabel ||
+      (msg.isFm ? "Uplink (FM)" : "Uplink (LSB)");
+  }
+  if (dlLab) {
+    dlLab.textContent =
+      msg.dlLabel ||
+      (msg.isFm ? "Downlink (FM)" : "Downlink (USB)");
+  }
+
   let ulDop = msg.ulDopplerHz;
   let dlDop = msg.dlDopplerHz;
   if (ulDop == null && msg.ulBase != null && ulHz != null) {
