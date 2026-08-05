@@ -10,6 +10,7 @@ let azCanvas, azCtx, elCanvas, elCtx;
 let lastRotorAz = null;
 let lastRotorEl = null;
 let lastSatAz = null;
+let lastSatEl = null;
 let lastFlipped = false;
 
 function initRotorGauges() {
@@ -26,7 +27,7 @@ function initRotorGauges() {
     elCtx = elCanvas.getContext("2d");
   }
   drawAzGauge(null, null, false);
-  drawElGauge(null, false);
+  drawElGauge(null, null, false);
 }
 
 function needleColor(flipped) {
@@ -155,10 +156,11 @@ function drawAzGauge(rotorAz, satAz, flipped) {
 
 /**
  * EL gauge:
- *   - Grid + needle + center: true rotor EL 0→180 (matches hardware)
+ *   - Grid + needle: true rotor EL 0→180 (hardware, may be over-top)
+ *   - Center number: satellite EL (sky pointing elevation)
  *   - Amber when flipped / over-top
  */
-function drawElGauge(el, flipped) {
+function drawElGauge(rotorEl, satEl, flipped) {
   if (!elCtx) return;
   const ctx = elCtx;
   const cx = RG_CENTER;
@@ -234,10 +236,10 @@ function drawElGauge(el, flipped) {
     );
   });
 
-  // Needle + center = true rotor EL (0–180), no fold-back at 90
+  // Needle = true rotor EL (0–180 hardware position)
   const trueEl =
-    el != null && Number.isFinite(el)
-      ? Math.max(0, Math.min(180, Number(el)))
+    rotorEl != null && Number.isFinite(rotorEl)
+      ? Math.max(0, Math.min(180, Number(rotorEl)))
       : null;
   if (trueEl != null) {
     const compassAz = 90 - trueEl;
@@ -278,25 +280,43 @@ function drawElGauge(el, flipped) {
     ctx.stroke();
   }
 
-  ctx.fillStyle = trueEl != null ? "#e6edf3" : "#8b949e";
+  // Center number = satellite EL (sky pointing elevation)
+  const displayEl =
+    satEl != null && Number.isFinite(satEl)
+      ? satEl
+      : trueEl != null
+        ? trueEl
+        : null;
+  ctx.fillStyle = displayEl != null ? "#e6edf3" : "#8b949e";
   ctx.font =
     "bold 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(trueEl != null ? Math.round(trueEl) + "°" : "—", cx, cy);
+  ctx.fillText(
+    displayEl != null ? Math.round(displayEl) + "°" : "—",
+    cx,
+    cy,
+  );
 }
 
 /**
  * @param {number|null} rotorAz - true rotor azimuth (needle)
- * @param {number|null} rotorEl - true rotor elevation 0–180
- * @param {number|null} [satAz] - satellite azimuth for center readout
+ * @param {number|null} rotorEl - true rotor elevation 0–180 (needle)
+ * @param {number|null} [satAz] - satellite azimuth for AZ center readout
+ * @param {number|null} [satEl] - satellite elevation for EL center readout
  * @param {boolean} [flipped] - over-top mode → amber indicators
  */
-function updateRotorGauges(rotorAz, rotorEl, satAz, flipped) {
+function updateRotorGauges(rotorAz, rotorEl, satAz, satEl, flipped) {
+  // Back-compat: old call sites passed (az, el, satAz, flipped)
+  if (typeof satEl === "boolean" && typeof flipped === "undefined") {
+    flipped = satEl;
+    satEl = null;
+  }
   if (rotorAz != null && Number.isFinite(rotorAz)) lastRotorAz = rotorAz;
   if (rotorEl != null && Number.isFinite(rotorEl)) lastRotorEl = rotorEl;
   if (satAz != null && Number.isFinite(satAz)) lastSatAz = satAz;
+  if (satEl != null && Number.isFinite(satEl)) lastSatEl = satEl;
   if (typeof flipped === "boolean") lastFlipped = flipped;
   drawAzGauge(lastRotorAz, lastSatAz, lastFlipped);
-  drawElGauge(lastRotorEl, lastFlipped);
+  drawElGauge(lastRotorEl, lastSatEl, lastFlipped);
 }
