@@ -185,19 +185,20 @@ function applyRotorStatus(msg) {
 
   if (typeof msg.flipped === "boolean") lastGaugeFlipped = msg.flipped;
   if (typeof updateRotorGauges === "function") {
-    // Tracking (above horizon): center = sat. Park/below-horizon/off: center = rotor.
-    const showSat =
+    // AZ center: sat AZ whenever known (incl. below horizon).
+    // EL center: only when sat is above horizon.
+    const showAz =
+      antennaOn && !parking && lastGaugeSatAz != null;
+    const showEl =
       antennaOn &&
       !parking &&
       lastGaugeSatEl != null &&
       lastGaugeSatEl >= 0;
-    const satAz = showSat ? lastGaugeSatAz : null;
-    const satEl = showSat ? lastGaugeSatEl : null;
     updateRotorGauges(
       msg.az,
       msg.el,
-      satAz,
-      satEl,
+      showAz ? lastGaugeSatAz : null,
+      showEl ? lastGaugeSatEl : null,
       antennaOn ? lastGaugeFlipped : false,
     );
   }
@@ -327,27 +328,22 @@ function applyFreqAndLook(msg) {
       elEl.textContent = Number(msg.rotorEl).toFixed(1) + "\u00B0";
     if (typeof msg.flipped === "boolean") lastGaugeFlipped = msg.flipped;
     if (typeof updateRotorGauges === "function") {
-      // Tracking (above horizon): center = sat. Park/below-horizon/off: center = rotor.
-      const showSat =
-      antennaOn &&
-      !parking &&
-      lastGaugeSatEl != null &&
-      lastGaugeSatEl >= 0;
-      const satAz = showSat
-        ? msg.look
-          ? msg.look.az
-          : lastGaugeSatAz
-        : null;
-      const satEl = showSat
-        ? msg.look && typeof msg.look.el === "number"
+      const azVal = msg.look ? msg.look.az : lastGaugeSatAz;
+      const elVal =
+        msg.look && typeof msg.look.el === "number"
           ? msg.look.el
-          : lastGaugeSatEl
-        : null;
+          : lastGaugeSatEl;
+      const showAz = antennaOn && !parking && azVal != null;
+      const showEl =
+        antennaOn &&
+        !parking &&
+        elVal != null &&
+        Number(elVal) >= 0;
       updateRotorGauges(
         msg.rotorAz != null ? msg.rotorAz : null,
         msg.rotorEl != null ? msg.rotorEl : null,
-        satAz,
-        satEl,
+        showAz ? azVal : null,
+        showEl ? elVal : null,
         antennaOn ? lastGaugeFlipped : false,
       );
     }
@@ -513,18 +509,18 @@ function connectTracker() {
         if (typeof msg.look.el === "number") lastGaugeSatEl = msg.look.el;
         if (typeof msg.flipped === "boolean") lastGaugeFlipped = msg.flipped;
         if (typeof updateRotorGauges === "function") {
-          const showSat =
-      antennaOn &&
-      !parking &&
-      lastGaugeSatEl != null &&
-      lastGaugeSatEl >= 0;
-          const satAz = showSat ? lastGaugeSatAz : null;
-          const satEl = showSat ? lastGaugeSatEl : null;
+          const showAz =
+            antennaOn && !parking && lastGaugeSatAz != null;
+          const showEl =
+            antennaOn &&
+            !parking &&
+            lastGaugeSatEl != null &&
+            lastGaugeSatEl >= 0;
           updateRotorGauges(
             msg.rotorAz != null ? msg.rotorAz : null,
             msg.rotorEl != null ? msg.rotorEl : null,
-            satAz,
-            satEl,
+            showAz ? lastGaugeSatAz : null,
+            showEl ? lastGaugeSatEl : null,
             antennaOn ? lastGaugeFlipped : false,
           );
         }
