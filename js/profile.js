@@ -8,6 +8,7 @@ let lockedPassKey = null;
 let lockedName = "";
 let lockedMaxEl = 10;
 let lockedSat = null;
+let profileObserver = null;
 
 function initProfile() {
   profileCanvas = document.getElementById("profile-canvas");
@@ -15,26 +16,82 @@ function initProfile() {
   profileCtx = profileCanvas.getContext("2d");
   resizeProfile();
   window.addEventListener("resize", resizeProfile);
+
+  // Pass-panel / fav-drawer open-close and sat switches change layout width
+  // without a window resize — keep the canvas buffer in sync.
+  const parent = profileCanvas.parentElement;
+  if (parent && typeof ResizeObserver === "function") {
+    if (profileObserver) profileObserver.disconnect();
+    profileObserver = new ResizeObserver(function () {
+      resizeProfile();
+    });
+    profileObserver.observe(parent);
+  }
+
   drawProfileEmpty();
 }
 
 function resizeProfile() {
-  if (!profileCanvas) return;
+  if (!profileCanvas || !profileCtx) return;
   const parent = profileCanvas.parentElement;
   if (!parent) return;
   const w = parent.clientWidth;
   const h = parent.clientHeight;
+  if (w < 2 || h < 2) return;
+
   const dpr = window.devicePixelRatio || 1;
-  profileCanvas.width = Math.max(1, Math.floor(w * dpr));
-  profileCanvas.height = Math.max(1, Math.floor(h * dpr));
+  const bw = Math.max(1, Math.floor(w * dpr));
+  const bh = Math.max(1, Math.floor(h * dpr));
+
+  // Skip no-op resizes so we don't clear a good frame on every observer tick
+  if (
+    profileCanvas.width === bw &&
+    profileCanvas.height === bh &&
+    profileCanvas.style.width === w + "px" &&
+    profileCanvas.style.height === h + "px"
+  ) {
+    return;
+  }
+
+  profileCanvas.width = bw;
+  profileCanvas.height = bh;
   profileCanvas.style.width = w + "px";
   profileCanvas.style.height = h + "px";
   profileCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   redrawCurrent();
 }
 
+/** Ensure backing store matches layout right before a draw. */
+function ensureProfileSize() {
+  if (!profileCanvas || !profileCtx) return false;
+  const parent = profileCanvas.parentElement;
+  if (!parent) return false;
+  const w = parent.clientWidth;
+  const h = parent.clientHeight;
+  if (w < 2 || h < 2) return false;
+
+  const dpr = window.devicePixelRatio || 1;
+  const bw = Math.max(1, Math.floor(w * dpr));
+  const bh = Math.max(1, Math.floor(h * dpr));
+
+  if (
+    profileCanvas.width !== bw ||
+    profileCanvas.height !== bh ||
+    profileCanvas.style.width !== w + "px" ||
+    profileCanvas.style.height !== h + "px"
+  ) {
+    profileCanvas.width = bw;
+    profileCanvas.height = bh;
+    profileCanvas.style.width = w + "px";
+    profileCanvas.style.height = h + "px";
+    profileCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  return true;
+}
+
 function drawProfileEmpty() {
   if (!profileCtx || !profileCanvas) return;
+  if (!ensureProfileSize()) return;
   const w = profileCanvas.clientWidth;
   const h = profileCanvas.clientHeight;
   profileCtx.clearRect(0, 0, w, h);
@@ -89,6 +146,7 @@ function redrawCurrent(look) {
 
 function drawFixedProfile(sky, maxElHint, name, look) {
   if (!profileCtx || !profileCanvas) return;
+  if (!ensureProfileSize()) return;
 
   const w = profileCanvas.clientWidth;
   const h = profileCanvas.clientHeight;
@@ -236,13 +294,14 @@ function updateProfile(state) {
     return;
   }
 
-  if (!pass || !pass.sky || pass.sky.length < 5) {
+  // Accept shorter passes (was 5; 30s samples can undershoot on brief passes)
+  if (!pass || !pass.sky || pass.sky.length < 2) {
     drawProfileEmpty();
     return;
   }
 
   const sky = snapshotSky(pass.sky);
-  if (sky.length < 5) {
+  if (sky.length < 2) {
     drawProfileEmpty();
     return;
   }
