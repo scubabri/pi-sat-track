@@ -198,7 +198,7 @@ function applyRotorStatus(msg) {
       msg.el,
       satAz,
       satEl,
-      showSat ? lastGaugeFlipped : false,
+      antennaOn ? lastGaugeFlipped : false,
     );
   }
 }
@@ -348,7 +348,7 @@ function applyFreqAndLook(msg) {
         msg.rotorEl != null ? msg.rotorEl : null,
         satAz,
         satEl,
-        showSat ? lastGaugeFlipped : false,
+        antennaOn ? lastGaugeFlipped : false,
       );
     }
   }
@@ -525,7 +525,7 @@ function connectTracker() {
             msg.rotorEl != null ? msg.rotorEl : null,
             satAz,
             satEl,
-            showSat ? lastGaugeFlipped : false,
+            antennaOn ? lastGaugeFlipped : false,
           );
         }
         const sky =
