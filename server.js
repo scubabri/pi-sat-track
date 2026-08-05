@@ -19,6 +19,7 @@ const catalog = require("./lib/catalog");
 const state = require("./lib/state");
 const radios = require("./lib/radios");
 const rotor = require("./lib/rotor");
+const rotors = require("./lib/rotors");
 const config = require("./lib/config");
 const platform = require("./lib/platform");
 const profiles = require("./lib/profiles");
@@ -128,7 +129,16 @@ const server = http.createServer((req, res) => {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
     });
-    return res.end(JSON.stringify(platform.hostInfo()));
+    return res.end(
+      JSON.stringify({
+        ...platform.hostInfo(),
+        rotorCatalog: rotors.catalog(),
+        rotorType: config.ROTOR_TYPE,
+        rotorAzDevice: config.ROTOR_AZ_DEVICE,
+        rotorElDevice: config.ROTOR_EL_DEVICE,
+        rotorBaud: config.ROTOR_BAUD,
+      }),
+    );
   }
 
   if (urlPath === "/api/satnogs") {
@@ -193,7 +203,17 @@ function pushNow() {
 wss.on("connection", (ws) => {
   console.log("Client connected");
   ws.send(JSON.stringify({ type: "sats", ...state.satsPayload("trackable") }));
-  ws.send(JSON.stringify({ type: "host", ...platform.hostInfo() }));
+  ws.send(
+    JSON.stringify({
+      type: "host",
+      ...platform.hostInfo(),
+      rotorCatalog: rotors.catalog(),
+      rotorType: config.ROTOR_TYPE,
+      rotorAzDevice: config.ROTOR_AZ_DEVICE,
+      rotorElDevice: config.ROTOR_EL_DEVICE,
+      rotorBaud: config.ROTOR_BAUD,
+    }),
+  );
   ws.send(JSON.stringify(profiles.publicPayload()));
   radios.broadcastAllStatus();
   rotor.broadcastStatus();
@@ -322,10 +342,15 @@ wss.on("connection", (ws) => {
           rotorHost: msg.rotorHost,
           rotorAzPort: msg.rotorAzPort,
           rotorElPort: msg.rotorElPort,
+          rotorType: msg.rotorType,
+          rotorAzDevice: msg.rotorAzDevice,
+          rotorElDevice: msg.rotorElDevice,
+          rotorBaud: msg.rotorBaud,
         };
         const flags = config.applyEndpoints(ep);
         console.log("Endpoints updated", config.getEndpoints());
         console.log("Radio path:", radios.active().meta.id);
+        console.log("Rotor path:", rotors.active().meta.id);
 
         radios.applyEndpointChange(flags);
         if (flags.rotorChanged) rotor.applyEndpointChange();
@@ -333,13 +358,15 @@ wss.on("connection", (ws) => {
         const cfgPatch = Object.assign({}, ep);
         if (typeof msg.callsign === "string") cfgPatch.callsign = msg.callsign;
         if (typeof msg.grid === "string") cfgPatch.grid = msg.grid;
-        if (typeof msg.elevation === "number") cfgPatch.elevation = msg.elevation;
+        if (typeof msg.elevation === "number")
+          cfgPatch.elevation = msg.elevation;
         profiles.updateActive({ config: cfgPatch });
         broadcastProfiles();
 
         broadcast({
           type: "endpoints",
           ...config.getEndpoints(),
+          rotorCatalog: rotors.catalog(),
         });
       }
 
@@ -352,7 +379,11 @@ wss.on("connection", (ws) => {
           const tk = state.computeTick();
           if (tk) broadcast(tk);
           broadcastSats();
-          broadcast({ type: "endpoints", ...config.getEndpoints() });
+          broadcast({
+            type: "endpoints",
+            ...config.getEndpoints(),
+            rotorCatalog: rotors.catalog(),
+          });
         } else {
           ws.send(
             JSON.stringify({
@@ -367,7 +398,11 @@ wss.on("connection", (ws) => {
         if (profiles.createProfile(msg.name, msg.fromActive !== false)) {
           applyProfileToRuntime(profiles.getActive());
           broadcastProfiles();
-          broadcast({ type: "endpoints", ...config.getEndpoints() });
+          broadcast({
+            type: "endpoints",
+            ...config.getEndpoints(),
+            rotorCatalog: rotors.catalog(),
+          });
         } else {
           ws.send(
             JSON.stringify({
@@ -387,7 +422,11 @@ wss.on("connection", (ws) => {
           const tk = state.computeTick();
           if (tk) broadcast(tk);
           broadcastSats();
-          broadcast({ type: "endpoints", ...config.getEndpoints() });
+          broadcast({
+            type: "endpoints",
+            ...config.getEndpoints(),
+            rotorCatalog: rotors.catalog(),
+          });
         } else {
           ws.send(
             JSON.stringify({
@@ -414,7 +453,8 @@ wss.on("connection", (ws) => {
       if (msg.type === "profile-save") {
         const patch = {};
         if (Array.isArray(msg.favorites)) patch.favorites = msg.favorites;
-        if (msg.config && typeof msg.config === "object") patch.config = msg.config;
+        if (msg.config && typeof msg.config === "object")
+          patch.config = msg.config;
         if (msg.lastSat !== undefined) patch.lastSat = msg.lastSat;
         profiles.updateActive(patch);
         if (patch.config) {
@@ -426,7 +466,11 @@ wss.on("connection", (ws) => {
           state.setFavorites(patch.favorites);
         }
         broadcastProfiles();
-        broadcast({ type: "endpoints", ...config.getEndpoints() });
+        broadcast({
+          type: "endpoints",
+          ...config.getEndpoints(),
+          rotorCatalog: rotors.catalog(),
+        });
         const tk = state.computeTick();
         if (tk) broadcast(tk);
       }
@@ -492,6 +536,11 @@ setInterval(() => {
       "Active radio",
       radios.active().meta.id,
       radios.active().meta.label,
+    );
+    console.log(
+      "Active rotor",
+      rotors.active().meta.id,
+      rotors.active().meta.label,
     );
     console.log("TCI target   " + TCI_URI);
     console.log(
