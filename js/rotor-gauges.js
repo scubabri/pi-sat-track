@@ -154,18 +154,8 @@ function drawAzGauge(rotorAz, satAz, flipped) {
 }
 
 /**
- * Fold rotor EL (0–180) to angle-from-horizon (0–90–0).
- */
-function toHorizonEl(el) {
-  if (el == null || !Number.isFinite(el)) return null;
-  const e = Math.max(0, Math.min(180, Number(el)));
-  return e <= 90 ? e : 180 - e;
-}
-
-/**
  * EL gauge:
- *   - Grid: 0–180 (true rotor scale)
- *   - Needle + center: horizon angle 0→90→0
+ *   - Grid + needle + center: true rotor EL 0→180 (matches hardware)
  *   - Amber when flipped / over-top
  */
 function drawElGauge(el, flipped) {
@@ -244,10 +234,13 @@ function drawElGauge(el, flipped) {
     );
   });
 
-  const horizon = toHorizonEl(el);
-  if (horizon != null) {
-    const clamped = Math.max(0, Math.min(90, horizon));
-    const compassAz = 90 - clamped;
+  // Needle + center = true rotor EL (0–180), no fold-back at 90
+  const trueEl =
+    el != null && Number.isFinite(el)
+      ? Math.max(0, Math.min(180, Number(el)))
+      : null;
+  if (trueEl != null) {
+    const compassAz = 90 - trueEl;
     const rad = ((compassAz - 90) * Math.PI) / 180;
 
     ctx.beginPath();
@@ -285,21 +278,17 @@ function drawElGauge(el, flipped) {
     ctx.stroke();
   }
 
-  ctx.fillStyle = horizon != null ? "#e6edf3" : "#8b949e";
+  ctx.fillStyle = trueEl != null ? "#e6edf3" : "#8b949e";
   ctx.font =
     "bold 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(
-    horizon != null ? Math.round(horizon) + "°" : "—",
-    cx,
-    cy,
-  );
+  ctx.fillText(trueEl != null ? Math.round(trueEl) + "°" : "—", cx, cy);
 }
 
 /**
  * @param {number|null} rotorAz - true rotor azimuth (needle)
- * @param {number|null} rotorEl - true rotor elevation (folded for needle)
+ * @param {number|null} rotorEl - true rotor elevation 0–180
  * @param {number|null} [satAz] - satellite azimuth for center readout
  * @param {boolean} [flipped] - over-top mode → amber indicators
  */
