@@ -280,6 +280,10 @@ wss.on("connection", (ws) => {
         rotor.setAntenna(!!msg.on);
       }
 
+      if (msg.type === "park") {
+        rotor.park();
+      }
+
       if (msg.type === "fine") {
         const r = radios.active();
         const side = msg.side === "dl" ? "dl" : "ul";
@@ -346,6 +350,8 @@ wss.on("connection", (ws) => {
           rotorAzDevice: msg.rotorAzDevice,
           rotorElDevice: msg.rotorElDevice,
           rotorBaud: msg.rotorBaud,
+          rotorParkAz: msg.rotorParkAz,
+          rotorParkEl: msg.rotorParkEl,
         };
         const flags = config.applyEndpoints(ep);
         console.log("Endpoints updated", config.getEndpoints());

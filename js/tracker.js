@@ -326,6 +326,12 @@ function sendAntenna(on) {
   }
 }
 
+function sendPark() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  console.log("sendPark");
+  ws.send(JSON.stringify({ type: "park" }));
+}
+
 function sendFine(delta) {
   ulFineOffset += delta;
   updateFineOffsetDisplay();
@@ -625,6 +631,14 @@ function initRadioControls() {
     antBtn.addEventListener("click", () => {
       console.log("btn-antenna click, currently", antennaOn);
       sendAntenna(!antennaOn);
+    });
+  }
+
+  const parkBtn = document.getElementById("btn-park");
+  if (parkBtn) {
+    parkBtn.addEventListener("click", () => {
+      console.log("btn-park click");
+      sendPark();
     });
   }
 
