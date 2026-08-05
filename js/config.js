@@ -150,6 +150,7 @@ function defaultsEndpoints() {
     rotorBaud: 4800,
     rotorParkAz: 0,
     rotorParkEl: 0,
+    rotorElMax: 180,
   };
 }
 
@@ -426,6 +427,10 @@ function readFormConfig() {
     rotorBaud: parseInt(val("cfg-rotor-baud"), 10) || 4800,
     rotorParkAz: parseFloat(val("cfg-rotor-park-az")) || 0,
     rotorParkEl: parseFloat(val("cfg-rotor-park-el")) || 0,
+    rotorElMax: (function () {
+      const el = document.getElementById("cfg-rotor-el-180");
+      return el && el.checked ? 180 : 90;
+    })(),
   };
 }
 
@@ -446,6 +451,11 @@ function fillForm(cfg) {
   setVal("cfg-rotor-baud", d.rotorBaud != null ? d.rotorBaud : 4800);
   setVal("cfg-rotor-park-az", d.rotorParkAz != null ? d.rotorParkAz : 0);
   setVal("cfg-rotor-park-el", d.rotorParkEl != null ? d.rotorParkEl : 0);
+  const el180 = document.getElementById("cfg-rotor-el-180");
+  if (el180) {
+    const max = d.rotorElMax != null ? Number(d.rotorElMax) : 180;
+    el180.checked = max !== 90;
+  }
   updateRotorFormVisibility();
 }
 
@@ -528,6 +538,7 @@ function sendEndpointsToServer(cfg) {
       rotorBaud: cfg.rotorBaud,
       rotorParkAz: cfg.rotorParkAz,
       rotorParkEl: cfg.rotorParkEl,
+      rotorElMax: cfg.rotorElMax != null ? cfg.rotorElMax : 180,
     }),
   );
 }

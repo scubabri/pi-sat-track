@@ -7,6 +7,11 @@ let lastModesKey = "";
 let radioOn = false;
 let tciConnected = false;
 let antennaOn = false;
+/** True while a Park slew is in progress (center shows rotor, not sat). */
+let parking = false;
+let lastGaugeSatAz = null;
+let lastGaugeSatEl = null;
+let lastGaugeFlipped = false;
 let fineStep = 100;
 let ulFineOffset = 0;
 let manualDlOffset = 0;
@@ -145,6 +150,7 @@ function updateRadioUi(on, connected) {
 
 function updateAntennaUi(on, azConnected, elConnected) {
   antennaOn = !!on;
+  if (!antennaOn) parking = false;
 
   const toggle = document.getElementById("toggle-antenna");
   if (toggle) toggle.checked = antennaOn;
@@ -177,8 +183,23 @@ function applyRotorStatus(msg) {
         : "-";
   }
 
+  if (typeof msg.flipped === "boolean") lastGaugeFlipped = msg.flipped;
   if (typeof updateRotorGauges === "function") {
-    updateRotorGauges(msg.az, msg.el);
+    // Above horizon: center = sat AZ/EL.
+    // Below horizon / preposition: pass null so gauges derive sky
+    // direction from rotor (rotor+180 when flipped).
+    const showSat =
+      antennaOn &&
+      !parking &&
+      lastGaugeSatEl != null &&
+      lastGaugeSatEl >= 0;
+    updateRotorGauges(
+      msg.az,
+      msg.el,
+      showSat ? lastGaugeSatAz : null,
+      showSat ? lastGaugeSatEl : null,
+      antennaOn ? lastGaugeFlipped : false,
+    );
   }
 }
 
@@ -195,7 +216,6 @@ function applyTciStatus(msg) {
   if (typeof msg.step === "number") {
     fineStep = msg.step;
     const stepEl = document.getElementById("fine-step");
-    // Don't overwrite while the user is editing the step field
     if (stepEl && document.activeElement !== stepEl) {
       stepEl.value = String(fineStep);
     }
@@ -240,7 +260,6 @@ function applyFreqAndLook(msg) {
   if (ulEl) ulEl.textContent = fmtFreq(ulHz);
   if (dlEl) dlEl.textContent = fmtFreq(dlHz);
 
-  // Mode-aware side labels (FM vs SSB linear)
   const ulLab = document.getElementById("freq-ul-label");
   const dlLab = document.getElementById("freq-dl-label");
   if (ulLab) {
@@ -277,6 +296,8 @@ function applyFreqAndLook(msg) {
   if (pbDl) pbDl.textContent = msg.passbandDl || "-";
 
   if (msg.look) {
+    lastGaugeSatAz = msg.look.az;
+    if (typeof msg.look.el === "number") lastGaugeSatEl = msg.look.el;
     const azEl = document.getElementById("sat-az");
     const elEl = document.getElementById("sat-el");
     const rangeEl = document.getElementById("sat-range");
@@ -295,15 +316,34 @@ function applyFreqAndLook(msg) {
     updateAntennaUi(msg.antennaOn, msg.rotorAzConnected, msg.rotorElConnected);
   }
 
-  if (msg.rotorAz != null || msg.rotorEl != null) {
+  // Always refresh gauges when look or rotor position arrives so sat AZ
+  // center readout tracks the satellite as it moves (not only on rotor moves).
+  if (msg.look || msg.rotorAz != null || msg.rotorEl != null) {
     const azEl = document.getElementById("rotor-az");
     const elEl = document.getElementById("rotor-el");
     if (azEl && msg.rotorAz != null)
       azEl.textContent = Number(msg.rotorAz).toFixed(1) + "\u00B0";
     if (elEl && msg.rotorEl != null)
       elEl.textContent = Number(msg.rotorEl).toFixed(1) + "\u00B0";
+    if (typeof msg.flipped === "boolean") lastGaugeFlipped = msg.flipped;
     if (typeof updateRotorGauges === "function") {
-      updateRotorGauges(msg.rotorAz, msg.rotorEl);
+      const elVal =
+        msg.look && typeof msg.look.el === "number"
+          ? msg.look.el
+          : lastGaugeSatEl;
+      const showSat =
+        antennaOn &&
+        !parking &&
+        elVal != null &&
+        Number(elVal) >= 0;
+      const azVal = msg.look ? msg.look.az : lastGaugeSatAz;
+      updateRotorGauges(
+        msg.rotorAz != null ? msg.rotorAz : null,
+        msg.rotorEl != null ? msg.rotorEl : null,
+        showSat ? azVal : null,
+        showSat ? elVal : null,
+        antennaOn ? lastGaugeFlipped : false,
+      );
     }
   }
 }
@@ -329,6 +369,11 @@ function sendAntenna(on) {
 function sendPark() {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   console.log("sendPark");
+  parking = true;
+  // Immediately show rotor coords in gauge center (not sat)
+  if (typeof updateRotorGauges === "function") {
+    updateRotorGauges(null, null, null, null, false);
+  }
   ws.send(JSON.stringify({ type: "park" }));
 }
 
@@ -458,6 +503,23 @@ function connectTracker() {
       if (typeof updateMapTracking === "function") updateMapTracking(msg);
 
       if (msg.look) {
+        lastGaugeSatAz = msg.look.az;
+        if (typeof msg.look.el === "number") lastGaugeSatEl = msg.look.el;
+        if (typeof msg.flipped === "boolean") lastGaugeFlipped = msg.flipped;
+        if (typeof updateRotorGauges === "function") {
+          const showSat =
+            antennaOn &&
+            !parking &&
+            lastGaugeSatEl != null &&
+            lastGaugeSatEl >= 0;
+          updateRotorGauges(
+            msg.rotorAz != null ? msg.rotorAz : null,
+            msg.rotorEl != null ? msg.rotorEl : null,
+            showSat ? lastGaugeSatAz : null,
+            showSat ? lastGaugeSatEl : null,
+            antennaOn ? lastGaugeFlipped : false,
+          );
+        }
         const sky =
           msg.passes && msg.passes[0] && msg.passes[0].sky
             ? msg.passes[0].sky

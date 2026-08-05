@@ -508,7 +508,33 @@ body {
   margin-bottom: 4px;
 }
 
-.form-row-2 input {
+/* Checkbox + text inline inside form-row-2 (e.g. 180° elevation) */
+.form-row-2 label.cfg-check-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0;
+  margin-top: 1.4rem; /* align with input field next to Baud label */
+  font-size: 0.85rem;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.form-row-2 label.cfg-check-label input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: 0;
+  appearance: auto;
+}
+
+.form-row-2 input:not([type="checkbox"]) {
   width: 100%;
   background: var(--bg);
   border: 1px solid var(--border);

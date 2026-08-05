@@ -448,60 +448,72 @@
               </div>
 
               <div id="cfg-rotor-dual-block" hidden>
-                <div class="form-row">
-                  <label for="cfg-rotor-az-device">AZ device</label>
-                  <input
-                    type="text"
-                    id="cfg-rotor-az-device"
-                    placeholder="/dev/ttyUSB0"
-                    autocomplete="off"
-                    spellcheck="false"
-                  />
-                </div>
-                <div class="form-row">
-                  <label for="cfg-rotor-el-device">EL device</label>
-                  <input
-                    type="text"
-                    id="cfg-rotor-el-device"
-                    placeholder="/dev/ttyUSB1"
-                    autocomplete="off"
-                    spellcheck="false"
-                  />
+                <div class="form-row-2">
+                  <div>
+                    <label for="cfg-rotor-az-device">AZ device</label>
+                    <input
+                      type="text"
+                      id="cfg-rotor-az-device"
+                      placeholder="/dev/ttyUSB0"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                  </div>
+                  <div>
+                    <label for="cfg-rotor-el-device">EL device</label>
+                    <input
+                      type="text"
+                      id="cfg-rotor-el-device"
+                      placeholder="/dev/ttyUSB1"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div class="form-row">
-                <label for="cfg-rotor-baud">Baud</label>
-                <input
-                  type="number"
-                  id="cfg-rotor-baud"
-                  placeholder="9600"
-                  min="1200"
-                  step="1"
-                />
+              <div class="form-row-2">
+                <div>
+                  <label for="cfg-rotor-baud">Baud</label>
+                  <input
+                    type="number"
+                    id="cfg-rotor-baud"
+                    placeholder="9600"
+                    min="1200"
+                    step="1"
+                  />
+                </div>
+                <div>
+                  <label class="cfg-check-label" for="cfg-rotor-el-180">
+                    <input type="checkbox" id="cfg-rotor-el-180" checked />
+                    180° elevation
+                  </label>
+                </div>
               </div>
 
-              <div class="form-row">
-                <label for="cfg-rotor-park-az">Park AZ °</label>
-                <input
-                  type="number"
-                  id="cfg-rotor-park-az"
-                  placeholder="0"
-                  min="0"
-                  max="360"
-                  step="0.1"
-                />
-              </div>
-              <div class="form-row">
-                <label for="cfg-rotor-park-el">Park EL °</label>
-                <input
-                  type="number"
-                  id="cfg-rotor-park-el"
-                  placeholder="0"
-                  min="0"
-                  max="180"
-                  step="0.1"
-                />
+              <div class="form-row-2">
+                <div>
+                  <label for="cfg-rotor-park-az">Park AZ °</label>
+                  <input
+                    type="number"
+                    id="cfg-rotor-park-az"
+                    placeholder="0"
+                    min="0"
+                    max="360"
+                    step="0.1"
+                  />
+                </div>
+                <div>
+                  <label for="cfg-rotor-park-el">Park EL °</label>
+                  <input
+                    type="number"
+                    id="cfg-rotor-park-el"
+                    placeholder="0"
+                    min="0"
+                    max="180"
+                    step="0.1"
+                  />
+                </div>
               </div>
               <p class="form-hint" id="cfg-rotor-hint"></p>
             </div>

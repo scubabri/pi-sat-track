@@ -18,12 +18,12 @@ The UI is a Leaflet map (Blue Marble base) with radar view, rotor gauges, pass p
 
 ## Hardware / software stack
 
-| Component | Role |
-|-----------|------|
-| Raspberry Pi (or any Linux host) | Runs Node server + optional nginx + `rotctld` |
-| Green Heron RT-21 AZ/EL | USB serial rotor controller |
-| Flex Radio + AetherSDR (Mac or other) | TCI WebSocket (default port 50001) |
-| Hamlib | `rotctld` for RT-21 (model 405) |
+| Component                             | Role                                          |
+| ------------------------------------- | --------------------------------------------- |
+| Raspberry Pi (or any Linux host)      | Runs Node server + optional nginx + `rotctld` |
+| Green Heron RT-21 AZ/EL               | USB serial rotor controller                   |
+| Flex Radio + AetherSDR (Mac or other) | TCI WebSocket (default port 50001)            |
+| Hamlib                                | `rotctld` for RT-21 (model 405)               |
 
 Typical layout:
 
@@ -90,12 +90,12 @@ Run as a normal user (not root). The script uses `sudo` only where needed for ap
 
 ### Installer flags
 
-| Flag | Effect |
-|------|--------|
-| `--no-nginx` | Skip nginx install and site config |
-| `--no-service` | Skip systemd user service |
-| `--update` | Re-run `npm install` only |
-| `--upgrade` | `git pull` + `npm install` + restart service |
+| Flag           | Effect                                       |
+| -------------- | -------------------------------------------- |
+| `--no-nginx`   | Skip nginx install and site config           |
+| `--no-service` | Skip systemd user service                    |
+| `--update`     | Re-run `npm install` only                    |
+| `--upgrade`    | `git pull` + `npm install` + restart service |
 
 Day-to-day updates after the first install:
 
@@ -137,30 +137,30 @@ All station and endpoint settings are done in the browser.
 2. Click the gear icon (Configuration)
 3. Set:
 
-| Field | Purpose |
-|-------|---------|
-| Callsign | Display only |
-| Gridsquare | Maidenhead; converted to lat/lon for the observer |
-| Elevation (m) | Station height above sea level |
-| TCI host / port | AetherSDR machine (default `127.0.0.1:50001`) |
-| rotctld host | Host running both AZ and EL daemons (default `127.0.0.1`) |
-| AZ port / EL port | Default `4535` / `4536` |
+| Field             | Purpose                                                   |
+| ----------------- | --------------------------------------------------------- |
+| Callsign          | Display only                                              |
+| Gridsquare        | Maidenhead; converted to lat/lon for the observer         |
+| Elevation (m)     | Station height above sea level                            |
+| TCI host / port   | AetherSDR machine (default `127.0.0.1:50001`)             |
+| rotctld host      | Host running both AZ and EL daemons (default `127.0.0.1`) |
+| AZ port / EL port | Default `4535` / `4536`                                   |
 
 4. **Save** — endpoints are applied live; map can be recentered with **Center Map**.
 
 Environment variables can still set defaults before the UI overrides them:
 
-| Variable | Default |
-|----------|---------|
-| `TCI_HOST` | `127.0.0.1` |
-| `TCI_PORT` | `50001` |
-| `ROTOR_AZ_HOST` | `127.0.0.1` |
-| `ROTOR_AZ_PORT` | `4535` |
-| `ROTOR_EL_HOST` | same as AZ host |
-| `ROTOR_EL_PORT` | `4536` |
-| `ROTOR_MIN_EL` | `10` |
-| `ROTOR_PARK_EL` | `0` |
-| `ROTOR_MOVE_INTERVAL_MS` | `1000` |
+| Variable                 | Default         |
+| ------------------------ | --------------- |
+| `TCI_HOST`               | `127.0.0.1`     |
+| `TCI_PORT`               | `50001`         |
+| `ROTOR_AZ_HOST`          | `127.0.0.1`     |
+| `ROTOR_AZ_PORT`          | `4535`          |
+| `ROTOR_EL_HOST`          | same as AZ host |
+| `ROTOR_EL_PORT`          | `4536`          |
+| `ROTOR_MIN_EL`           | `0`             |
+| `ROTOR_PARK_EL`          | `0`             |
+| `ROTOR_MOVE_INTERVAL_MS` | `1000`          |
 
 ## Operation
 
