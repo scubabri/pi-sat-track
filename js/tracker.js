@@ -7,6 +7,8 @@ let lastModesKey = "";
 let radioOn = false;
 let tciConnected = false;
 let antennaOn = false;
+/** True while a Park slew is in progress (center shows rotor, not sat). */
+let parking = false;
 let lastGaugeSatAz = null;
 let lastGaugeSatEl = null;
 let lastGaugeFlipped = false;
@@ -148,6 +150,7 @@ function updateRadioUi(on, connected) {
 
 function updateAntennaUi(on, azConnected, elConnected) {
   antennaOn = !!on;
+  if (!antennaOn) parking = false;
 
   const toggle = document.getElementById("toggle-antenna");
   if (toggle) toggle.checked = antennaOn;
@@ -182,12 +185,16 @@ function applyRotorStatus(msg) {
 
   if (typeof msg.flipped === "boolean") lastGaugeFlipped = msg.flipped;
   if (typeof updateRotorGauges === "function") {
+    // Tracking: center = sat AZ/EL. Parked / antenna off: center = rotor.
+    const showSat = antennaOn && !parking;
+    const satAz = showSat ? lastGaugeSatAz : null;
+    const satEl = showSat ? lastGaugeSatEl : null;
     updateRotorGauges(
       msg.az,
       msg.el,
-      lastGaugeSatAz,
-      lastGaugeSatEl,
-      lastGaugeFlipped,
+      satAz,
+      satEl,
+      showSat ? lastGaugeFlipped : false,
     );
   }
 }
@@ -316,14 +323,24 @@ function applyFreqAndLook(msg) {
       elEl.textContent = Number(msg.rotorEl).toFixed(1) + "\u00B0";
     if (typeof msg.flipped === "boolean") lastGaugeFlipped = msg.flipped;
     if (typeof updateRotorGauges === "function") {
+      // Tracking: center = sat. Parked / antenna off: center = rotor.
+      const showSat = antennaOn && !parking;
+      const satAz = showSat
+        ? msg.look
+          ? msg.look.az
+          : lastGaugeSatAz
+        : null;
+      const satEl = showSat
+        ? msg.look && typeof msg.look.el === "number"
+          ? msg.look.el
+          : lastGaugeSatEl
+        : null;
       updateRotorGauges(
         msg.rotorAz != null ? msg.rotorAz : null,
         msg.rotorEl != null ? msg.rotorEl : null,
-        msg.look ? msg.look.az : lastGaugeSatAz,
-        msg.look && typeof msg.look.el === "number"
-          ? msg.look.el
-          : lastGaugeSatEl,
-        lastGaugeFlipped,
+        satAz,
+        satEl,
+        showSat ? lastGaugeFlipped : false,
       );
     }
   }
@@ -350,6 +367,11 @@ function sendAntenna(on) {
 function sendPark() {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   console.log("sendPark");
+  parking = true;
+  // Immediately show rotor coords in gauge center (not sat)
+  if (typeof updateRotorGauges === "function") {
+    updateRotorGauges(null, null, null, null, false);
+  }
   ws.send(JSON.stringify({ type: "park" }));
 }
 
@@ -483,12 +505,15 @@ function connectTracker() {
         if (typeof msg.look.el === "number") lastGaugeSatEl = msg.look.el;
         if (typeof msg.flipped === "boolean") lastGaugeFlipped = msg.flipped;
         if (typeof updateRotorGauges === "function") {
+          const showSat = antennaOn && !parking;
+          const satAz = showSat ? lastGaugeSatAz : null;
+          const satEl = showSat ? lastGaugeSatEl : null;
           updateRotorGauges(
             msg.rotorAz != null ? msg.rotorAz : null,
             msg.rotorEl != null ? msg.rotorEl : null,
-            lastGaugeSatAz,
-            lastGaugeSatEl,
-            lastGaugeFlipped,
+            satAz,
+            satEl,
+            showSat ? lastGaugeFlipped : false,
           );
         }
         const sky =
@@ -688,7 +713,7 @@ function initRadioControls() {
   }
   if (plus) {
     plus.addEventListener("click", () => {
-      const step = parseInt(stepEl.value, 10) || fineStep;
+      const step = parseInt(stepEl && stepEl.value, 10) || fineStep;
       fineStep = step;
       sendFine(+step);
     });
