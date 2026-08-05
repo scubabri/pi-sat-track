@@ -90,7 +90,7 @@ function drawAzGauge(az) {
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.lineTo(cx + (r - 4) * Math.cos(rad), cy + (r - 4) * Math.sin(rad));
-    ctx.strokeStyle = "#58a6ff";
+    ctx.strokeStyle = "#3fb950";
     ctx.lineWidth = 2.5;
     ctx.lineCap = "round";
     ctx.stroke();
@@ -104,7 +104,7 @@ function drawAzGauge(az) {
       0,
       Math.PI * 2,
     );
-    ctx.fillStyle = "#58a6ff";
+    ctx.fillStyle = "#3fb950";
     ctx.fill();
     ctx.strokeStyle = "#fff";
     ctx.lineWidth = 1.5;
@@ -123,17 +123,26 @@ function drawAzGauge(az) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(
-    az != null && Number.isFinite(az)
-      ? Math.round(((az % 360) + 360) % 360) + "°"
-      : "—",
+    az != null && Number.isFinite(az) ? Math.round(az) + "°" : "—",
     cx,
     cy,
   );
 }
 
 /**
+ * Fold rotor EL (0–180) to angle-from-horizon (0–90–0).
+ * Needle + center readout use this; the 0–180 grid stays as-is.
+ */
+function toHorizonEl(el) {
+  if (el == null || !Number.isFinite(el)) return null;
+  const e = Math.max(0, Math.min(180, Number(el)));
+  return e <= 90 ? e : 180 - e;
+}
+
+/**
  * EL — upper semicircle for 0–180° rotor travel.
- * 0° = right, 90° = top, 180° = left.
+ * Grid: 0° = right, 90° = top, 180° = left.
+ * Needle/center: horizon angle only (0→90→0), not raw rotor EL past 90.
  */
 function drawElGauge(el) {
   if (!elCtx) return;
@@ -178,18 +187,25 @@ function drawElGauge(el) {
     ctx.stroke();
   });
 
-  // Radial spokes every 30° of elevation (0, 30, 60, 90, 120, 150, 180)
-  ctx.strokeStyle = "rgba(139, 148, 158, 0.35)";
+  // Tick marks every 30° of elevation
+  ctx.strokeStyle = "rgba(139, 148, 158, 0.5)";
+  ctx.lineWidth = 1;
   for (let elev = 0; elev <= 180; elev += 30) {
+    // elev 0 → east (right), elev 90 → north (up), elev 180 → west (left)
     const compassAz = 90 - elev;
     const rad = ((compassAz - 90) * Math.PI) / 180;
+    const x1 = cx + (r - 8) * Math.cos(rad);
+    const y1 = cy + (r - 8) * Math.sin(rad);
+    const x2 = cx + r * Math.cos(rad);
+    const y2 = cy + r * Math.sin(rad);
     ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(cx + r * Math.cos(rad), cy + r * Math.sin(rad));
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
     ctx.stroke();
   }
 
-  // Angle labels — keep fully inside canvas (180° was clipping to "80°")
+  // Labels — inset so "180°" is not clipped at the left edge
+  // (previous position at r-10° was clipping to "80°")
   ctx.fillStyle = "rgba(230, 237, 243, 0.85)";
   ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
   ctx.textAlign = "center";
@@ -219,9 +235,11 @@ function drawElGauge(el) {
     ctx.fillText(txt, lx, ly);
   });
 
-  // Needle: elev 0 → right, 90 → up, 180 → left
-  if (el != null && Number.isFinite(el)) {
-    const clamped = Math.max(-5, Math.min(185, el));
+  // Needle + center: angle-from-horizon (0→90→0). Grid stays 0–180.
+  // When rotor is past zenith (el>90), horizon angle is 180-el.
+  const horizon = toHorizonEl(el);
+  if (horizon != null) {
+    const clamped = Math.max(0, Math.min(90, horizon));
     const compassAz = 90 - clamped;
     const rad = ((compassAz - 90) * Math.PI) / 180;
 
@@ -249,19 +267,19 @@ function drawElGauge(el) {
     ctx.stroke();
   }
 
-  // Center hub + degrees (slightly above the diameter so it sits inside the semicircle)
+  // Center hub + horizon degrees
   ctx.beginPath();
   ctx.arc(cx, cy, 22, 0, Math.PI * 2);
   ctx.fillStyle = "rgba(13, 17, 23, 0.9)";
   ctx.fill();
 
-  ctx.fillStyle = el != null && Number.isFinite(el) ? "#e6edf3" : "#8b949e";
+  ctx.fillStyle = horizon != null ? "#e6edf3" : "#8b949e";
   ctx.font =
     "bold 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(
-    el != null && Number.isFinite(el) ? Math.round(el) + "°" : "—",
+    horizon != null ? Math.round(horizon) + "°" : "—",
     cx,
     cy,
   );
