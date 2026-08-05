@@ -148,6 +148,8 @@ function defaultsEndpoints() {
     rotorAzDevice: "/dev/ttyUSB0",
     rotorElDevice: "/dev/ttyUSB1",
     rotorBaud: 4800,
+    rotorParkAz: 0,
+    rotorParkEl: 0,
   };
 }
 
@@ -422,6 +424,8 @@ function readFormConfig() {
       return val("cfg-rotor-el-device").trim() || "/dev/ttyUSB1";
     })(),
     rotorBaud: parseInt(val("cfg-rotor-baud"), 10) || 4800,
+    rotorParkAz: parseFloat(val("cfg-rotor-park-az")) || 0,
+    rotorParkEl: parseFloat(val("cfg-rotor-park-el")) || 0,
   };
 }
 
@@ -440,6 +444,8 @@ function fillForm(cfg) {
   setVal("cfg-rotor-az-device", d.rotorAzDevice || "/dev/ttyUSB0");
   setVal("cfg-rotor-el-device", d.rotorElDevice || "/dev/ttyUSB1");
   setVal("cfg-rotor-baud", d.rotorBaud != null ? d.rotorBaud : 4800);
+  setVal("cfg-rotor-park-az", d.rotorParkAz != null ? d.rotorParkAz : 0);
+  setVal("cfg-rotor-park-el", d.rotorParkEl != null ? d.rotorParkEl : 0);
   updateRotorFormVisibility();
 }
 
@@ -520,6 +526,8 @@ function sendEndpointsToServer(cfg) {
       rotorAzDevice: cfg.rotorAzDevice,
       rotorElDevice: cfg.rotorElDevice,
       rotorBaud: cfg.rotorBaud,
+      rotorParkAz: cfg.rotorParkAz,
+      rotorParkEl: cfg.rotorParkEl,
     }),
   );
 }
