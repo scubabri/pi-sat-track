@@ -245,13 +245,11 @@ function applyFreqAndLook(msg) {
   const dlLab = document.getElementById("freq-dl-label");
   if (ulLab) {
     ulLab.textContent =
-      msg.ulLabel ||
-      (msg.isFm ? "Uplink (FM)" : "Uplink (LSB)");
+      msg.ulLabel || (msg.isFm ? "Uplink (FM)" : "Uplink (LSB)");
   }
   if (dlLab) {
     dlLab.textContent =
-      msg.dlLabel ||
-      (msg.isFm ? "Downlink (FM)" : "Downlink (USB)");
+      msg.dlLabel || (msg.isFm ? "Downlink (FM)" : "Downlink (USB)");
   }
 
   let ulDop = msg.ulDopplerHz;
@@ -395,6 +393,31 @@ function connectTracker() {
       if (msg.type === "profiles") {
         if (typeof applyProfilesMessage === "function") {
           applyProfilesMessage(msg);
+        }
+        return;
+      }
+
+      if (msg.type === "host" || msg.type === "endpoints") {
+        if (msg.rotorCatalog && typeof setRotorCatalog === "function") {
+          setRotorCatalog(msg.rotorCatalog);
+          if (typeof populateRotorTypes === "function") {
+            populateRotorTypes(msg.rotorType);
+          }
+        }
+        if (msg.rotorType && typeof setVal === "function") {
+          if (document.getElementById("cfg-rotor-type")) {
+            setVal("cfg-rotor-type", msg.rotorType);
+            if (msg.rotorAzDevice) {
+              setVal("cfg-rotor-device", msg.rotorAzDevice);
+              setVal("cfg-rotor-az-device", msg.rotorAzDevice);
+            }
+            if (msg.rotorElDevice)
+              setVal("cfg-rotor-el-device", msg.rotorElDevice);
+            if (msg.rotorBaud != null) setVal("cfg-rotor-baud", msg.rotorBaud);
+            if (typeof updateRotorFormVisibility === "function") {
+              updateRotorFormVisibility();
+            }
+          }
         }
         return;
       }

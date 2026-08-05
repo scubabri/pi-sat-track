@@ -26,6 +26,78 @@ const SERIAL_CATALOG = {
   yaesu: { label: "Yaesu", models: [] },
 };
 
+/** Filled from server host/endpoints message (rotors.catalog()). */
+let ROTOR_CATALOG = [
+  {
+    id: "rt21",
+    label: "Green Heron RT-21",
+    ports: 2,
+    defaultBaud: 4800,
+    defaultDevice: "/dev/ttyUSB0",
+    hint: "Two serial ports — one for AZ, one for EL.",
+  },
+  {
+    id: "gs232",
+    label: "GS-232 (K3NG / Fox Delta)",
+    ports: 1,
+    defaultBaud: 9600,
+    defaultDevice: "/dev/ttyACM0",
+    hint: "Single USB serial. AZ and EL on one controller.",
+  },
+];
+
+function findRotorDriver(id) {
+  const key = String(id || "").toLowerCase();
+  return ROTOR_CATALOG.find((d) => d.id === key) || null;
+}
+
+function setRotorCatalog(list) {
+  if (Array.isArray(list) && list.length) {
+    ROTOR_CATALOG = list.slice();
+  }
+}
+
+function populateRotorTypes(selected) {
+  const el = document.getElementById("cfg-rotor-type");
+  if (!el) return;
+  const prev = selected || el.value || "rt21";
+  el.innerHTML = "";
+  ROTOR_CATALOG.forEach((d) => {
+    const opt = document.createElement("option");
+    opt.value = d.id;
+    opt.textContent = d.label || d.id;
+    el.appendChild(opt);
+  });
+  if (ROTOR_CATALOG.some((d) => d.id === prev)) el.value = prev;
+  else if (ROTOR_CATALOG.length) el.value = ROTOR_CATALOG[0].id;
+  updateRotorFormVisibility();
+}
+
+function updateRotorFormVisibility() {
+  const type = val("cfg-rotor-type") || "rt21";
+  const info = findRotorDriver(type);
+  const ports = info && info.ports != null ? info.ports : 2;
+  const single = document.getElementById("cfg-rotor-single-block");
+  const dual = document.getElementById("cfg-rotor-dual-block");
+  const hint = document.getElementById("cfg-rotor-hint");
+  if (single) single.hidden = ports !== 1;
+  if (dual) dual.hidden = ports !== 2;
+  if (hint) hint.textContent = info && info.hint ? info.hint : "";
+}
+
+function onRotorTypeChange() {
+  const type = val("cfg-rotor-type") || "rt21";
+  const info = findRotorDriver(type);
+  updateRotorFormVisibility();
+  if (!info) return;
+  if (info.defaultBaud) setVal("cfg-rotor-baud", info.defaultBaud);
+  if (info.ports === 1) {
+    if (info.defaultDevice) setVal("cfg-rotor-device", info.defaultDevice);
+  } else {
+    if (info.defaultDevice) setVal("cfg-rotor-az-device", info.defaultDevice);
+  }
+}
+
 function loadConfig() {
   try {
     const cfg = JSON.parse(localStorage.getItem(CONFIG_KEY)) || {};
@@ -72,6 +144,10 @@ function defaultsEndpoints() {
     rotorHost: "127.0.0.1",
     rotorAzPort: 4535,
     rotorElPort: 4536,
+    rotorType: "rt21",
+    rotorAzDevice: "/dev/ttyUSB0",
+    rotorElDevice: "/dev/ttyUSB1",
+    rotorBaud: 4800,
   };
 }
 
@@ -100,7 +176,8 @@ function migrateLegacy(cfg) {
     dl.tciEndpoint = ep;
   }
   if (d.rigctlHost) {
-    dl.rigctlEndpoint = (d.rigctlHost || "127.0.0.1") + ":" + (d.rigctlPort || 4532);
+    dl.rigctlEndpoint =
+      (d.rigctlHost || "127.0.0.1") + ":" + (d.rigctlPort || 4532);
   }
   if (d.rigctlUlHost) {
     ul.rigctlEndpoint = d.rigctlUlHost + ":" + (d.rigctlUlPort || 4532);
@@ -159,7 +236,8 @@ function parseEndpoint(str, defaultHost, defaultPort) {
   if (idx > 0) {
     const host = s.slice(0, idx).trim();
     const p = parseInt(s.slice(idx + 1).trim(), 10);
-    if (host && Number.isFinite(p) && p > 0 && p < 65536) return { host, port: p };
+    if (host && Number.isFinite(p) && p > 0 && p < 65536)
+      return { host, port: p };
   }
   return { host: s || defaultHost, port: defaultPort };
 }
@@ -306,9 +384,7 @@ function readFormConfig() {
   const singleRadio = isSingleRadioChecked();
   const radioUl = readSide("ul");
   // Single radio (split): DL uses the same config as UL
-  const radioDl = singleRadio
-    ? Object.assign({}, radioUl)
-    : readSide("dl");
+  const radioDl = singleRadio ? Object.assign({}, radioUl) : readSide("dl");
 
   return {
     callsign: val("cfg-callsign").trim().toUpperCase(),
@@ -323,6 +399,29 @@ function readFormConfig() {
     rotorHost: prev.rotorHost,
     rotorAzPort: prev.rotorAzPort,
     rotorElPort: prev.rotorElPort,
+    rotorType: (function () {
+      const t = val("cfg-rotor-type") || "rt21";
+      return t.toLowerCase();
+    })(),
+    rotorAzDevice: (function () {
+      const t = val("cfg-rotor-type") || "rt21";
+      const info = findRotorDriver(t);
+      const ports = info && info.ports != null ? info.ports : 2;
+      if (ports === 1) {
+        return val("cfg-rotor-device").trim() || "/dev/ttyACM0";
+      }
+      return val("cfg-rotor-az-device").trim() || "/dev/ttyUSB0";
+    })(),
+    rotorElDevice: (function () {
+      const t = val("cfg-rotor-type") || "rt21";
+      const info = findRotorDriver(t);
+      const ports = info && info.ports != null ? info.ports : 2;
+      if (ports === 1) {
+        return val("cfg-rotor-device").trim() || "/dev/ttyACM0";
+      }
+      return val("cfg-rotor-el-device").trim() || "/dev/ttyUSB1";
+    })(),
+    rotorBaud: parseInt(val("cfg-rotor-baud"), 10) || 4800,
   };
 }
 
@@ -336,6 +435,12 @@ function fillForm(cfg) {
   fillSide("ul", d.radioUl);
   fillSide("dl", d.radioDl);
   updateSingleRadioVisibility();
+  populateRotorTypes(d.rotorType || "rt21");
+  setVal("cfg-rotor-device", d.rotorAzDevice || "/dev/ttyACM0");
+  setVal("cfg-rotor-az-device", d.rotorAzDevice || "/dev/ttyUSB0");
+  setVal("cfg-rotor-el-device", d.rotorElDevice || "/dev/ttyUSB1");
+  setVal("cfg-rotor-baud", d.rotorBaud != null ? d.rotorBaud : 4800);
+  updateRotorFormVisibility();
 }
 
 function sideToServerFields(side, s) {
@@ -345,7 +450,8 @@ function sideToServerFields(side, s) {
 }
 
 function sendEndpointsToServer(cfg) {
-  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN) return;
+  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN)
+    return;
   const singleRadio = !!cfg.singleRadio;
   const ul = cfg.radioUl || defaultSide("ul");
   // Single radio (split): force DL = UL so server maps one radio with split semantics
@@ -362,9 +468,7 @@ function sendEndpointsToServer(cfg) {
   const api = parseEndpoint(dl.apiEndpoint || ul.apiEndpoint, "", 4992);
 
   // Serial split: only one device — clear device2 so isDualCat() is false
-  const serialDevice = singleRadio
-    ? ul.serialDevice
-    : dl.serialDevice;
+  const serialDevice = singleRadio ? ul.serialDevice : dl.serialDevice;
   const serialBaud = singleRadio ? ul.serialBaud : dl.serialBaud;
   const serialDevice2 = singleRadio ? "" : ul.serialDevice;
   const serialBaud2 = singleRadio ? 19200 : ul.serialBaud;
@@ -386,18 +490,16 @@ function sendEndpointsToServer(cfg) {
       rigctlHost: dlRig.host,
       rigctlPort: dlRig.port,
       // Single-endpoint split: no separate UL rigctl host
-      rigctlUlHost:
-        singleRadio
-          ? ""
-          : ul.protocol === "rigctl" || ul.type === "rigctl"
-            ? ulRig.host
-            : "",
-      rigctlUlPort:
-        singleRadio
-          ? 0
-          : ul.protocol === "rigctl" || ul.type === "rigctl"
-            ? ulRig.port
-            : 0,
+      rigctlUlHost: singleRadio
+        ? ""
+        : ul.protocol === "rigctl" || ul.type === "rigctl"
+          ? ulRig.host
+          : "",
+      rigctlUlPort: singleRadio
+        ? 0
+        : ul.protocol === "rigctl" || ul.type === "rigctl"
+          ? ulRig.port
+          : 0,
       flexUlHost: ulCat.host,
       flexUlPort: ulCat.port,
       // Single radio: same CAT endpoint for both sides
@@ -414,24 +516,34 @@ function sendEndpointsToServer(cfg) {
       rotorHost: cfg.rotorHost,
       rotorAzPort: cfg.rotorAzPort,
       rotorElPort: cfg.rotorElPort,
+      rotorType: cfg.rotorType,
+      rotorAzDevice: cfg.rotorAzDevice,
+      rotorElDevice: cfg.rotorElDevice,
+      rotorBaud: cfg.rotorBaud,
     }),
   );
 }
 
 function sendProfileSelect(name) {
-  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN) return;
+  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN)
+    return;
   ws.send(JSON.stringify({ type: "profile-select", name: name }));
 }
 function sendProfileCreate(name) {
-  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({ type: "profile-create", name: name, fromActive: true }));
+  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN)
+    return;
+  ws.send(
+    JSON.stringify({ type: "profile-create", name: name, fromActive: true }),
+  );
 }
 function sendProfileDelete(name) {
-  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN) return;
+  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN)
+    return;
   ws.send(JSON.stringify({ type: "profile-delete", name: name }));
 }
 function sendProfileRename(from, to) {
-  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN) return;
+  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN)
+    return;
   ws.send(JSON.stringify({ type: "profile-rename", from: from, to: to }));
 }
 
@@ -439,7 +551,8 @@ function fillProfileSelect() {
   const el = document.getElementById("cfg-profile");
   if (!el) return;
   const names = profileNames.slice();
-  if (activeProfileName && names.indexOf(activeProfileName) < 0) names.push(activeProfileName);
+  if (activeProfileName && names.indexOf(activeProfileName) < 0)
+    names.push(activeProfileName);
   names.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   el.innerHTML = "";
   names.forEach((n) => {
@@ -456,28 +569,38 @@ function applyProfilesMessage(msg) {
   profilesReady = true;
   activeProfileName = msg.active || activeProfileName;
   profileNames = Array.isArray(msg.names) ? msg.names.slice() : [];
-  if (activeProfileName) localStorage.setItem(PROFILE_CACHE_KEY, activeProfileName);
+  if (activeProfileName)
+    localStorage.setItem(PROFILE_CACHE_KEY, activeProfileName);
   fillProfileSelect();
 
   const cfg = msg.config && typeof msg.config === "object" ? msg.config : {};
   const hasServerCfg = Object.keys(cfg).length > 0;
-  const hasServerFavs = Array.isArray(msg.favorites) && msg.favorites.length > 0;
+  const hasServerFavs =
+    Array.isArray(msg.favorites) && msg.favorites.length > 0;
 
   if (!migratedLocalToServer && !hasServerCfg && !hasServerFavs) {
     const localCfg = loadConfig();
-    const localFavs = typeof loadFavorites === "function" ? loadFavorites() : [];
+    const localFavs =
+      typeof loadFavorites === "function" ? loadFavorites() : [];
     const localHas =
-      (localCfg && (localCfg.grid || localCfg.callsign || localCfg.tciHost || localCfg.radioUl)) ||
+      (localCfg &&
+        (localCfg.grid ||
+          localCfg.callsign ||
+          localCfg.tciHost ||
+          localCfg.radioUl)) ||
       (localFavs && localFavs.length);
     if (localHas && typeof ws !== "undefined" && ws && ws.readyState === 1) {
       migratedLocalToServer = true;
-      const merged = migrateLegacy(Object.assign(defaultsEndpoints(), localCfg));
+      const merged = migrateLegacy(
+        Object.assign(defaultsEndpoints(), localCfg),
+      );
       saveConfig(merged);
       fillForm(merged);
       sendEndpointsToServer(merged);
       if (localFavs.length && typeof saveFavorites === "function") {
         saveFavorites(localFavs);
-        if (typeof sendFavoritesToServer === "function") sendFavoritesToServer();
+        if (typeof sendFavoritesToServer === "function")
+          sendFavoritesToServer();
       }
       return;
     }
@@ -487,7 +610,8 @@ function applyProfilesMessage(msg) {
     const merged = migrateLegacy(Object.assign(defaultsEndpoints(), cfg));
     saveConfig(merged);
     fillForm(merged);
-    if (merged.grid && typeof centerOnGrid === "function") centerOnGrid(merged.grid);
+    if (merged.grid && typeof centerOnGrid === "function")
+      centerOnGrid(merged.grid);
     if (typeof notifyObserverChanged === "function") notifyObserverChanged();
   }
 
@@ -573,12 +697,16 @@ function initConfig() {
     singleCb.addEventListener("change", () => updateSingleRadioVisibility());
   }
 
+  const rotorTypeEl = document.getElementById("cfg-rotor-type");
+  if (rotorTypeEl) rotorTypeEl.addEventListener("change", onRotorTypeChange);
+
   const saveBtn = document.getElementById("btn-save-config");
   if (saveBtn) {
     saveBtn.addEventListener("click", () => {
       const newCfg = readFormConfig();
       saveConfig(newCfg);
-      if (newCfg.grid && typeof centerOnGrid === "function") centerOnGrid(newCfg.grid);
+      if (newCfg.grid && typeof centerOnGrid === "function")
+        centerOnGrid(newCfg.grid);
       if (typeof notifyObserverChanged === "function") notifyObserverChanged();
       sendEndpointsToServer(newCfg);
       panel.classList.remove("open");
