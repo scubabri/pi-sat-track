@@ -54,9 +54,9 @@ function drawCircularFace(ctx) {
 
 /**
  * AZ gauge:
- *   - Needle: true rotor AZ on the compass grid
- *   - Center number: satellite AZ (sky), falls back to rotor AZ
+ *   - Needle + center number: true rotor AZ (matches hardware)
  *   - Amber needle when flipped / over-top
+ *   - Satellite AZ is shown on the radar / status panels
  */
 function drawAzGauge(rotorAz, satAz, flipped) {
   if (!azCtx) return;
@@ -134,13 +134,9 @@ function drawAzGauge(rotorAz, satAz, flipped) {
     ctx.stroke();
   }
 
-  // Center number = satellite AZ (sky heading)
+  // Center number = true rotor AZ (same as needle)
   const displayAz =
-    satAz != null && Number.isFinite(satAz)
-      ? satAz
-      : rotorAz != null && Number.isFinite(rotorAz)
-        ? rotorAz
-        : null;
+    rotorAz != null && Number.isFinite(rotorAz) ? rotorAz : null;
   ctx.fillStyle = displayAz != null ? "#e6edf3" : "#8b949e";
   ctx.font =
     "bold 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
@@ -289,7 +285,7 @@ function drawElGauge(el, flipped) {
 /**
  * @param {number|null} rotorAz - true rotor azimuth (needle)
  * @param {number|null} rotorEl - true rotor elevation 0–180
- * @param {number|null} [satAz] - satellite azimuth for center readout
+ * @param {number|null} [satAz] - unused (kept for call-site compat)
  * @param {boolean} [flipped] - over-top mode → amber indicators
  */
 function updateRotorGauges(rotorAz, rotorEl, satAz, flipped) {
