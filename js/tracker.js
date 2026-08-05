@@ -297,7 +297,9 @@ function applyFreqAndLook(msg) {
     updateAntennaUi(msg.antennaOn, msg.rotorAzConnected, msg.rotorElConnected);
   }
 
-  if (msg.rotorAz != null || msg.rotorEl != null) {
+  // Always refresh gauges when look or rotor position arrives so sat AZ
+  // center readout tracks the satellite as it moves (not only on rotor moves).
+  if (msg.look || msg.rotorAz != null || msg.rotorEl != null) {
     const azEl = document.getElementById("rotor-az");
     const elEl = document.getElementById("rotor-el");
     if (azEl && msg.rotorAz != null)
@@ -307,8 +309,8 @@ function applyFreqAndLook(msg) {
     if (typeof msg.flipped === "boolean") lastGaugeFlipped = msg.flipped;
     if (typeof updateRotorGauges === "function") {
       updateRotorGauges(
-        msg.rotorAz,
-        msg.rotorEl,
+        msg.rotorAz != null ? msg.rotorAz : null,
+        msg.rotorEl != null ? msg.rotorEl : null,
         msg.look ? msg.look.az : lastGaugeSatAz,
         lastGaugeFlipped,
       );
