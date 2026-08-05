@@ -275,22 +275,15 @@ fi
 log "Sanity-check radio drivers"
 node -e '
   const path = require("path");
-  const radios = require("./lib/radios");
-  const ids = (radios.list && radios.list()) || Object.keys(radios.drivers || {});
-  // Support both registry shapes
-  let names = [];
-  try {
-    if (typeof radios.list === "function") names = radios.list().map(r => r.id || r);
-    else if (radios.drivers) names = Object.keys(radios.drivers);
-    else if (Array.isArray(radios)) names = radios.map(r => r.meta && r.meta.id);
-  } catch (_) {}
-  // Fallback: just require each known driver file
   const fs = require("fs");
-  const dir = path.join(__dirname, "lib", "radios");
+  // node -e sets __dirname to "." — always resolve to absolute paths
+  const root = process.cwd();
+  const radios = require(path.join(root, "lib", "radios"));
+  const dir = path.join(root, "lib", "radios");
   const files = fs.readdirSync(dir).filter(f => f.endsWith(".js") && f !== "index.js" && f !== "flex-api.js");
   console.log("    radio modules:", files.map(f => f.replace(/\.js$/, "")).join(", "));
   for (const f of files) {
-    require(path.join(dir, f));
+    require(path.resolve(dir, f));
   }
   console.log("    drivers OK");
 ' || warn "Driver load check failed — start server manually to see errors"
