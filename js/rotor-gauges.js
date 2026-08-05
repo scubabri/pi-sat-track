@@ -157,7 +157,7 @@ function drawAzGauge(rotorAz, satAz, flipped) {
 /**
  * EL gauge:
  *   - Grid + needle: true rotor EL 0→180 (hardware, may be over-top)
- *   - Center number: satellite EL (sky pointing elevation)
+ *   - Center number: satellite EL (sky pointing elevation, never negative)
  *   - Amber when flipped / over-top
  */
 function drawElGauge(rotorEl, satEl, flipped) {
@@ -280,9 +280,10 @@ function drawElGauge(rotorEl, satEl, flipped) {
     ctx.stroke();
   }
 
-  // Center number = satellite EL (sky pointing elevation)
+  // Center number = satellite EL when above horizon; else rotor EL.
+  // Never show negative elevation on the rotor gauge.
   const displayEl =
-    satEl != null && Number.isFinite(satEl)
+    satEl != null && Number.isFinite(satEl) && satEl >= 0
       ? satEl
       : trueEl != null
         ? trueEl
@@ -314,8 +315,20 @@ function updateRotorGauges(rotorAz, rotorEl, satAz, satEl, flipped) {
   }
   if (rotorAz != null && Number.isFinite(rotorAz)) lastRotorAz = rotorAz;
   if (rotorEl != null && Number.isFinite(rotorEl)) lastRotorEl = rotorEl;
-  if (satAz != null && Number.isFinite(satAz)) lastSatAz = satAz;
-  if (satEl != null && Number.isFinite(satEl)) lastSatEl = satEl;
+
+  // null satAz/satEl = "center shows rotor" (park / below-horizon / antenna off).
+  // Explicit clear so sticky lastSat* does not keep a stale or negative value.
+  if (satAz === null) {
+    lastSatAz = null;
+  } else if (satAz != null && Number.isFinite(satAz)) {
+    lastSatAz = satAz;
+  }
+  if (satEl === null || (satEl != null && Number.isFinite(satEl) && satEl < 0)) {
+    lastSatEl = null;
+  } else if (satEl != null && Number.isFinite(satEl)) {
+    lastSatEl = satEl;
+  }
+
   if (typeof flipped === "boolean") lastFlipped = flipped;
   drawAzGauge(lastRotorAz, lastSatAz, lastFlipped);
   drawElGauge(lastRotorEl, lastSatEl, lastFlipped);
