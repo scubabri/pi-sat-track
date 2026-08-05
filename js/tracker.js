@@ -185,8 +185,12 @@ function applyRotorStatus(msg) {
 
   if (typeof msg.flipped === "boolean") lastGaugeFlipped = msg.flipped;
   if (typeof updateRotorGauges === "function") {
-    // Tracking: center = sat AZ/EL. Parked / antenna off: center = rotor.
-    const showSat = antennaOn && !parking;
+    // Tracking (above horizon): center = sat. Park/below-horizon/off: center = rotor.
+    const showSat =
+      antennaOn &&
+      !parking &&
+      lastGaugeSatEl != null &&
+      lastGaugeSatEl >= 0;
     const satAz = showSat ? lastGaugeSatAz : null;
     const satEl = showSat ? lastGaugeSatEl : null;
     updateRotorGauges(
@@ -323,8 +327,12 @@ function applyFreqAndLook(msg) {
       elEl.textContent = Number(msg.rotorEl).toFixed(1) + "\u00B0";
     if (typeof msg.flipped === "boolean") lastGaugeFlipped = msg.flipped;
     if (typeof updateRotorGauges === "function") {
-      // Tracking: center = sat. Parked / antenna off: center = rotor.
-      const showSat = antennaOn && !parking;
+      // Tracking (above horizon): center = sat. Park/below-horizon/off: center = rotor.
+      const showSat =
+      antennaOn &&
+      !parking &&
+      lastGaugeSatEl != null &&
+      lastGaugeSatEl >= 0;
       const satAz = showSat
         ? msg.look
           ? msg.look.az
@@ -505,7 +513,11 @@ function connectTracker() {
         if (typeof msg.look.el === "number") lastGaugeSatEl = msg.look.el;
         if (typeof msg.flipped === "boolean") lastGaugeFlipped = msg.flipped;
         if (typeof updateRotorGauges === "function") {
-          const showSat = antennaOn && !parking;
+          const showSat =
+      antennaOn &&
+      !parking &&
+      lastGaugeSatEl != null &&
+      lastGaugeSatEl >= 0;
           const satAz = showSat ? lastGaugeSatAz : null;
           const satEl = showSat ? lastGaugeSatEl : null;
           updateRotorGauges(
