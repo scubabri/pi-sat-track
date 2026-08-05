@@ -8,6 +8,7 @@ let radioOn = false;
 let tciConnected = false;
 let antennaOn = false;
 let lastGaugeSatAz = null;
+let lastGaugeSatEl = null;
 let lastGaugeFlipped = false;
 let fineStep = 100;
 let ulFineOffset = 0;
@@ -181,7 +182,13 @@ function applyRotorStatus(msg) {
 
   if (typeof msg.flipped === "boolean") lastGaugeFlipped = msg.flipped;
   if (typeof updateRotorGauges === "function") {
-    updateRotorGauges(msg.az, msg.el, lastGaugeSatAz, lastGaugeFlipped);
+    updateRotorGauges(
+      msg.az,
+      msg.el,
+      lastGaugeSatAz,
+      lastGaugeSatEl,
+      lastGaugeFlipped,
+    );
   }
 }
 
@@ -279,6 +286,7 @@ function applyFreqAndLook(msg) {
 
   if (msg.look) {
     lastGaugeSatAz = msg.look.az;
+    if (typeof msg.look.el === "number") lastGaugeSatEl = msg.look.el;
     const azEl = document.getElementById("sat-az");
     const elEl = document.getElementById("sat-el");
     const rangeEl = document.getElementById("sat-range");
@@ -312,6 +320,9 @@ function applyFreqAndLook(msg) {
         msg.rotorAz != null ? msg.rotorAz : null,
         msg.rotorEl != null ? msg.rotorEl : null,
         msg.look ? msg.look.az : lastGaugeSatAz,
+        msg.look && typeof msg.look.el === "number"
+          ? msg.look.el
+          : lastGaugeSatEl,
         lastGaugeFlipped,
       );
     }
@@ -469,12 +480,14 @@ function connectTracker() {
 
       if (msg.look) {
         lastGaugeSatAz = msg.look.az;
+        if (typeof msg.look.el === "number") lastGaugeSatEl = msg.look.el;
         if (typeof msg.flipped === "boolean") lastGaugeFlipped = msg.flipped;
         if (typeof updateRotorGauges === "function") {
           updateRotorGauges(
             msg.rotorAz != null ? msg.rotorAz : null,
             msg.rotorEl != null ? msg.rotorEl : null,
             lastGaugeSatAz,
+            lastGaugeSatEl,
             lastGaugeFlipped,
           );
         }
@@ -675,7 +688,7 @@ function initRadioControls() {
   }
   if (plus) {
     plus.addEventListener("click", () => {
-      const step = parseInt(stepEl && stepEl.value, 10) || fineStep;
+      const step = parseInt(stepEl.value, 10) || fineStep;
       fineStep = step;
       sendFine(+step);
     });
