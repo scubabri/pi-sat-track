@@ -157,7 +157,7 @@ function drawAzGauge(rotorAz, satAz, flipped) {
 /**
  * EL gauge:
  *   - Grid + needle: true rotor EL 0→180 (hardware, may be over-top)
- *   - Center number: satellite EL (sky pointing elevation, never negative)
+ *   - Center number: sky/horizon elevation 0–90 only
  *   - Amber when flipped / over-top
  */
 function drawElGauge(rotorEl, satEl, flipped) {
@@ -280,14 +280,15 @@ function drawElGauge(rotorEl, satEl, flipped) {
     ctx.stroke();
   }
 
-  // Center number = satellite EL when above horizon; else rotor EL.
-  // Never show negative elevation on the rotor gauge.
-  const displayEl =
-    satEl != null && Number.isFinite(satEl) && satEl >= 0
-      ? satEl
-      : trueEl != null
-        ? trueEl
-        : null;
+  // Center number = sky/horizon elevation 0–90 only.
+  // Needle stays on true rotor EL 0–180. When flipped over-top
+  // (rotor EL > 90), center shows 180 - rotorEl so 180→0, 150→30, etc.
+  let displayEl = null;
+  if (satEl != null && Number.isFinite(satEl) && satEl >= 0) {
+    displayEl = Math.min(90, satEl);
+  } else if (trueEl != null) {
+    displayEl = trueEl > 90 ? 180 - trueEl : trueEl;
+  }
   ctx.fillStyle = displayEl != null ? "#e6edf3" : "#8b949e";
   ctx.font =
     "bold 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
