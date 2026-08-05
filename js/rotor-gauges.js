@@ -56,7 +56,7 @@ function drawCircularFace(ctx) {
 /**
  * AZ gauge:
  *   - Needle: true rotor AZ on the compass grid (hardware, may be flipped)
- *   - Center number: satellite AZ (sky pointing direction)
+ *   - Center number: sky pointing AZ (sat AZ, or rotorAz+180 when flipped)
  *   - Amber needle when flipped / over-top
  */
 function drawAzGauge(rotorAz, satAz, flipped) {
@@ -135,13 +135,16 @@ function drawAzGauge(rotorAz, satAz, flipped) {
     ctx.stroke();
   }
 
-  // Center number = satellite AZ (sky pointing); needle = rotor hardware
-  const displayAz =
-    satAz != null && Number.isFinite(satAz)
-      ? satAz
-      : rotorAz != null && Number.isFinite(rotorAz)
-        ? rotorAz
-        : null;
+  // Center number = sky pointing AZ; needle = rotor hardware.
+  // When flipped and no sat AZ, sky = rotorAz + 180.
+  let displayAz = null;
+  if (satAz != null && Number.isFinite(satAz)) {
+    displayAz = satAz;
+  } else if (rotorAz != null && Number.isFinite(rotorAz)) {
+    displayAz = flipped
+      ? ((Number(rotorAz) + 180) % 360 + 360) % 360
+      : rotorAz;
+  }
   ctx.fillStyle = displayAz != null ? "#e6edf3" : "#8b949e";
   ctx.font =
     "bold 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
@@ -317,7 +320,7 @@ function updateRotorGauges(rotorAz, rotorEl, satAz, satEl, flipped) {
   if (rotorAz != null && Number.isFinite(rotorAz)) lastRotorAz = rotorAz;
   if (rotorEl != null && Number.isFinite(rotorEl)) lastRotorEl = rotorEl;
 
-  // null satAz/satEl = "center shows rotor" (park / below-horizon / antenna off).
+  // null satAz/satEl = clear sticky (park / antenna off).
   // Explicit clear so sticky lastSat* does not keep a stale or negative value.
   if (satAz === null) {
     lastSatAz = null;
