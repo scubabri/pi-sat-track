@@ -145,15 +145,11 @@
               </div>
 
               <div class="form-row">
-                <label class="cfg-check-label" for="cfg-single-radio">
-                  <input type="checkbox" id="cfg-single-radio" />
-                  Single radio (split)
+                <label class="cfg-check-label" for="cfg-tx-split">
+                  <input type="checkbox" id="cfg-tx-split" checked />
+                  TX radio split (VFO B = downlink)
                 </label>
               </div>
-              <p class="form-hint" id="cfg-single-radio-hint">
-                One radio for both TX and RX (split / dual-VFO). Hides Radio DL
-                and uses this config for both sides.
-              </p>
 
               <div class="form-row">
                 <label for="cfg-ul-transport">Connection</label>
@@ -177,6 +173,7 @@
                   >
                     <option value="smartsdr">SmartSDR (Flex)</option>
                     <option value="aethersdr">AetherSDR</option>
+                    <option value="sdrconnect">SDRconnect (SDRplay)</option>
                     <option value="rigctl">rigctl (SDR++ / Hamlib)</option>
                   </select>
                 </div>
@@ -221,6 +218,26 @@
                   <p class="form-hint">
                     Hamlib/rigctl TCP — SDR++, remote rigctld, any net rigctl
                     server.
+                  </p>
+                </div>
+
+                <div id="cfg-ul-sdrconnect-block" hidden>
+                  <div class="form-row">
+                    <label for="cfg-ul-sdrconnect-endpoint"
+                      >SDRconnect endpoint</label
+                    >
+                    <input
+                      type="text"
+                      id="cfg-ul-sdrconnect-endpoint"
+                      placeholder="127.0.0.1:5454"
+                      autocomplete="off"
+                      spellcheck="false"
+                      title="SDRconnect WebSocket host:port (default 5454)"
+                    />
+                  </div>
+                  <p class="form-hint">
+                    SDRplay SDRconnect WebSocket API — run the GUI and connect
+                    here for Doppler control.
                   </p>
                 </div>
 
@@ -314,6 +331,7 @@
                   >
                     <option value="smartsdr">SmartSDR (Flex)</option>
                     <option value="aethersdr">AetherSDR</option>
+                    <option value="sdrconnect">SDRconnect (SDRplay)</option>
                     <option value="rigctl">rigctl (SDR++ / Hamlib)</option>
                   </select>
                 </div>
@@ -358,6 +376,26 @@
                   <p class="form-hint">
                     Hamlib/rigctl TCP — SDR++, remote rigctld, any net rigctl
                     server.
+                  </p>
+                </div>
+
+                <div id="cfg-dl-sdrconnect-block" hidden>
+                  <div class="form-row">
+                    <label for="cfg-dl-sdrconnect-endpoint"
+                      >SDRconnect endpoint</label
+                    >
+                    <input
+                      type="text"
+                      id="cfg-dl-sdrconnect-endpoint"
+                      placeholder="127.0.0.1:5454"
+                      autocomplete="off"
+                      spellcheck="false"
+                      title="SDRconnect WebSocket host:port (default 5454)"
+                    />
+                  </div>
+                  <p class="form-hint">
+                    SDRplay SDRconnect WebSocket API — run the GUI and connect
+                    here for Doppler control.
                   </p>
                 </div>
 

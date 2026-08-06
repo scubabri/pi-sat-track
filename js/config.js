@@ -121,6 +121,7 @@ function defaultSide(side) {
     tciEndpoint: "127.0.0.1:50001",
     rigctlEndpoint: "127.0.0.1:4532",
     catEndpoint: side === "ul" ? "172.17.18.229:60002" : "172.17.18.229:60001",
+    sdrconnectEndpoint: "127.0.0.1:5454",
     apiEndpoint: "172.17.18.46:4992",
     serialMake: "icom",
     serialModel: "ic-705",
@@ -135,6 +136,7 @@ function defaultsEndpoints() {
     grid: "",
     elevation: 0,
     singleRadio: false,
+    txSplit: true,
     radioUl: defaultSide("ul"),
     radioDl: defaultSide("dl"),
     // legacy flat fields kept for older server/profiles
@@ -257,6 +259,7 @@ function readSide(side) {
   if (type === "flex") type = "smartsdr";
   let protocol = val(p + "-protocol") || "cat";
   if (type === "rigctl") protocol = "rigctl";
+  else if (type === "sdrconnect" || type === "sdrplay") protocol = "websocket";
   else if (type === "smartsdr" && protocol === "tci") protocol = "cat";
 
   return {
@@ -266,6 +269,7 @@ function readSide(side) {
     tciEndpoint: val(p + "-tci-endpoint") || "127.0.0.1:50001",
     rigctlEndpoint: val(p + "-rigctl-endpoint") || "127.0.0.1:4532",
     catEndpoint: val(p + "-cat-endpoint") || "",
+    sdrconnectEndpoint: val(p + "-sdrconnect-endpoint") || "127.0.0.1:5454",
     apiEndpoint: val(p + "-api-endpoint") || "",
     serialMake: val(p + "-serial-make") || "icom",
     serialModel: val(p + "-serial-model") || "ic-705",
@@ -284,6 +288,7 @@ function fillSide(side, s) {
   setVal(p + "-tci-endpoint", d.tciEndpoint || "127.0.0.1:50001");
   setVal(p + "-rigctl-endpoint", d.rigctlEndpoint || "127.0.0.1:4532");
   setVal(p + "-cat-endpoint", d.catEndpoint || "");
+  setVal(p + "-sdrconnect-endpoint", d.sdrconnectEndpoint || "127.0.0.1:5454");
   setVal(p + "-api-endpoint", d.apiEndpoint || "");
   setVal(p + "-serial-make", d.serialMake || "icom");
   setVal(p + "-serial-model", d.serialModel || "ic-705");
@@ -310,6 +315,11 @@ function updateSideProtocolOptions(side) {
     proto.value = "rigctl";
     return;
   }
+  if (type === "sdrconnect" || type === "sdrplay") {
+    add("websocket", "WebSocket");
+    proto.value = "websocket";
+    return;
+  }
   add("cat", "CAT");
   if (type === "aethersdr") add("tci", "TCI");
   if (type === "smartsdr" && current === "tci") proto.value = "cat";
@@ -328,6 +338,7 @@ function updateSideVisibility(side) {
   const serialBlock = document.getElementById(p + "-serial-block");
   const tciBlock = document.getElementById(p + "-tci-block");
   const rigctlBlock = document.getElementById(p + "-rigctl-block");
+  const sdrconnectBlock = document.getElementById(p + "-sdrconnect-block");
   const catBlock = document.getElementById(p + "-cat-block");
   const apiBlock = document.getElementById(p + "-api-block");
   const protocolRow = document.getElementById(p + "-protocol-row");
@@ -339,42 +350,44 @@ function updateSideVisibility(side) {
     if (protocolRow) protocolRow.hidden = true;
     if (tciBlock) tciBlock.hidden = true;
     if (rigctlBlock) rigctlBlock.hidden = true;
+    if (sdrconnectBlock) sdrconnectBlock.hidden = true;
     if (catBlock) catBlock.hidden = true;
     if (apiBlock) apiBlock.hidden = true;
     return;
   }
 
   const isRigctl = type === "rigctl" || protocol === "rigctl";
-  const isTci = !isRigctl && protocol === "tci" && type === "aethersdr";
+  const isSdrconnect = type === "sdrconnect" || type === "sdrplay";
+  const isTci =
+    !isRigctl && !isSdrconnect && protocol === "tci" && type === "aethersdr";
   const isCat =
     !isRigctl &&
+    !isSdrconnect &&
     protocol === "cat" &&
     (type === "smartsdr" || type === "aethersdr" || type === "flex");
   const needsApi = isCat || isTci;
 
-  if (protocolRow) protocolRow.hidden = isRigctl;
+  if (protocolRow) protocolRow.hidden = isRigctl || isSdrconnect;
   if (tciBlock) tciBlock.hidden = !isTci;
   if (rigctlBlock) rigctlBlock.hidden = !isRigctl;
+  if (sdrconnectBlock) sdrconnectBlock.hidden = !isSdrconnect;
   if (catBlock) catBlock.hidden = !isCat;
   if (apiBlock) apiBlock.hidden = !needsApi;
 }
 
 function isSingleRadioChecked() {
-  const el = document.getElementById("cfg-single-radio");
-  return !!(el && el.checked);
+  // Single-radio checkbox removed — always show both UL and DL sides.
+  // TX split is independent (txSplit / cfg-tx-split).
+  return false;
 }
 
-/** Hide Radio DL when single-radio (split) is checked; update UL title. */
 function updateSingleRadioVisibility() {
-  const single = isSingleRadioChecked();
   const dlSection = document.getElementById("cfg-dl-section");
   const ulTitle = document.getElementById("cfg-ul-title");
-  const hint = document.getElementById("cfg-single-radio-hint");
-  if (dlSection) dlSection.hidden = single;
-  if (ulTitle) ulTitle.textContent = single ? "Radio (split)" : "Radio UL (TX)";
-  if (hint) hint.hidden = !single;
+  if (dlSection) dlSection.hidden = false;
+  if (ulTitle) ulTitle.textContent = "Radio UL (TX)";
   updateSideVisibility("ul");
-  if (!single) updateSideVisibility("dl");
+  updateSideVisibility("dl");
 }
 
 function updateRadioFormVisibility() {
@@ -394,6 +407,10 @@ function readFormConfig() {
     grid: val("cfg-grid").trim().toUpperCase(),
     elevation: elevRaw ? parseInt(elevRaw.value, 10) || 0 : 0,
     singleRadio,
+    txSplit: (function () {
+      const el = document.getElementById("cfg-tx-split");
+      return el ? !!el.checked : true;
+    })(),
     radioUl,
     radioDl,
     radioTransport: radioDl.transport,
@@ -439,8 +456,8 @@ function fillForm(cfg) {
   setVal("cfg-callsign", d.callsign || "");
   setVal("cfg-grid", d.grid || "");
   setVal("cfg-elev", d.elevation != null ? d.elevation : "");
-  const singleEl = document.getElementById("cfg-single-radio");
-  if (singleEl) singleEl.checked = !!d.singleRadio;
+  const txSplitEl = document.getElementById("cfg-tx-split");
+  if (txSplitEl) txSplitEl.checked = d.txSplit !== false;
   fillSide("ul", d.radioUl);
   fillSide("dl", d.radioDl);
   updateSingleRadioVisibility();
@@ -481,6 +498,8 @@ function sendEndpointsToServer(cfg) {
   const dlRig = parseEndpoint(dl.rigctlEndpoint, "127.0.0.1", 4532);
   const ulTci = parseEndpoint(ul.tciEndpoint, "127.0.0.1", 50001);
   const dlTci = parseEndpoint(dl.tciEndpoint, "127.0.0.1", 50001);
+  const ulSdr = parseEndpoint(ul.sdrconnectEndpoint, "127.0.0.1", 5454);
+  const dlSdr = parseEndpoint(dl.sdrconnectEndpoint, "127.0.0.1", 5454);
   const api = parseEndpoint(dl.apiEndpoint || ul.apiEndpoint, "", 4992);
 
   // Serial split: only one device — clear device2 so isDualCat() is false
@@ -496,6 +515,7 @@ function sendEndpointsToServer(cfg) {
       grid: cfg.grid,
       elevation: cfg.elevation,
       singleRadio,
+      txSplit: cfg.txSplit !== false,
       radioUl: ul,
       radioDl: dl,
       radioTransport: dl.transport,
@@ -503,6 +523,14 @@ function sendEndpointsToServer(cfg) {
       radioProtocol: dl.protocol,
       tciHost: (dl.protocol === "tci" ? dlTci : ulTci).host,
       tciPort: (dl.protocol === "tci" ? dlTci : ulTci).port,
+      sdrconnectHost: (dl.type === "sdrconnect" || dl.type === "sdrplay"
+        ? dlSdr
+        : ulSdr
+      ).host,
+      sdrconnectPort: (dl.type === "sdrconnect" || dl.type === "sdrplay"
+        ? dlSdr
+        : ulSdr
+      ).port,
       rigctlHost: dlRig.host,
       rigctlPort: dlRig.port,
       // Single-endpoint split: no separate UL rigctl host
@@ -710,11 +738,6 @@ function initConfig() {
       if (el) el.addEventListener("change", () => updateSideVisibility(side));
     });
   });
-
-  const singleCb = document.getElementById("cfg-single-radio");
-  if (singleCb) {
-    singleCb.addEventListener("change", () => updateSingleRadioVisibility());
-  }
 
   const rotorTypeEl = document.getElementById("cfg-rotor-type");
   if (rotorTypeEl) rotorTypeEl.addEventListener("change", onRotorTypeChange);
