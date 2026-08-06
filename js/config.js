@@ -136,6 +136,7 @@ function defaultsEndpoints() {
     grid: "",
     elevation: 0,
     singleRadio: false,
+    txSplit: true,
     radioUl: defaultSide("ul"),
     radioDl: defaultSide("dl"),
     // legacy flat fields kept for older server/profiles
@@ -409,6 +410,10 @@ function readFormConfig() {
     grid: val("cfg-grid").trim().toUpperCase(),
     elevation: elevRaw ? parseInt(elevRaw.value, 10) || 0 : 0,
     singleRadio,
+    txSplit: (function () {
+      const el = document.getElementById("cfg-tx-split");
+      return el ? !!el.checked : true;
+    })(),
     radioUl,
     radioDl,
     radioTransport: radioDl.transport,
@@ -456,6 +461,8 @@ function fillForm(cfg) {
   setVal("cfg-elev", d.elevation != null ? d.elevation : "");
   const singleEl = document.getElementById("cfg-single-radio");
   if (singleEl) singleEl.checked = !!d.singleRadio;
+  const txSplitEl = document.getElementById("cfg-tx-split");
+  if (txSplitEl) txSplitEl.checked = d.txSplit !== false;
   fillSide("ul", d.radioUl);
   fillSide("dl", d.radioDl);
   updateSingleRadioVisibility();
@@ -513,6 +520,7 @@ function sendEndpointsToServer(cfg) {
       grid: cfg.grid,
       elevation: cfg.elevation,
       singleRadio,
+      txSplit: cfg.txSplit !== false,
       radioUl: ul,
       radioDl: dl,
       radioTransport: dl.transport,
