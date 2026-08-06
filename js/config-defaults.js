@@ -18,10 +18,30 @@ const SERIAL_CATALOG = {
         defaultBaud: 19200,
         hint: "CI-V over USB.",
       },
+      {
+        id: "ic-9700",
+        label: "IC-9700",
+        supported: true,
+        defaultDevice: "/dev/ttyUSB0",
+        defaultBaud: 19200,
+        hint: "CI-V (addr 0xA2).",
+      },
     ],
   },
   kenwood: { label: "Kenwood", models: [] },
-  yaesu: { label: "Yaesu", models: [] },
+  yaesu: {
+    label: "Yaesu",
+    models: [
+      {
+        id: "ft-991",
+        label: "FT-991 / FT-991A",
+        supported: true,
+        defaultDevice: "/dev/ttyUSB0",
+        defaultBaud: 38400,
+        hint: "Yaesu CAT serial.",
+      },
+    ],
+  },
 };
 
 /** Filled from server host/endpoints message (rotors.catalog()). */

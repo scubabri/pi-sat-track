@@ -265,6 +265,16 @@ function initConfig() {
       const el = document.getElementById("cfg-" + side + "-" + field);
       if (el) el.addEventListener("change", () => updateSideVisibility(side));
     });
+    const makeEl = document.getElementById("cfg-" + side + "-serial-make");
+    if (makeEl) {
+      makeEl.addEventListener("change", () => populateSerialModels(side));
+    }
+    const modelEl = document.getElementById("cfg-" + side + "-serial-model");
+    if (modelEl) {
+      modelEl.addEventListener("change", () =>
+        applySerialModelDefaultsToForm(side),
+      );
+    }
   });
 
   const rotorTypeEl = document.getElementById("cfg-rotor-type");

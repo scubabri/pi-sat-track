@@ -62,6 +62,43 @@ function onRotorTypeChange() {
   }
 }
 
+function listSerialModels(makeId) {
+  const make = SERIAL_CATALOG[String(makeId || "").toLowerCase()];
+  if (!make || !Array.isArray(make.models)) return [];
+  return make.models;
+}
+
+function populateSerialModels(side, selectedModel) {
+  const makeEl = document.getElementById("cfg-" + side + "-serial-make");
+  const modelEl = document.getElementById("cfg-" + side + "-serial-model");
+  if (!modelEl) return;
+  const make = makeEl ? makeEl.value : "icom";
+  const models = listSerialModels(make);
+  const prev = selectedModel || modelEl.value;
+  modelEl.innerHTML = "";
+  models.forEach((m) => {
+    const opt = document.createElement("option");
+    opt.value = m.id;
+    opt.textContent = m.label || m.id;
+    if (m.supported === false) opt.textContent += " (soon)";
+    modelEl.appendChild(opt);
+  });
+  if (models.some((m) => m.id === prev)) modelEl.value = prev;
+  else if (models.length) modelEl.value = models[0].id;
+  applySerialModelDefaultsToForm(side);
+}
+
+function applySerialModelDefaultsToForm(side) {
+  const make = val("cfg-" + side + "-serial-make") || "icom";
+  const model = val("cfg-" + side + "-serial-model");
+  const models = listSerialModels(make);
+  const m = models.find((x) => x.id === model);
+  if (!m) return;
+  if (m.defaultBaud) setVal("cfg-" + side + "-serial-baud", m.defaultBaud);
+  if (m.defaultDevice)
+    setVal("cfg-" + side + "-serial-device", m.defaultDevice);
+}
+
 function readSide(side) {
   const p = "cfg-" + side;
   let transport = val(p + "-transport") || "tcp";
@@ -101,6 +138,7 @@ function fillSide(side, s) {
   setVal(p + "-sdrconnect-endpoint", d.sdrconnectEndpoint || "127.0.0.1:5454");
   setVal(p + "-api-endpoint", d.apiEndpoint || "");
   setVal(p + "-serial-make", d.serialMake || "icom");
+  populateSerialModels(side, d.serialModel || "ic-705");
   setVal(p + "-serial-model", d.serialModel || "ic-705");
   setVal(p + "-serial-device", d.serialDevice || "/dev/ttyACM0");
   setVal(p + "-serial-baud", d.serialBaud != null ? d.serialBaud : 19200);
