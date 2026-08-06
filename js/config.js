@@ -376,21 +376,18 @@ function updateSideVisibility(side) {
 }
 
 function isSingleRadioChecked() {
-  const el = document.getElementById("cfg-single-radio");
-  return !!(el && el.checked);
+  // Single-radio checkbox removed — always show both UL and DL sides.
+  // TX split is independent (txSplit / cfg-tx-split).
+  return false;
 }
 
-/** Hide Radio DL when single-radio (split) is checked; update UL title. */
 function updateSingleRadioVisibility() {
-  const single = isSingleRadioChecked();
   const dlSection = document.getElementById("cfg-dl-section");
   const ulTitle = document.getElementById("cfg-ul-title");
-  const hint = document.getElementById("cfg-single-radio-hint");
-  if (dlSection) dlSection.hidden = single;
-  if (ulTitle) ulTitle.textContent = single ? "Radio (split)" : "Radio UL (TX)";
-  if (hint) hint.hidden = !single;
+  if (dlSection) dlSection.hidden = false;
+  if (ulTitle) ulTitle.textContent = "Radio UL (TX)";
   updateSideVisibility("ul");
-  if (!single) updateSideVisibility("dl");
+  updateSideVisibility("dl");
 }
 
 function updateRadioFormVisibility() {
@@ -459,8 +456,6 @@ function fillForm(cfg) {
   setVal("cfg-callsign", d.callsign || "");
   setVal("cfg-grid", d.grid || "");
   setVal("cfg-elev", d.elevation != null ? d.elevation : "");
-  const singleEl = document.getElementById("cfg-single-radio");
-  if (singleEl) singleEl.checked = !!d.singleRadio;
   const txSplitEl = document.getElementById("cfg-tx-split");
   if (txSplitEl) txSplitEl.checked = d.txSplit !== false;
   fillSide("ul", d.radioUl);
@@ -743,11 +738,6 @@ function initConfig() {
       if (el) el.addEventListener("change", () => updateSideVisibility(side));
     });
   });
-
-  const singleCb = document.getElementById("cfg-single-radio");
-  if (singleCb) {
-    singleCb.addEventListener("change", () => updateSingleRadioVisibility());
-  }
 
   const rotorTypeEl = document.getElementById("cfg-rotor-type");
   if (rotorTypeEl) rotorTypeEl.addEventListener("change", onRotorTypeChange);
