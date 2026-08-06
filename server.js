@@ -317,6 +317,7 @@ wss.on("connection", (ws) => {
       if (msg.type === "endpoints") {
         const ep = {
           singleRadio: !!msg.singleRadio,
+          txSplit: msg.txSplit !== false,
           radioUl: msg.radioUl,
           radioDl: msg.radioDl,
           radioTransport: msg.radioTransport,
@@ -326,6 +327,8 @@ wss.on("connection", (ws) => {
           serialModel: msg.serialModel,
           tciHost: msg.tciHost,
           tciPort: msg.tciPort,
+          sdrconnectHost: msg.sdrconnectHost,
+          sdrconnectPort: msg.sdrconnectPort,
           rigctlHost: msg.rigctlHost,
           rigctlPort: msg.rigctlPort,
           rigctlUlHost: msg.rigctlUlHost,
@@ -352,6 +355,7 @@ wss.on("connection", (ws) => {
           rotorBaud: msg.rotorBaud,
           rotorParkAz: msg.rotorParkAz,
           rotorParkEl: msg.rotorParkEl,
+          rotorElMax: msg.rotorElMax,
         };
         const flags = config.applyEndpoints(ep);
         console.log("Endpoints updated", config.getEndpoints());
