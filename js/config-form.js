@@ -224,18 +224,20 @@ function updateSideVisibility(side) {
 }
 
 function isSingleRadioChecked() {
-  // Single-radio checkbox removed — always show both UL and DL sides.
-  // TX split is independent (txSplit / cfg-tx-split).
-  return false;
+  const el = document.getElementById("cfg-single-radio");
+  return el ? !!el.checked : false;
 }
 
 function updateSingleRadioVisibility() {
+  const single = isSingleRadioChecked();
   const dlSection = document.getElementById("cfg-dl-section");
   const ulTitle = document.getElementById("cfg-ul-title");
-  if (dlSection) dlSection.hidden = false;
-  if (ulTitle) ulTitle.textContent = "Radio UL (TX)";
+  if (dlSection) dlSection.hidden = single;
+  if (ulTitle) {
+    ulTitle.textContent = single ? "Radio (TX/RX)" : "Radio UL (TX)";
+  }
   updateSideVisibility("ul");
-  updateSideVisibility("dl");
+  if (!single) updateSideVisibility("dl");
 }
 
 function updateRadioFormVisibility() {

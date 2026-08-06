@@ -32,10 +32,39 @@ function sendEndpointsToServer(cfg) {
   const dlSdr = parseEndpoint(dl.sdrconnectEndpoint, "127.0.0.1", 5454);
   const api = parseEndpoint(dl.apiEndpoint || ul.apiEndpoint, "", 4992);
 
-  const serialDevice = singleRadio ? ul.serialDevice : dl.serialDevice;
-  const serialBaud = singleRadio ? ul.serialBaud : dl.serialBaud;
-  const serialDevice2 = singleRadio ? "" : ul.serialDevice;
-  const serialBaud2 = singleRadio ? 19200 : ul.serialBaud;
+  // Only emit serial device fields for sides that are actually serial.
+  // Avoid sending DL's default /dev/ttyACM0 when DL is TCP (mixed path).
+  let serialDevice = "";
+  let serialBaud = 19200;
+  let serialDevice2 = "";
+  let serialBaud2 = 19200;
+  let serialMake = "icom";
+  let serialModel = "ic-705";
+  if (singleRadio) {
+    if (ul.transport === "serial") {
+      serialDevice = ul.serialDevice || "";
+      serialBaud = ul.serialBaud || 19200;
+      serialMake = ul.serialMake || serialMake;
+      serialModel = ul.serialModel || serialModel;
+    }
+  } else if (dl.transport === "serial" && ul.transport === "serial") {
+    serialDevice = dl.serialDevice || "";
+    serialBaud = dl.serialBaud || 19200;
+    serialDevice2 = ul.serialDevice || "";
+    serialBaud2 = ul.serialBaud || 19200;
+    serialMake = dl.serialMake || serialMake;
+    serialModel = dl.serialModel || serialModel;
+  } else if (dl.transport === "serial") {
+    serialDevice = dl.serialDevice || "";
+    serialBaud = dl.serialBaud || 19200;
+    serialMake = dl.serialMake || serialMake;
+    serialModel = dl.serialModel || serialModel;
+  } else if (ul.transport === "serial") {
+    serialDevice = ul.serialDevice || "";
+    serialBaud = ul.serialBaud || 19200;
+    serialMake = ul.serialMake || serialMake;
+    serialModel = ul.serialModel || serialModel;
+  }
 
   ws.send(
     JSON.stringify({
@@ -82,8 +111,8 @@ function sendEndpointsToServer(cfg) {
       serialBaud,
       serialDevice2,
       serialBaud2,
-      serialMake: (singleRadio ? ul : dl).serialMake,
-      serialModel: (singleRadio ? ul : dl).serialModel,
+      serialMake,
+      serialModel,
       rotorHost: cfg.rotorHost,
       rotorAzPort: cfg.rotorAzPort,
       rotorElPort: cfg.rotorElPort,
@@ -276,6 +305,11 @@ function initConfig() {
       );
     }
   });
+
+  const singleEl = document.getElementById("cfg-single-radio");
+  if (singleEl) {
+    singleEl.addEventListener("change", () => updateSingleRadioVisibility());
+  }
 
   const rotorTypeEl = document.getElementById("cfg-rotor-type");
   if (rotorTypeEl) rotorTypeEl.addEventListener("change", onRotorTypeChange);
