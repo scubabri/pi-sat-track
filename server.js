@@ -356,6 +356,7 @@ wss.on("connection", (ws) => {
           rotorParkAz: msg.rotorParkAz,
           rotorParkEl: msg.rotorParkEl,
           rotorElMax: msg.rotorElMax,
+          rotorAzOnly: !!msg.rotorAzOnly,
         };
         const flags = config.applyEndpoints(ep);
         console.log("Endpoints updated", config.getEndpoints());

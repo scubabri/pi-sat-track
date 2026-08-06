@@ -19,16 +19,34 @@ function populateRotorTypes(selected) {
   updateRotorFormVisibility();
 }
 
+function isRotorAzOnlyChecked() {
+  const el = document.getElementById("cfg-rotor-az-only");
+  return !!(el && el.checked);
+}
+
 function updateRotorFormVisibility() {
   const type = val("cfg-rotor-type") || "rt21";
   const info = findRotorDriver(type);
   const ports = info && info.ports != null ? info.ports : 2;
+  const azOnly = isRotorAzOnlyChecked();
   const single = document.getElementById("cfg-rotor-single-block");
   const dual = document.getElementById("cfg-rotor-dual-block");
   const hint = document.getElementById("cfg-rotor-hint");
   if (single) single.hidden = ports !== 1;
   if (dual) dual.hidden = ports !== 2;
-  if (hint) hint.textContent = info && info.hint ? info.hint : "";
+  // AZ-only: hide EL device, park EL, 180° elevation
+  const elDev = document.getElementById("cfg-rotor-el-device-wrap");
+  const el180 = document.getElementById("cfg-rotor-el-180-wrap");
+  const parkEl = document.getElementById("cfg-rotor-park-el-wrap");
+  if (elDev) elDev.hidden = azOnly;
+  if (el180) el180.hidden = azOnly;
+  if (parkEl) parkEl.hidden = azOnly;
+  if (hint) {
+    const base = info && info.hint ? info.hint : "";
+    hint.textContent = azOnly
+      ? (base ? base + " " : "") + "AZ only — elevation is not commanded."
+      : base;
+  }
 }
 
 function onRotorTypeChange() {
@@ -239,6 +257,7 @@ function readFormConfig() {
       const el = document.getElementById("cfg-rotor-el-180");
       return el && el.checked ? 180 : 90;
     })(),
+    rotorAzOnly: isRotorAzOnlyChecked(),
   };
 }
 
@@ -264,5 +283,7 @@ function fillForm(cfg) {
     const max = d.rotorElMax != null ? Number(d.rotorElMax) : 180;
     el180.checked = max !== 90;
   }
+  const azOnlyEl = document.getElementById("cfg-rotor-az-only");
+  if (azOnlyEl) azOnlyEl.checked = !!d.rotorAzOnly;
   updateRotorFormVisibility();
 }

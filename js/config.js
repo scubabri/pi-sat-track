@@ -94,6 +94,7 @@ function sendEndpointsToServer(cfg) {
       rotorParkAz: cfg.rotorParkAz,
       rotorParkEl: cfg.rotorParkEl,
       rotorElMax: cfg.rotorElMax != null ? cfg.rotorElMax : 180,
+      rotorAzOnly: !!cfg.rotorAzOnly,
     }),
   );
 }
@@ -268,6 +269,11 @@ function initConfig() {
 
   const rotorTypeEl = document.getElementById("cfg-rotor-type");
   if (rotorTypeEl) rotorTypeEl.addEventListener("change", onRotorTypeChange);
+
+  const azOnlyEl = document.getElementById("cfg-rotor-az-only");
+  if (azOnlyEl) {
+    azOnlyEl.addEventListener("change", () => updateRotorFormVisibility());
+  }
 
   const saveBtn = document.getElementById("btn-save-config");
   if (saveBtn) {
