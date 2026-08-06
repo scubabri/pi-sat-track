@@ -74,7 +74,7 @@ const SERIAL_CATALOG = {
         supported: true,
         defaultDevice: "/dev/ttyUSB0",
         defaultBaud: 9600,
-        hint: "Binary CAT, 8N2, 9600 typical.",
+        hint: "Split only FM+fixed UL; linear/VFO A only; dual 817s OK.",
       },
       {
         id: "other",
