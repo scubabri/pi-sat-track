@@ -110,6 +110,7 @@ function defaultsEndpoints() {
     rotorParkAz: 0,
     rotorParkEl: 0,
     rotorElMax: 180,
+    rotorAzOnly: false,
   };
 }
 
