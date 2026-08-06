@@ -28,7 +28,19 @@ const SERIAL_CATALOG = {
       },
     ],
   },
-  kenwood: { label: "Kenwood", models: [] },
+  kenwood: {
+    label: "Kenwood",
+    models: [
+      {
+        id: "ts-2000",
+        label: "TS-2000",
+        supported: true,
+        defaultDevice: "/dev/ttyUSB0",
+        defaultBaud: 9600,
+        hint: "Kenwood CAT serial.",
+      },
+    ],
+  },
   yaesu: {
     label: "Yaesu",
     models: [
