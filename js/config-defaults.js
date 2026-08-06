@@ -69,6 +69,14 @@ const SERIAL_CATALOG = {
         hint: "Yaesu CAT serial.",
       },
       {
+        id: "ft-817",
+        label: "FT-817 / 817ND / 818",
+        supported: true,
+        defaultDevice: "/dev/ttyUSB0",
+        defaultBaud: 9600,
+        hint: "Binary CAT, 8N2, 9600 typical.",
+      },
+      {
         id: "other",
         label: "Other (Yaesu CAT)",
         supported: true,
