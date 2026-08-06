@@ -306,6 +306,8 @@ function fillForm(cfg) {
   setVal("cfg-callsign", d.callsign || "");
   setVal("cfg-grid", d.grid || "");
   setVal("cfg-elev", d.elevation != null ? d.elevation : "");
+  const singleEl = document.getElementById("cfg-single-radio");
+  if (singleEl) singleEl.checked = !!d.singleRadio;
   const txSplitEl = document.getElementById("cfg-tx-split");
   if (txSplitEl) txSplitEl.checked = d.txSplit !== false;
   fillSide("ul", d.radioUl);
