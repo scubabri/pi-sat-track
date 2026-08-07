@@ -391,7 +391,22 @@ wss.on("connection", (ws) => {
           msg.rotorAzDevice || msg.rotorElDevice,
         );
         connectionTest
-          .testRotorStep(msg)
+          .testRotorStep(msg, {
+            onProgress: (p) => {
+              try {
+                ws.send(
+                  JSON.stringify({
+                    type: "test-rotor-progress",
+                    reqId,
+                    axis: p.axis,
+                    pos: p.pos,
+                    target: p.target,
+                    phase: p.phase,
+                  }),
+                );
+              } catch (_) {}
+            },
+          })
           .then((r) => {
             console.log(
               "Test rotor step result",

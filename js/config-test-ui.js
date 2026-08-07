@@ -170,6 +170,13 @@ function sendRotorStep(payload) {
 function applyTestResult(msg) {
   if (!msg) return;
 
+  // Live motion samples while nudge/goto is in progress
+  if (msg.type === "test-rotor-progress" && msg.pos != null) {
+    const axis = msg.axis === "el" ? "el" : "az";
+    showTestPosition(axis, msg.pos);
+    return;
+  }
+
   if (msg.type === "test-rotor-step-result" && msg.reqId) {
     const pending = pendingRotorTests.get(msg.reqId);
     if (pending) {
