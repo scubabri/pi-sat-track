@@ -452,8 +452,11 @@ wss.on("connection", (ws) => {
               msg.radio.catEndpoint ||
               msg.radio.rigctlEndpoint),
         );
+        const radioCfg = Object.assign({}, msg.radio || {}, {
+          _testSide: side,
+        });
         connectionTest
-          .testRadioSide(msg.radio || {})
+          .testRadioSide(radioCfg)
           .then((r) => {
             console.log("Test radio result", target, r.ok, r.message);
             ws.send(
