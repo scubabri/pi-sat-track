@@ -442,6 +442,11 @@ function connectTracker() {
         return;
       }
 
+      if (msg.type === "test-result") {
+        if (typeof applyTestResult === "function") applyTestResult(msg);
+        return;
+      }
+
       if (msg.type === "host" || msg.type === "endpoints") {
         if (
           Array.isArray(msg.serialDevices) &&

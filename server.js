@@ -23,6 +23,7 @@ const rotors = require("./lib/rotors");
 const config = require("./lib/config");
 const platform = require("./lib/platform");
 const profiles = require("./lib/profiles");
+const connectionTest = require("./lib/connection-test");
 
 /** WebSocket server; set after createServer. broadcast() is safe before that. */
 let wss = null;
@@ -379,6 +380,62 @@ wss.on("connection", (ws) => {
           ...config.getEndpoints(),
           rotorCatalog: rotors.catalog(),
         });
+      }
+
+      if (msg.type === "test-radio") {
+        const side = msg.side === "dl" ? "dl" : "ul";
+        const target = "radio-" + side;
+        connectionTest
+          .testRadioSide(msg.radio || {})
+          .then((r) => {
+            ws.send(
+              JSON.stringify({
+                type: "test-result",
+                target,
+                ok: !!r.ok,
+                message: r.message || "",
+                detail: r.detail || null,
+              }),
+            );
+          })
+          .catch((e) => {
+            ws.send(
+              JSON.stringify({
+                type: "test-result",
+                target,
+                ok: false,
+                message: e.message || "Test error",
+              }),
+            );
+          });
+        return;
+      }
+
+      if (msg.type === "test-rotor") {
+        connectionTest
+          .testRotor(msg.rotor || {})
+          .then((r) => {
+            ws.send(
+              JSON.stringify({
+                type: "test-result",
+                target: "rotor",
+                ok: !!r.ok,
+                message: r.message || "",
+                detail: r.detail || null,
+              }),
+            );
+          })
+          .catch((e) => {
+            ws.send(
+              JSON.stringify({
+                type: "test-result",
+                target: "rotor",
+                ok: false,
+                message: e.message || "Test error",
+              }),
+            );
+          });
+        return;
       }
 
       if (msg.type === "profile-select" && msg.name) {
