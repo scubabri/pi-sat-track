@@ -157,6 +157,37 @@ function sendRotorStep(payload) {
   });
 }
 
+function radioConfirmMessage(msg) {
+  const d = msg.detail || {};
+  const lines = [];
+  const side =
+    msg.target === "radio-dl"
+      ? "DL (RX)"
+      : msg.target === "radio-ul"
+        ? "UL (TX)"
+        : "Radio";
+  lines.push(side + " connection test");
+  lines.push("");
+  if (d.freqMHz) {
+    lines.push("Frequency: " + d.freqMHz + " MHz");
+  }
+  if (d.mode) {
+    lines.push("Mode: " + d.mode);
+  }
+  if (d.device) {
+    lines.push("Device: " + d.device);
+  }
+  if (d.endpoint) {
+    lines.push("Endpoint: " + d.endpoint);
+  }
+  if (!d.freqMHz && !d.mode && msg.message) {
+    lines.push(msg.message);
+  }
+  lines.push("");
+  lines.push("Does this match the radio display?");
+  return lines.join("\n");
+}
+
 function applyTestResult(msg) {
   if (!msg) return;
 
@@ -186,8 +217,35 @@ function applyTestResult(msg) {
   else if (msg.target === "rotor")
     btn = document.getElementById("btn-test-rotor");
   if (!btn) return;
+
   const tip =
     (msg.message || "") + (msg.detail ? " " + JSON.stringify(msg.detail) : "");
+
+  // Radio success → confirm frequency/mode with user
+  if (msg.ok && (msg.target === "radio-ul" || msg.target === "radio-dl")) {
+    setTestButtonState(btn, "busy", tip);
+    paintThenConfirm(radioConfirmMessage(msg)).then(function (yes) {
+      if (yes) {
+        setTestButtonState(btn, "ok", tip);
+      } else {
+        setTestButtonState(
+          btn,
+          "fail",
+          "User rejected reading — check device/baud/CAT",
+        );
+      }
+      setTimeout(function () {
+        if (
+          btn.classList.contains("test-ok") ||
+          btn.classList.contains("test-fail")
+        ) {
+          btn.textContent = btn.dataset.label || "Test";
+        }
+      }, 5000);
+    });
+    return;
+  }
+
   setTestButtonState(btn, msg.ok ? "ok" : "fail", tip);
   setTimeout(function () {
     if (
