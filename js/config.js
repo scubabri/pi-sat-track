@@ -237,6 +237,7 @@ function initProfileControls() {
 function initConfig() {
   const cfg = migrateLegacy(loadConfig());
   if (typeof initSerialDeviceSelects === "function") initSerialDeviceSelects();
+  if (typeof initConnectionTests === "function") initConnectionTests();
   fillForm(cfg);
   fillProfileSelect();
   initProfileControls();

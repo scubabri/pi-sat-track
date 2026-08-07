@@ -72,6 +72,9 @@ function listSerialModels(makeId) {
 
 /** Live list from server platform.listSerialDevices() via host message. */
 let HOST_SERIAL_DEVICES = [];
+/** From server hostInfo — COM* on Windows, /dev/tty* on Linux/Pi/macOS. */
+let HOST_DEFAULT_SERIAL = "";
+let HOST_KIND = "";
 
 const SERIAL_DEVICE_SELECT_IDS = [
   "cfg-ul-serial-device",
@@ -81,11 +84,54 @@ const SERIAL_DEVICE_SELECT_IDS = [
   "cfg-rotor-el-device",
 ];
 
-function setHostSerialDevices(list) {
+function setHostSerialDevices(list, defaultDevice, kind) {
   HOST_SERIAL_DEVICES = Array.isArray(list)
     ? list.filter((d) => d && String(d).trim())
     : [];
+  if (defaultDevice != null && String(defaultDevice).trim()) {
+    HOST_DEFAULT_SERIAL = String(defaultDevice).trim();
+  } else if (HOST_SERIAL_DEVICES.length) {
+    HOST_DEFAULT_SERIAL = HOST_SERIAL_DEVICES[0];
+  } else {
+    HOST_DEFAULT_SERIAL = "";
+  }
+  if (kind) HOST_KIND = String(kind);
   populateAllSerialDeviceSelects();
+}
+
+/** True if path looks native for the current host kind. */
+function serialPathFitsHost(path) {
+  const p = String(path || "").trim();
+  if (!p) return false;
+  const kind = HOST_KIND || "";
+  if (kind === "windows" || /^win/i.test(kind)) {
+    return /^COM\d+$/i.test(p);
+  }
+  if (kind === "macos" || kind === "darwin") {
+    return p.indexOf("/dev/") === 0;
+  }
+  // linux / raspberry-pi / unknown unix
+  if (/^COM\d+$/i.test(p)) return false;
+  return p.indexOf("/dev/") === 0 || p.charAt(0) === "/";
+}
+
+/** Default serial path for this host — never a cross-OS leftover. */
+function hostSerialDefault(fallbackLinux) {
+  if (HOST_DEFAULT_SERIAL && serialPathFitsHost(HOST_DEFAULT_SERIAL)) {
+    return HOST_DEFAULT_SERIAL;
+  }
+  if (HOST_SERIAL_DEVICES.length) return HOST_SERIAL_DEVICES[0];
+  if (HOST_KIND === "windows" || HOST_KIND === "win32") return "";
+  if (fallbackLinux && serialPathFitsHost(fallbackLinux)) return fallbackLinux;
+  return fallbackLinux || "";
+}
+
+/** Drop saved /dev paths when running on Windows (and vice versa). */
+function sanitizeSerialPreferred(path) {
+  const p = String(path || "").trim();
+  if (!p) return hostSerialDefault("");
+  if (HOST_KIND && !serialPathFitsHost(p)) return hostSerialDefault("");
+  return p;
 }
 
 function populateAllSerialDeviceSelects() {
@@ -212,7 +258,11 @@ function refreshHostSerialDevices() {
     .then((r) => (r.ok ? r.json() : null))
     .then((data) => {
       if (data && Array.isArray(data.serialDevices)) {
-        setHostSerialDevices(data.serialDevices);
+        setHostSerialDevices(
+          data.serialDevices,
+          data.defaultCatDevice || "",
+          data.kind || data.platform || "",
+        );
       }
       return data;
     })
@@ -275,7 +325,8 @@ function readSide(side) {
     serialMake: val(p + "-serial-make") || "icom",
     serialModel: val(p + "-serial-model") || "ic-705",
     serialDevice:
-      readSerialDeviceField("cfg-" + side + "-serial-device") || "/dev/ttyACM0",
+      readSerialDeviceField("cfg-" + side + "-serial-device") ||
+      hostSerialDefault("/dev/ttyACM0"),
     serialBaud: parseInt(val(p + "-serial-baud"), 10) || 19200,
   };
 }
@@ -297,7 +348,8 @@ function fillSide(side, s) {
   setVal(p + "-serial-model", d.serialModel || "ic-705");
   populateSerialDeviceSelect(
     p + "-serial-device",
-    d.serialDevice || "/dev/ttyACM0",
+    sanitizeSerialPreferred(d.serialDevice) ||
+      hostSerialDefault("/dev/ttyACM0"),
   );
   setVal(p + "-serial-baud", d.serialBaud != null ? d.serialBaud : 19200);
   updateSideVisibility(side);
@@ -394,6 +446,25 @@ function updateSingleRadioVisibility() {
   if (ulTitle) {
     ulTitle.textContent = single ? "Radio (TX/RX)" : "Radio UL (TX)";
   }
+  const btnUl = document.getElementById("btn-test-radio-ul");
+  const btnDl = document.getElementById("btn-test-radio-dl");
+  if (btnUl) {
+    const label = single ? "Test radio" : "Test UL";
+    btnUl.dataset.label = label;
+    if (!btnUl.classList.contains("test-busy")) {
+      btnUl.textContent = label;
+    }
+  }
+  if (btnDl) {
+    btnDl.hidden = !!single;
+    // clear stale OK/Fail color when switching modes
+    btnDl.classList.remove("test-ok", "test-fail", "test-busy");
+    btnDl.disabled = false;
+    btnDl.textContent = btnDl.dataset.label || "Test DL";
+  }
+  if (btnUl) {
+    btnUl.classList.remove("test-ok", "test-fail");
+  }
   updateSideVisibility("ul");
   if (!single) updateSideVisibility("dl");
 }
@@ -435,18 +506,30 @@ function readFormConfig() {
       const info = findRotorDriver(t);
       const ports = info && info.ports != null ? info.ports : 2;
       if (ports === 1) {
-        return readSerialDeviceField("cfg-rotor-device") || "/dev/ttyACM0";
+        return (
+          readSerialDeviceField("cfg-rotor-device") ||
+          hostSerialDefault("/dev/ttyACM0")
+        );
       }
-      return readSerialDeviceField("cfg-rotor-az-device") || "/dev/ttyUSB0";
+      return (
+        readSerialDeviceField("cfg-rotor-az-device") ||
+        hostSerialDefault("/dev/ttyUSB0")
+      );
     })(),
     rotorElDevice: (function () {
       const t = val("cfg-rotor-type") || "rt21";
       const info = findRotorDriver(t);
       const ports = info && info.ports != null ? info.ports : 2;
       if (ports === 1) {
-        return readSerialDeviceField("cfg-rotor-device") || "/dev/ttyACM0";
+        return (
+          readSerialDeviceField("cfg-rotor-device") ||
+          hostSerialDefault("/dev/ttyACM0")
+        );
       }
-      return readSerialDeviceField("cfg-rotor-el-device") || "/dev/ttyUSB1";
+      return (
+        readSerialDeviceField("cfg-rotor-el-device") ||
+        hostSerialDefault("/dev/ttyUSB1")
+      );
     })(),
     rotorBaud: parseInt(val("cfg-rotor-baud"), 10) || 4800,
     rotorParkAz: parseFloat(val("cfg-rotor-park-az")) || 0,
@@ -474,15 +557,18 @@ function fillForm(cfg) {
   populateRotorTypes(d.rotorType || "rt21");
   populateSerialDeviceSelect(
     "cfg-rotor-device",
-    d.rotorAzDevice || "/dev/ttyACM0",
+    sanitizeSerialPreferred(d.rotorAzDevice) ||
+      hostSerialDefault("/dev/ttyACM0"),
   );
   populateSerialDeviceSelect(
     "cfg-rotor-az-device",
-    d.rotorAzDevice || "/dev/ttyUSB0",
+    sanitizeSerialPreferred(d.rotorAzDevice) ||
+      hostSerialDefault("/dev/ttyUSB0"),
   );
   populateSerialDeviceSelect(
     "cfg-rotor-el-device",
-    d.rotorElDevice || "/dev/ttyUSB1",
+    sanitizeSerialPreferred(d.rotorElDevice) ||
+      hostSerialDefault("/dev/ttyUSB1"),
   );
   setVal("cfg-rotor-baud", d.rotorBaud != null ? d.rotorBaud : 4800);
   setVal("cfg-rotor-park-az", d.rotorParkAz != null ? d.rotorParkAz : 0);

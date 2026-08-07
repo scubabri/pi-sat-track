@@ -23,6 +23,7 @@ const rotors = require("./lib/rotors");
 const config = require("./lib/config");
 const platform = require("./lib/platform");
 const profiles = require("./lib/profiles");
+const connectionTest = require("./lib/connection-test");
 
 /** WebSocket server; set after createServer. broadcast() is safe before that. */
 let wss = null;
@@ -379,6 +380,137 @@ wss.on("connection", (ws) => {
           ...config.getEndpoints(),
           rotorCatalog: rotors.catalog(),
         });
+      }
+
+      if (msg.type === "test-rotor-step") {
+        const reqId = msg.reqId || null;
+        console.log(
+          "Test rotor step",
+          msg.action,
+          msg.axis,
+          msg.rotorAzDevice || msg.rotorElDevice,
+        );
+        connectionTest
+          .testRotorStep(msg, {
+            onProgress: (p) => {
+              try {
+                ws.send(
+                  JSON.stringify({
+                    type: "test-rotor-progress",
+                    reqId,
+                    axis: p.axis,
+                    pos: p.pos,
+                    target: p.target,
+                    phase: p.phase,
+                  }),
+                );
+              } catch (_) {}
+            },
+          })
+          .then((r) => {
+            console.log(
+              "Test rotor step result",
+              msg.action,
+              msg.axis,
+              r.ok,
+              r.message,
+            );
+            ws.send(
+              JSON.stringify({
+                type: "test-rotor-step-result",
+                reqId,
+                ok: !!r.ok,
+                message: r.message || "",
+                detail: r.detail || null,
+              }),
+            );
+          })
+          .catch((e) => {
+            console.warn("Test rotor step error", e.message);
+            ws.send(
+              JSON.stringify({
+                type: "test-rotor-step-result",
+                reqId,
+                ok: false,
+                message: e.message || "Test error",
+              }),
+            );
+          });
+        return;
+      }
+
+      if (msg.type === "test-radio") {
+        const side = msg.side === "dl" ? "dl" : "ul";
+        const target = "radio-" + side;
+        console.log(
+          "Test radio",
+          side,
+          msg.radio && msg.radio.transport,
+          msg.radio &&
+            (msg.radio.serialDevice ||
+              msg.radio.tciEndpoint ||
+              msg.radio.catEndpoint ||
+              msg.radio.rigctlEndpoint),
+        );
+        const radioCfg = Object.assign({}, msg.radio || {}, {
+          _testSide: side,
+        });
+        connectionTest
+          .testRadioSide(radioCfg)
+          .then((r) => {
+            console.log("Test radio result", target, r.ok, r.message);
+            ws.send(
+              JSON.stringify({
+                type: "test-result",
+                target,
+                ok: !!r.ok,
+                message: r.message || "",
+                detail: r.detail || null,
+              }),
+            );
+          })
+          .catch((e) => {
+            console.warn("Test radio error", target, e.message);
+            ws.send(
+              JSON.stringify({
+                type: "test-result",
+                target,
+                ok: false,
+                message: e.message || "Test error",
+              }),
+            );
+          });
+        return;
+      }
+
+      if (msg.type === "test-rotor") {
+        console.log("Test rotor", msg.rotor);
+        connectionTest
+          .testRotor(msg.rotor || {})
+          .then((r) => {
+            console.log("Test rotor result", r.ok, r.message);
+            ws.send(
+              JSON.stringify({
+                type: "test-result",
+                target: "rotor",
+                ok: !!r.ok,
+                message: r.message || "",
+                detail: r.detail || null,
+              }),
+            );
+          })
+          .catch((e) => {
+            console.warn("Test rotor error", e.message);
+            ws.send(
+              JSON.stringify({
+                type: "test-result",
+                target: "rotor",
+                ok: false,
+                message: e.message || "Test error",
+              }),
+            );
+          });
+        return;
       }
 
       if (msg.type === "profile-select" && msg.name) {
