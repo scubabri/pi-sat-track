@@ -385,9 +385,20 @@ wss.on("connection", (ws) => {
       if (msg.type === "test-radio") {
         const side = msg.side === "dl" ? "dl" : "ul";
         const target = "radio-" + side;
+        console.log(
+          "Test radio",
+          side,
+          msg.radio && msg.radio.transport,
+          msg.radio &&
+            (msg.radio.serialDevice ||
+              msg.radio.tciEndpoint ||
+              msg.radio.catEndpoint ||
+              msg.radio.rigctlEndpoint),
+        );
         connectionTest
           .testRadioSide(msg.radio || {})
           .then((r) => {
+            console.log("Test radio result", target, r.ok, r.message);
             ws.send(
               JSON.stringify({
                 type: "test-result",
@@ -399,6 +410,7 @@ wss.on("connection", (ws) => {
             );
           })
           .catch((e) => {
+            console.warn("Test radio error", target, e.message);
             ws.send(
               JSON.stringify({
                 type: "test-result",
@@ -412,6 +424,7 @@ wss.on("connection", (ws) => {
       }
 
       if (msg.type === "test-rotor") {
+        console.log("Test rotor", msg.rotor);
         connectionTest
           .testRotor(msg.rotor || {})
           .then((r) => {
