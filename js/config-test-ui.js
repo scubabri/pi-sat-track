@@ -22,6 +22,35 @@ function setTestButtonState(btn, state, title) {
   }
 }
 
+/** Live rotor gauge + radar during guided test */
+let testLastAz = null;
+let testLastEl = null;
+
+function showTestPosition(axis, pos) {
+  if (pos == null || !Number.isFinite(Number(pos))) return;
+  const p = Number(pos);
+  if (axis === "az") testLastAz = p;
+  else if (axis === "el") testLastEl = p;
+
+  if (typeof updateRotorGauges === "function") {
+    updateRotorGauges(testLastAz, testLastEl, null, null, false);
+  }
+  // Pass radar: show current test pointing (az, el)
+  if (typeof updateRadar === "function" && testLastAz != null) {
+    const el = testLastEl != null ? testLastEl : 0;
+    try {
+      updateRadar(testLastAz, el, null);
+    } catch (_) {}
+  }
+  // Sidebar numeric readouts if present
+  const azEl = document.getElementById("rotor-az");
+  const elEl = document.getElementById("rotor-el");
+  if (azEl && testLastAz != null)
+    azEl.textContent = testLastAz.toFixed(1) + "\u00B0";
+  if (elEl && testLastEl != null)
+    elEl.textContent = testLastEl.toFixed(1) + "\u00B0";
+}
+
 function getTrackerWs() {
   if (typeof ws !== "undefined" && ws && ws.readyState === WebSocket.OPEN) {
     return ws;
@@ -195,6 +224,8 @@ async function runRotorTestGuided() {
   }
 
   setTestButtonState(btn, "busy");
+  testLastAz = null;
+  testLastEl = null;
   const base = rotorConfigFromForm();
 
   async function axisSequence(axis) {
@@ -220,6 +251,7 @@ async function runRotorTestGuided() {
       const pos0 =
         read.detail && read.detail.pos != null ? read.detail.pos : null;
       if (pos0 == null) throw new Error(label + ": no position in reply");
+      showTestPosition(axis, pos0);
 
       if (
         !confirm(
@@ -260,6 +292,9 @@ async function runRotorTestGuided() {
         nudge.detail && nudge.detail.pos != null
           ? nudge.detail.pos
           : nudge.detail && nudge.detail.target;
+      if (pos1 != null) showTestPosition(axis, pos1);
+      else if (nudge.detail && nudge.detail.target != null)
+        showTestPosition(axis, nudge.detail.target);
 
       if (
         !confirm(
@@ -297,6 +332,9 @@ async function runRotorTestGuided() {
       if (!back.ok) {
         throw new Error(back.message || label + " return failed");
       }
+      if (back.detail && back.detail.pos != null)
+        showTestPosition(axis, back.detail.pos);
+      else showTestPosition(axis, pos0);
       if (
         !confirm(
           label +
