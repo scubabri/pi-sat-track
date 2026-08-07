@@ -436,6 +436,12 @@ function initConnectionTests() {
       return;
     }
     if (t.id === "btn-test-radio-dl") {
+      if (
+        typeof isSingleRadioChecked === "function" &&
+        isSingleRadioChecked()
+      ) {
+        return; // hidden in single-radio mode
+      }
       runRadioTest("dl");
       return;
     }

@@ -394,6 +394,25 @@ function updateSingleRadioVisibility() {
   if (ulTitle) {
     ulTitle.textContent = single ? "Radio (TX/RX)" : "Radio UL (TX)";
   }
+  const btnUl = document.getElementById("btn-test-radio-ul");
+  const btnDl = document.getElementById("btn-test-radio-dl");
+  if (btnUl) {
+    const label = single ? "Test radio" : "Test UL";
+    btnUl.dataset.label = label;
+    if (!btnUl.classList.contains("test-busy")) {
+      btnUl.textContent = label;
+    }
+  }
+  if (btnDl) {
+    btnDl.hidden = !!single;
+    // clear stale OK/Fail color when switching modes
+    btnDl.classList.remove("test-ok", "test-fail", "test-busy");
+    btnDl.disabled = false;
+    btnDl.textContent = btnDl.dataset.label || "Test DL";
+  }
+  if (btnUl) {
+    btnUl.classList.remove("test-ok", "test-fail");
+  }
   updateSideVisibility("ul");
   if (!single) updateSideVisibility("dl");
 }
