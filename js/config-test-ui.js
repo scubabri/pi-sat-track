@@ -37,19 +37,9 @@ function showTestPosition(axis, pos) {
   window.rotorTestAz = testLastAz;
   window.rotorTestEl = testLastEl;
 
+  // Only rotor gauges — do not touch the satellite pass radar
   if (typeof updateRotorGauges === "function") {
     updateRotorGauges(testLastAz, testLastEl, null, null, false);
-  }
-  if (typeof updateRadar === "function" && testLastAz != null) {
-    const el = testLastEl != null ? testLastEl : 0;
-    try {
-      updateRadar(testLastAz, el, null);
-    } catch (_) {}
-  }
-  if (typeof updateRadarSat === "function" && testLastAz != null) {
-    try {
-      updateRadarSat(testLastAz, testLastEl != null ? testLastEl : 0);
-    } catch (_) {}
   }
   const azEl = document.getElementById("rotor-az");
   const elEl = document.getElementById("rotor-el");
