@@ -1,244 +1,346 @@
-# Pi Sat Track (Node Web UI)
+Pi Sat Track
 
-Browser-based linear amateur satellite tracker for Raspberry Pi. Provides live pass prediction, Doppler-corrected frequencies over TCI to AetherSDR, and azimuth/elevation control of a Green Heron RT-21 rotator via dual `rotctld` instances.
+Browser-based amateur satellite tracker for Raspberry Pi (or any Linux host). Live pass prediction, Doppler-corrected uplink/downlink, modular radio control, and optional rotator pointing — all from a web UI.
 
-The UI is a Leaflet map (Blue Marble base) with radar view, rotor gauges, pass profile, and a station configuration panel (callsign, gridsquare, elevation, TCI/rotctld endpoints).
+Alpha builds are distributed as a zip. There is no git install path; see Installation.
 
-## Features
+What it does
 
-- **Satellite catalog** from AMSAT frequency data + status, with local cache under `~/.rpitrack/`
-- **TLE-based propagation** via `satellite.js`
-- **Live Doppler** uplink/downlink (inverting and non-inverting modes)
-- **Manual uplink fine-tune** (step size +/−)
-- **Radio (TCI)** and **Antenna (rotctld)** toggles — both start off
-- **Elevation floor** and park behaviour for the rotator
-- **Pass prediction**: AOS / LOS, max elevation, duration, countdown
-- **Station config** in the browser: callsign, Maidenhead gridsquare, elevation (m), TCI host/port, rotctld host + AZ/EL ports
-- **WebSocket** live updates to all connected clients
+Tracks LEO amateur satellites from AMSAT frequency data + Celestrak TLEs
 
-## Hardware / software stack
+Computes Doppler for uplink and downlink (inverting and non-inverting)
 
-| Component                             | Role                                          |
-| ------------------------------------- | --------------------------------------------- |
-| Raspberry Pi (or any Linux host)      | Runs Node server + optional nginx + `rotctld` |
-| Green Heron RT-21 AZ/EL               | USB serial rotor controller                   |
-| Flex Radio + AetherSDR (Mac or other) | TCI WebSocket (default port 50001)            |
-| Hamlib                                | `rotctld` for RT-21 (model 405)               |
+Drives one or two radios (TX and RX can be different types)
 
-Typical layout:
+Optionally drives an AZ/EL rotator (or AZ-only fixed-elevation mounts)
 
-```
-Browser  ←→  nginx :80  ←→  Node :3000  (on Pi)
-                              │
-                              ├── TCI WebSocket → AetherSDR (Mac)
-                              ├── rotctld :4535 → AZ
-                              └── rotctld :4536 → EL
-```
+Serves a Leaflet map (NASA Blue Marble), radar view, rotor gauges, pass list, and favorites
 
-## Requirements
+Radio and antenna stay off until you enable them in the UI so you can watch geometry without moving hardware.
 
-### On the Pi
+Architecture
 
-- Raspberry Pi OS (or similar Debian-based)
-- Network access to the machine running AetherSDR
-- Two `rotctld` instances for the RT-21 (or equivalent), listening on the ports you configure
+Browser ←→ nginx :80 ←→ Node :3000 (on Pi)
+│
+├── Radio drivers (serial CAT / TCI / Flex / SDRconnect / rigctl)
+└── Rotor drivers (RT-21 dual serial, or GS-232)
 
-Example `rotctld` launch (adjust serial devices and baud):
+Config and profiles live in the browser UI (gear icon) and are pushed to the server over the same WebSocket used for live status.
 
-```bash
-rotctld -m 405 -r /dev/ttyUSB1 -s 4800 -T 0.0.0.0 -t 4535   # azimuth
-rotctld -m 405 -r /dev/ttyUSB0 -s 4800 -T 0.0.0.0 -t 4536   # elevation
-```
+Radios
 
-Confirm:
+Modes
 
-```bash
-echo "p" | nc 127.0.0.1 4535
-echo "p" | nc 127.0.0.1 4536
-```
+Setup
 
-User must be in the `dialout` group for serial access.
+Behavior
 
-### AetherSDR / TCI
+Single radio
 
-- TCI enabled
-- Listening on all interfaces (`*.50001`), not only localhost
-- Firewall allows inbound TCP 50001 from the Pi
+One connection for TX/RX. Optional TX radio split (VFO B = uplink) when the radio supports it.
 
-## Installation
+Dual radio
 
-Clone the repository and run the installer from the app directory (or repo root — the script detects both):
+Independent Radio UL (TX) and Radio DL (RX) — any mix of transports.
 
-```bash
-git clone https://github.com/scubabri/pi-sat-track.git
-cd pi-sat-track/node/sat-tracker
+TX radio split
+
+On a split-capable radio: VFO A = downlink, VFO B = uplink (details vary by driver).
+
+TCP / network backends
+
+Backend
+
+Typical use
+
+AetherSDR TCI
+
+ExpertSDR / AetherSDR WebSocket (default port 50001)
+
+Flex / SmartSDR CAT
+
+TCP CAT to Flex
+
+SDRplay SDRconnect
+
+WebSocket to SDRconnect (GUI + audio on the host)
+
+Hamlib rigctl
+
+TCP to rigctld
+
+Serial CAT backends
+
+Make
+
+Models (supported drivers)
+
+Icom
+
+IC-705, IC-9700, Other (generic CI-V)
+
+Yaesu
+
+FT-991/991A, FT-847, FT-817/818, Other (generic Yaesu CAT)
+
+Kenwood
+
+TS-2000, Other (generic Kenwood CAT)
+
+Serial users must be in the dialout group. Devices are often /dev/ttyACM0 or /dev/ttyUSB0.
+
+FT-817 note
+
+The FT-817 only supports reliable split for FM satellites with a fixed uplink (e.g. SO-50): UL locked on VFO B, Doppler on DL (VFO A). Linear sats on a single 817 use VFO A only (typically DL); full dual Doppler needs two radios (or 817 + SDR).
+
+FM vs linear (general)
+
+FM fixed-UL birds: uplink often held at the published frequency; downlink Doppler-tracked.
+
+Linear birds: both sides Doppler-tracked when the radio path allows (dual VFO or dual radio).
+
+CTCSS encode is applied where the driver and catalog provide a tone (e.g. SO-50 67.0 Hz).
+
+Rotors
+
+Driver
+
+Ports
+
+Notes
+
+Green Heron RT-21
+
+2 serial (AZ + EL)
+
+Optional 180° elevation / N-stop flip logic
+
+GS-232 (K3NG / Fox Delta)
+
+1 serial
+
+AZ+EL on one controller
+
+Optional AZ only for fixed-elevation mounts (no EL commands). Park AZ/EL are set in config. Some setups still use external rotctld; the app can also drive supported rotors via its own serial drivers depending on configuration.
+
+Features (UI)
+
+Satellite catalog + AMSAT status, cached under ~/.rpitrack/
+
+Favorites, multi-mode sats (e.g. ISS), pass prediction (AOS/LOS, max EL, countdown)
+
+Per-sat fine offsets (UL/DL) and optional UL fixed for FM
+
+Profiles (save multiple station/radio setups on the server)
+
+Radio + Antenna enable toggles, lock, CTCSS controls where applicable
+
+Rotor gauges and map footprint / ground track
+
+Requirements
+
+Host
+
+Raspberry Pi OS or similar Debian-based Linux (other Linux may work)
+
+Node.js 22.x (installer can install via NodeSource)
+
+Network path to any remote SDR / TCI / CAT endpoints you use
+
+Optional hardware
+
+One or two CAT-capable radios and/or SDR software (TCI / SDRconnect / Flex / rigctl)
+
+AZ/EL rotator (RT-21 or GS-232-compatible) with appropriate USB-serial adapters
+
+Installation (alpha — zip distribution)
+
+Alpha builds are a zip file. The installer does not clone or pull from any repository.
+
+Copy the zip to the Pi and extract it:
+
+unzip pi-sat-track-\*.zip -d ~/pi-sat-track
+cd ~/pi-sat-track
+
+Use the directory that contains package.json, server.js, and install-pi.sh.
+
+Run the installer as a normal user (not root; it will sudo only when needed):
 
 chmod +x install-pi.sh
 ./install-pi.sh
-```
 
 The script will:
 
-1. Install system packages (curl, git, build tools, nginx if requested)
-2. Install Node.js 22.x LTS (NodeSource) if needed
-3. Run `npm install` in the app directory
-4. Create `~/.rpitrack` for caches
-5. Configure nginx as a reverse proxy from port 80 → `127.0.0.1:3000` (WebSocket headers included)
-6. Install and enable a systemd **user** service `sat-tracker`
+Install system packages (curl, build tools, libudev, nginx if requested)
 
-Run as a normal user (not root). The script uses `sudo` only where needed for apt/nginx.
+Install Node.js 22.x LTS if needed
 
-### Installer flags
+Run npm install in the app directory
 
-| Flag           | Effect                                       |
-| -------------- | -------------------------------------------- |
-| `--no-nginx`   | Skip nginx install and site config           |
-| `--no-service` | Skip systemd user service                    |
-| `--update`     | Re-run `npm install` only                    |
-| `--upgrade`    | `git pull` + `npm install` + restart service |
+Create ~/.rpitrack for caches
 
-Day-to-day updates after the first install:
+Configure nginx :80 → 127.0.0.1:3000 (WebSocket-friendly)
 
-```bash
-cd /path/to/pi-sat-track/node/sat-tracker
-./install-pi.sh --upgrade
-```
+Install and enable a systemd user service sat-tracker
 
-### Manual start (no service)
+Installer flags
 
-```bash
-cd node/sat-tracker
+Flag
+
+Effect
+
+--no-nginx
+
+Skip nginx install and site config
+
+--no-service
+
+Skip systemd user service
+
+--update
+
+npm install only + restart service
+
+Updating to a newer alpha zip
+
+systemctl --user stop sat-tracker
+
+# extract the new zip over this tree (or into a fresh folder)
+
+cd ~/pi-sat-track
+./install-pi.sh --update
+
+Manual start (no service)
+
+cd ~/pi-sat-track
 npm install
 node server.js
-# or: npm start
-```
 
-Server listens on `0.0.0.0:3000`.
+Server listens on 0.0.0.0:3000.
 
-### Service management
+Service management
 
-```bash
 systemctl --user status sat-tracker
 systemctl --user restart sat-tracker
 journalctl --user -u sat-tracker -f
-```
 
-If the service does not start after logout, enable lingering:
+If the service does not start after logout:
 
-```bash
 sudo loginctl enable-linger $USER
-```
 
-## Configuration
+Configuration
 
-All station and endpoint settings are done in the browser.
+All station, radio, and rotor settings are in the browser.
 
-1. Open the UI: `http://<pi-ip>/` (nginx) or `http://<pi-ip>:3000/`
-2. Click the gear icon (Configuration)
-3. Set:
+Open http://<pi-ip>/ (nginx) or http://<pi-ip>:3000/
 
-| Field             | Purpose                                                   |
-| ----------------- | --------------------------------------------------------- |
-| Callsign          | Display only                                              |
-| Gridsquare        | Maidenhead; converted to lat/lon for the observer         |
-| Elevation (m)     | Station height above sea level                            |
-| TCI host / port   | AetherSDR machine (default `127.0.0.1:50001`)             |
-| rotctld host      | Host running both AZ and EL daemons (default `127.0.0.1`) |
-| AZ port / EL port | Default `4535` / `4536`                                   |
+Click the gear (Configuration)
 
-4. **Save** — endpoints are applied live; map can be recentered with **Center Map**.
+Set callsign, gridsquare, elevation
 
-Environment variables can still set defaults before the UI overrides them:
+Configure Radio UL / DL (or single radio): transport, type/protocol or serial make/model/device/baud
 
-| Variable                 | Default         |
-| ------------------------ | --------------- |
-| `TCI_HOST`               | `127.0.0.1`     |
-| `TCI_PORT`               | `50001`         |
-| `ROTOR_AZ_HOST`          | `127.0.0.1`     |
-| `ROTOR_AZ_PORT`          | `4535`          |
-| `ROTOR_EL_HOST`          | same as AZ host |
-| `ROTOR_EL_PORT`          | `4536`          |
-| `ROTOR_MIN_EL`           | `0`             |
-| `ROTOR_PARK_EL`          | `0`             |
-| `ROTOR_MOVE_INTERVAL_MS` | `1000`          |
+Configure rotor type, devices, baud, park, optional 180° EL and AZ-only
 
-## Operation
+Save — endpoints apply live
 
-1. Open the UI in a browser.
-2. Select a satellite from the dropdown (or browse the full catalog via **Browse full catalog...**).
-3. Configure station location and endpoints if not already done.
-4. Enable **Radio** when you want Doppler commands sent to AetherSDR.
-5. Enable **Antenna** when you want the rotator driven.
-6. Use the fine-tune +/− buttons and step size (Hz) for uplink offset; double-click the step field to reset.
-7. **Center** (via fine-tune controls / config) clears uplink fine offset.
+Profiles can store multiple complete setups on the Pi.
 
-Geometry, pass prediction, and the map update continuously whether radio/antenna are on or off.
+Operation
 
-### UI overview
+Select a satellite (favorites or full catalog).
 
-- **Top bar**: satellite selector, pass countdown / AOS–LOS–max–duration, Radio / Antenna buttons, config gear
-- **Map**: Blue Marble + ground track trail, observer marker
-- **Radar**: polar az/el view of the satellite
-- **Rotor gauges**: current AZ and EL reported by `rotctld`
-- **Pass profile**: elevation vs time for the current/next pass
-- **Sidebar**: mode select, uplink/downlink frequencies + Doppler, passband limits, toggles, station and satellite status
+Enable Radio when you want CAT/TCI/SDR frequencies driven.
 
-## Cache
+Enable Antenna when you want the rotator driven.
 
-Network data is cached under `~/.rpitrack/`:
+Use fine-tune / step / center and CTCSS controls as needed for the pass.
 
-```
-~/.rpitrack/
-  amsat_catalog.json
-  amsat_status.json
-  tle_<norad>.txt
-  tle_<norad>.meta.json
-  ...
-```
+Geometry and pass prediction update whether radio/antenna are on or off.
 
-Catalog and status refresh periodically (default every 6 hours). On fetch failure the last good cache is used.
+UI overview
 
-## Troubleshooting
+Top bar: satellite, modes, radio/antenna toggles, status
 
-**UI not reachable on port 80**
+Map: footprint, track, station; center control
 
-- `systemctl status nginx`
-- `curl -I http://127.0.0.1:3000/` — Node must be running
-- Check nginx site: `/etc/nginx/sites-enabled/sat-tracker`
+Radar / gauges: pointing and pass context
 
-**Service not running**
+Pass list / favorites: upcoming passes and quick select
 
-```bash
+Config (gear): station, radios, rotor, profiles
+
+Data cache
+
+Under ~/.rpitrack/:
+
+amsat*catalog.json
+amsat_status.json
+tle*<norad>.txt
+sat-offsets.json
+profiles (server-side)
+
+Catalog and status refresh periodically. On fetch failure the last good cache is used.
+
+Troubleshooting
+
+UI not reachable on port 80
+
+systemctl status nginx
+
+curl -I http://127.0.0.1:3000/ — Node must be running
+
+Nginx site: /etc/nginx/sites-enabled/sat-tracker
+
+Service not running
+
 systemctl --user status sat-tracker
 journalctl --user -u sat-tracker -n 50
-```
 
-**Radio does not connect**
+Network radio (TCI / Flex / SDRconnect / rigctl) does not connect
 
-- Confirm TCI host/port in the config panel
-- From the Pi: `nc -vz <tci-host> 50001`
-- AetherSDR must listen on all interfaces; allow the port through the Mac firewall
+Confirm host/port in the config panel for that side
 
-**Rotor does not move**
+From the Pi: nc -vz <host> <port>
 
-- Confirm both `rotctld` processes and the host/ports in the config panel
-- `echo "p" | nc <rotor-host> 4535`
-- Check serial device order and permissions (`dialout` group)
+Remote software must listen on a reachable interface; check firewalls
 
-**Wrong location / map not centered**
+Serial radio does not connect
 
-- Set a valid Maidenhead gridsquare and elevation, then **Save** and **Center Map**
+Correct /dev/tty… and baud (and CI-V address for Icom)
 
-## License
+User in dialout; re-login after group change
+
+Only one process should open the port
+
+Rotor does not move
+
+Correct rotor type and device(s) in config
+
+dialout permissions on the USB-serial adapters
+
+For dual-port RT-21, confirm AZ vs EL device order
+
+Wrong location / map not centered
+
+Valid Maidenhead gridsquare + elevation, Save, then center on station
+
+License
 
 Use and modify freely for amateur radio purposes. No warranty.
 
-## Credits
+Credits
 
-- Frequencies / status: [AMSAT](https://www.amsat.org/)
-- Catalog source: [amateur-satellite-database](https://github.com/palewire/amateur-satellite-database)
-- TLEs: [Celestrak](https://celestrak.org/)
-- Propagation: [satellite.js](https://github.com/shashwatak/satellite-js)
-- Map: [Leaflet](https://leafletjs.com/)
-- Rotor protocol: Hamlib / Green Heron RT-21
-- Radio control: ExpertSDR / AetherSDR TCI
+Frequencies / status: AMSAT
+
+Catalog source: amateur-satellite-database
+
+TLEs: Celestrak
+
+Propagation: satellite.js
+
+Map: Leaflet
+
+Rotors: Green Heron RT-21, GS-232 / K3NG-style controllers
+
+Network radio examples: ExpertSDR / AetherSDR TCI, Flex SmartSDR, SDRplay SDRconnect, Hamlib
