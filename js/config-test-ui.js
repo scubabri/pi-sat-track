@@ -2,6 +2,7 @@
  * Config panel connection test buttons (radio UL/DL + rotor).
  * Rotor test is guided: open session → read → confirm → nudge → confirm →
  * return → close session, per axis (holds serial port open between steps).
+ * Live gauge/radar updates during the test; state ticks are suppressed.
  */
 function setTestButtonState(btn, state, title) {
   if (!btn) return;
@@ -28,27 +29,49 @@ let testLastEl = null;
 
 function showTestPosition(axis, pos) {
   if (pos == null || !Number.isFinite(Number(pos))) return;
-  const p = Number(pos);
-  if (axis === "az") testLastAz = p;
-  else if (axis === "el") testLastEl = p;
+  const v = Number(pos);
+  if (axis === "az") testLastAz = v;
+  else if (axis === "el") testLastEl = v;
+
+  window.rotorTestActive = true;
+  window.rotorTestAz = testLastAz;
+  window.rotorTestEl = testLastEl;
 
   if (typeof updateRotorGauges === "function") {
     updateRotorGauges(testLastAz, testLastEl, null, null, false);
   }
-  // Pass radar: show current test pointing (az, el)
   if (typeof updateRadar === "function" && testLastAz != null) {
     const el = testLastEl != null ? testLastEl : 0;
     try {
       updateRadar(testLastAz, el, null);
     } catch (_) {}
   }
-  // Sidebar numeric readouts if present
+  if (typeof updateRadarSat === "function" && testLastAz != null) {
+    try {
+      updateRadarSat(testLastAz, testLastEl != null ? testLastEl : 0);
+    } catch (_) {}
+  }
   const azEl = document.getElementById("rotor-az");
   const elEl = document.getElementById("rotor-el");
-  if (azEl && testLastAz != null)
+  if (azEl && testLastAz != null) {
     azEl.textContent = testLastAz.toFixed(1) + "\u00B0";
-  if (elEl && testLastEl != null)
+  }
+  if (elEl && testLastEl != null) {
     elEl.textContent = testLastEl.toFixed(1) + "\u00B0";
+  }
+}
+
+/** Let the browser paint gauges before a blocking confirm() */
+function paintThenConfirm(message) {
+  return new Promise(function (resolve) {
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        setTimeout(function () {
+          resolve(window.confirm(message));
+        }, 80);
+      });
+    });
+  });
 }
 
 function getTrackerWs() {
@@ -102,7 +125,7 @@ const pendingRotorTests = new Map();
 let rotorReqSeq = 1;
 
 function sendRotorStep(payload) {
-  return new Promise((resolve, reject) => {
+  return new Promise(function (resolve, reject) {
     const sock = getTrackerWs();
     if (!sock) {
       reject(
@@ -113,16 +136,16 @@ function sendRotorStep(payload) {
       return;
     }
     const id = "rt" + rotorReqSeq++;
-    const timer = setTimeout(() => {
+    const timer = setTimeout(function () {
       pendingRotorTests.delete(id);
       reject(new Error("Rotor step timed out"));
     }, 30000);
     pendingRotorTests.set(id, {
-      resolve: (msg) => {
+      resolve: function (msg) {
         clearTimeout(timer);
         resolve(msg);
       },
-      reject: (err) => {
+      reject: function (err) {
         clearTimeout(timer);
         reject(err);
       },
@@ -169,7 +192,7 @@ function applyTestResult(msg) {
   const tip =
     (msg.message || "") + (msg.detail ? " " + JSON.stringify(msg.detail) : "");
   setTestButtonState(btn, msg.ok ? "ok" : "fail", tip);
-  setTimeout(() => {
+  setTimeout(function () {
     if (
       btn.classList.contains("test-ok") ||
       btn.classList.contains("test-fail")
@@ -206,6 +229,7 @@ function runRadioTest(side) {
 
 /**
  * Guided rotor test with held serial session per axis.
+ * Gauges/radar update before each confirm so the user can verify visually.
  */
 async function runRotorTestGuided() {
   const btn = document.getElementById("btn-test-rotor");
@@ -213,12 +237,12 @@ async function runRotorTestGuided() {
   if (!btn.dataset.label) btn.dataset.label = "Test rotor";
 
   if (
-    !confirm(
+    !(await paintThenConfirm(
       "Rotor guided test.\n\n" +
         "Antenna tracking should be OFF.\n" +
-        "Watch the rotator — you will confirm each reading.\n\n" +
+        "Watch the rotator and the AZ/EL gauges — you will confirm each reading.\n\n" +
         "Continue?",
-    )
+    ))
   ) {
     return;
   }
@@ -226,6 +250,9 @@ async function runRotorTestGuided() {
   setTestButtonState(btn, "busy");
   testLastAz = null;
   testLastEl = null;
+  window.rotorTestActive = true;
+  window.rotorTestAz = null;
+  window.rotorTestEl = null;
   const base = rotorConfigFromForm();
 
   async function axisSequence(axis) {
@@ -240,7 +267,6 @@ async function runRotorTestGuided() {
     }
 
     try {
-      // 1) Read
       setTestButtonState(btn, "busy", "Reading " + label + "…");
       const read = await sendRotorStep(
         Object.assign({}, base, { action: "read", axis: axis }),
@@ -254,19 +280,18 @@ async function runRotorTestGuided() {
       showTestPosition(axis, pos0);
 
       if (
-        !confirm(
+        !(await paintThenConfirm(
           label +
             " reads " +
             Math.round(pos0) +
             "° on " +
             ((read.detail && read.detail.device) || "?") +
-            ".\n\nDoes that match the rotator / controller display?",
-        )
+            ".\n\nGauges should show this value.\nDoes that match the rotator / controller display?",
+        ))
       ) {
         throw new Error(label + " read rejected by user");
       }
 
-      // 2) Nudge +10
       setTestButtonState(btn, "busy", "Moving " + label + " +10°…");
       const nudge = await sendRotorStep(
         Object.assign({}, base, {
@@ -297,7 +322,7 @@ async function runRotorTestGuided() {
         showTestPosition(axis, nudge.detail.target);
 
       if (
-        !confirm(
+        !(await paintThenConfirm(
           label +
             " commanded +10° (target " +
             (nudge.detail && nudge.detail.target != null
@@ -308,7 +333,7 @@ async function runRotorTestGuided() {
               ? "Controller now reads " + Math.round(pos1) + "°.\n\n"
               : "\n") +
             "Did the rotator move about 10° in the expected direction?",
-        )
+        ))
       ) {
         await sendRotorStep(
           Object.assign({}, base, {
@@ -320,7 +345,6 @@ async function runRotorTestGuided() {
         throw new Error(label + " move rejected by user");
       }
 
-      // 3) Return
       setTestButtonState(btn, "busy", "Returning " + label + "…");
       const back = await sendRotorStep(
         Object.assign({}, base, {
@@ -335,18 +359,18 @@ async function runRotorTestGuided() {
       if (back.detail && back.detail.pos != null)
         showTestPosition(axis, back.detail.pos);
       else showTestPosition(axis, pos0);
+
       if (
-        !confirm(
+        !(await paintThenConfirm(
           label +
             " returned toward " +
             Math.round(pos0) +
             "°.\n\nLooks correct?",
-        )
+        ))
       ) {
         throw new Error(label + " return rejected by user");
       }
     } finally {
-      // Always release the port before the other axis / live driver
       try {
         await sendRotorStep(
           Object.assign({}, base, { action: "close", axis: axis }),
@@ -370,8 +394,10 @@ async function runRotorTestGuided() {
   } catch (e) {
     console.warn("[connection-test] rotor guided", e);
     setTestButtonState(btn, "fail", e.message || String(e));
+  } finally {
+    window.rotorTestActive = false;
   }
-  setTimeout(() => {
+  setTimeout(function () {
     if (
       btn.classList.contains("test-ok") ||
       btn.classList.contains("test-fail")
@@ -389,17 +415,19 @@ function initConnectionTests() {
     console.warn("[connection-test] #config-panel not found");
     return;
   }
-  ["btn-test-radio-ul", "btn-test-radio-dl", "btn-test-rotor"].forEach((id) => {
-    const b = document.getElementById(id);
-    if (b && !b.dataset.label) {
-      b.dataset.label = (b.textContent || "Test").trim();
-    }
-  });
+  ["btn-test-radio-ul", "btn-test-radio-dl", "btn-test-rotor"].forEach(
+    function (id) {
+      const b = document.getElementById(id);
+      if (b && !b.dataset.label) {
+        b.dataset.label = (b.textContent || "Test").trim();
+      }
+    },
+  );
 
   if (connectionTestsBound) return;
   connectionTestsBound = true;
 
-  panel.addEventListener("click", (e) => {
+  panel.addEventListener("click", function (e) {
     const t =
       e.target && e.target.closest ? e.target.closest("button.btn-test") : null;
     if (!t || !panel.contains(t)) return;

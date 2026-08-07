@@ -184,6 +184,18 @@ function applyRotorStatus(msg) {
   }
 
   if (typeof msg.flipped === "boolean") lastGaugeFlipped = msg.flipped;
+  if (window.rotorTestActive) {
+    if (typeof updateRotorGauges === "function") {
+      updateRotorGauges(
+        window.rotorTestAz != null ? window.rotorTestAz : null,
+        window.rotorTestEl != null ? window.rotorTestEl : null,
+        null,
+        null,
+        false,
+      );
+    }
+    return;
+  }
   if (typeof updateRotorGauges === "function") {
     // Above horizon: center = sat AZ/EL.
     // Below horizon / preposition: pass null so gauges derive sky
@@ -316,6 +328,19 @@ function applyFreqAndLook(msg) {
   // Always refresh gauges when look or rotor position arrives so sat AZ
   // center readout tracks the satellite as it moves (not only on rotor moves).
   if (msg.look || msg.rotorAz != null || msg.rotorEl != null) {
+    if (window.rotorTestActive) {
+      // Guided rotor test owns the gauges — re-apply test coords
+      if (typeof updateRotorGauges === "function") {
+        updateRotorGauges(
+          window.rotorTestAz != null ? window.rotorTestAz : null,
+          window.rotorTestEl != null ? window.rotorTestEl : null,
+          null,
+          null,
+          false,
+        );
+      }
+      return;
+    }
     const azEl = document.getElementById("rotor-az");
     const elEl = document.getElementById("rotor-el");
     if (azEl && msg.rotorAz != null)
