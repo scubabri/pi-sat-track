@@ -428,6 +428,7 @@ wss.on("connection", (ws) => {
         connectionTest
           .testRotor(msg.rotor || {})
           .then((r) => {
+            console.log("Test rotor result", r.ok, r.message);
             ws.send(
               JSON.stringify({
                 type: "test-result",
@@ -439,6 +440,7 @@ wss.on("connection", (ws) => {
             );
           })
           .catch((e) => {
+            console.warn("Test rotor error", e.message);
             ws.send(
               JSON.stringify({
                 type: "test-result",
