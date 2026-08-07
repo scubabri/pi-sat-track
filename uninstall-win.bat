@@ -1,36 +1,48 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-REM ====================================================a=========================
-REM Pi Sat Track - Windows install / update (zip distribution)
 REM =============================================================================
-REM Place this script in the extracted app folder (next to package.json and
-REM server.js). Does NOT clone the app from git.
+REM Pi Sat Track - Windows uninstall / cleanup (zip distribution)
+REM =============================================================================
+REM Run from the app folder (next to package.json / server.js).
 REM
-REM If Node.js is missing, this script will try to install Node.js LTS via:
-REM   1) winget  2) official MSI from nodejs.org
+REM Default: removes runtime install artifacts only
+REM   - node_modules
+REM   - start-sat-tracker.bat
+REM   - local npm logs
 REM
-REM First install:
-REM   1. Unzip the release into e.g. %USERPROFILE%\pi-sat-track
-REM   2. Right-click install-win.bat -> Run as administrator  (recommended
-REM      if Node is not already installed)
-REM   3. Or run from an elevated Command Prompt
+REM Optional:
+REM   uninstall-win.bat --cache        also delete %USERPROFILE%\.rpitrack
+REM   uninstall-win.bat --all          node_modules + launcher + cache
+REM   uninstall-win.bat --remove-node  also uninstall Node.js (see below)
+REM   uninstall-win.bat --purge        --all + delete app folder
 REM
-REM Flags:
-REM   install-win.bat --update       npm install only
-REM   install-win.bat --start        install then start the server
-REM   install-win.bat --skip-node    do not auto-install Node (fail if missing)
+REM Node.js removal:
+REM   If install-win.bat auto-installed Node, a marker file is left at
+REM     %USERPROFILE%\.rpitrack\.node-installed-by-sat-tracker
+REM   With that marker (or --remove-node), you will be asked whether to
+REM   uninstall Node.js via winget / MSI product code.
+REM   Node is never removed without an explicit YES.
 REM =============================================================================
 
-set "UPDATE_ONLY=0"
-set "DO_START=0"
-set "SKIP_NODE_INSTALL=0"
+set "REMOVE_CACHE=0"
+set "PURGE_APP=0"
+set "REMOVE_NODE=0"
+set "FORCE_NODE_PROMPT=0"
+
 for %%A in (%*) do (
-  if /I "%%~A"=="--update"     set "UPDATE_ONLY=1"
-  if /I "%%~A"=="--start"      set "DO_START=1"
-  if /I "%%~A"=="--skip-node"  set "SKIP_NODE_INSTALL=1"
-  if /I "%%~A"=="-h"           goto :help
-  if /I "%%~A"=="--help"       goto :help
+  if /I "%%~A"=="--cache" set "REMOVE_CACHE=1"
+  if /I "%%~A"=="--all" set "REMOVE_CACHE=1"
+  if /I "%%~A"=="--remove-node" (
+    set "REMOVE_NODE=1"
+    set "FORCE_NODE_PROMPT=1"
+  )
+  if /I "%%~A"=="--purge" (
+    set "REMOVE_CACHE=1"
+    set "PURGE_APP=1"
+  )
+  if /I "%%~A"=="-h"     goto :help
+  if /I "%%~A"=="--help" goto :help
 )
 
 set "SCRIPT_DIR=%~dp0"
@@ -48,268 +60,245 @@ if exist "%SCRIPT_DIR%\package.json" if exist "%SCRIPT_DIR%\server.js" (
 if not defined APP_DIR (
   echo ERROR: Cannot find package.json and server.js near:
   echo   %SCRIPT_DIR%
-  echo Extract the full release zip first, then run this script from that folder.
+  echo Run this from the extracted app folder.
   exit /b 1
 )
 
-echo.
-echo =============================================================================
-echo  Pi Sat Track - Windows setup
-echo =============================================================================
-echo  App dir:  %APP_DIR%
-echo  Cache:    %USERPROFILE%\.rpitrack
-if "%UPDATE_ONLY%"=="1" (
-  echo  Mode:     UPDATE (npm only)
-) else (
-  echo  Mode:     INSTALL
-)
-echo =============================================================================
-echo.
-
-call :find_node
-if defined NODE_EXE goto :have_node
-
-if "%SKIP_NODE_INSTALL%"=="1" (
-  echo ERROR: Node.js not found and --skip-node was set.
-  exit /b 1
-)
-
-echo Node.js was not found on this machine.
-echo.
-echo This installer can download and install Node.js LTS automatically.
-echo You may be prompted for administrator permission.
-echo.
-set /p "YN=Install Node.js LTS now? [Y/N]: "
-if /I not "%YN%"=="Y" if /I not "%YN%"=="YES" (
-  echo Cancelled. Install Node from https://nodejs.org/ and re-run.
-  exit /b 1
-)
-echo.
-
-call :install_node
-if errorlevel 1 (
-  echo.
-  echo ERROR: Automatic Node.js install failed.
-  echo Install manually from https://nodejs.org/ then re-run install-win.bat
-  exit /b 1
-)
-
-REM Refresh PATH from Machine + User for this session
-for /f "tokens=2*" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path 2^>nul') do set "MACHINE_PATH=%%B"
-for /f "tokens=2*" %%A in ('reg query "HKCU\Environment" /v Path 2^>nul') do set "USER_PATH=%%B"
-if defined MACHINE_PATH set "PATH=%MACHINE_PATH%;%PATH%"
-if defined USER_PATH set "PATH=%USER_PATH%;%PATH%"
-if exist "%ProgramFiles%\nodejs\" set "PATH=%ProgramFiles%\nodejs;%PATH%"
-
-call :find_node
-if not defined NODE_EXE (
-  echo ERROR: Node.js was installed but node.exe still not found.
-  echo Close this window, open a NEW Command Prompt, and run install-win.bat again.
-  exit /b 1
-)
-
-:have_node
-for %%I in ("%NODE_EXE%") do set "NODE_DIR=%%~dpI"
-if "%NODE_DIR:~-1%"=="\" set "NODE_DIR=%NODE_DIR:~0,-1%"
-set "PATH=%NODE_DIR%;%PATH%"
-
-set "NPM_CMD="
-if exist "%NODE_DIR%\npm.cmd" (
-  set "NPM_CMD=%NODE_DIR%\npm.cmd"
-) else (
-  where npm >nul 2>&1
-  if not errorlevel 1 set "NPM_CMD=npm"
-)
-if not defined NPM_CMD (
-  echo ERROR: npm not found next to node at %NODE_DIR%
-  exit /b 1
-)
-
-for /f "tokens=*" %%V in ('"%NODE_EXE%" -v') do set "NODE_VER=%%V"
-for /f "tokens=*" %%V in ('"%NPM_CMD%" -v') do set "NPM_VER=%%V"
-echo Node  %NODE_VER%  (%NODE_EXE%)
-echo npm   %NPM_VER%
-echo.
-
-REM -------------------- cache dir --------------------
 set "CACHE_DIR=%USERPROFILE%\.rpitrack"
-echo Ensuring cache directory:
-echo   %CACHE_DIR%
-if not exist "%CACHE_DIR%" mkdir "%CACHE_DIR%"
-if not exist "%CACHE_DIR%" (
-  echo ERROR: Could not create %CACHE_DIR%
-  exit /b 1
-)
-echo.
+set "START_BAT=%APP_DIR%\start-sat-tracker.bat"
+set "NODE_MARKER=%CACHE_DIR%\.node-installed-by-sat-tracker"
 
-REM -------------------- npm install --------------------
-echo Running npm install in:
-echo   %APP_DIR%
-echo.
-pushd "%APP_DIR%"
-if errorlevel 1 (
-  echo ERROR: Cannot cd to %APP_DIR%
-  exit /b 1
-)
+if exist "%NODE_MARKER%" set "REMOVE_NODE=1"
 
-if exist "package-lock.json" (
-  call "%NPM_CMD%" ci --omit=dev
-  if errorlevel 1 (
-    echo npm ci failed - falling back to npm install...
-    call "%NPM_CMD%" install --omit=dev
+echo.
+echo =============================================================================
+echo  Pi Sat Track - Windows uninstall
+echo =============================================================================
+echo  App dir:     %APP_DIR%
+echo  Remove:
+echo    - node_modules
+echo    - start-sat-tracker.bat
+echo    - local npm debug logs
+if "%REMOVE_CACHE%"=="1" (
+  echo    - cache %CACHE_DIR%
+) else (
+  echo    - cache (kept - pass --cache or --all to remove)
+)
+if "%REMOVE_NODE%"=="1" (
+  if exist "%NODE_MARKER%" (
+    echo    - Node.js (auto-installed by install-win.bat - will confirm)
+  ) else (
+    echo    - Node.js (--remove-node - will confirm)
   )
 ) else (
-  call "%NPM_CMD%" install --omit=dev
+  echo    - Node.js (kept)
 )
-
-if errorlevel 1 (
-  echo.
-  echo ERROR: npm install failed.
-  echo If serialport failed to build, install "Desktop development with C++"
-  echo from Visual Studio Build Tools, then run this script again.
-  popd
-  exit /b 1
+if "%PURGE_APP%"=="1" (
+  echo    - ENTIRE app folder (--purge)
 )
-popd
-
-echo.
-echo node_modules ready.
-
-REM -------------------- helper launchers --------------------
-set "START_BAT=%APP_DIR%\start-sat-tracker.bat"
-(
-  echo @echo off
-  echo setlocal
-  echo cd /d "%%~dp0"
-  echo where node ^>nul 2^>^&1
-  echo if errorlevel 1 (
-  echo   if exist "%%ProgramFiles%%\nodejs\node.exe" set "PATH=%%ProgramFiles%%\nodejs;%%PATH%%"
-  echo   if exist "%%LocalAppData%%\Programs\node\node.exe" set "PATH=%%LocalAppData%%\Programs\node;%%PATH%%"
-  echo ^)
-  echo where node ^>nul 2^>^&1
-  echo if errorlevel 1 (
-  echo   echo ERROR: node.exe not found. Run install-win.bat again.
-  echo   pause
-  echo   exit /b 1
-  echo ^)
-  echo echo Starting Pi Sat Track...
-  echo echo Open http://127.0.0.1:3000 in your browser
-  echo echo Press Ctrl+C to stop
-  echo echo.
-  echo node server.js
-  echo pause
-) > "%START_BAT%"
-
-echo Wrote launcher:
-echo   %START_BAT%
-echo.
-
-echo =============================================================================
-echo  Install complete.
-echo.
-echo  Start the tracker:
-echo    %START_BAT%
-echo    or:  cd /d "%APP_DIR%" ^& node server.js
-echo.
-echo  Then open:  http://127.0.0.1:3000
 echo =============================================================================
 echo.
+echo NOTE: Stop the tracker first if it is running (Ctrl+C in its window).
+echo.
 
-if "%DO_START%"=="1" (
-  echo Starting server...
-  pushd "%APP_DIR%"
-  "%NODE_EXE%" server.js
-  popd
+set /p "CONFIRM=Type YES to continue: "
+if /I not "%CONFIRM%"=="YES" (
+  echo Cancelled.
+  exit /b 0
 )
+echo.
 
-exit /b 0
-
-REM =============================================================================
-:find_node
-set "NODE_EXE="
-where node >nul 2>&1
+where tasklist >nul 2>&1
 if not errorlevel 1 (
-  for /f "delims=" %%P in ('where node 2^>nul') do (
-    if not defined NODE_EXE set "NODE_EXE=%%P"
+  tasklist /FI "IMAGENAME eq node.exe" 2>nul | find /I "node.exe" >nul
+  if not errorlevel 1 (
+    echo WARNING: node.exe is running. Stop sat-tracker before removing files.
+    echo.
   )
 )
-if not defined NODE_EXE if exist "%ProgramFiles%\nodejs\node.exe" set "NODE_EXE=%ProgramFiles%\nodejs\node.exe"
-if not defined NODE_EXE if exist "%ProgramFiles(x86)%\nodejs\node.exe" set "NODE_EXE=%ProgramFiles(x86)%\nodejs\node.exe"
-if not defined NODE_EXE if exist "%LocalAppData%\Programs\node\node.exe" set "NODE_EXE=%LocalAppData%\Programs\node\node.exe"
-if not defined NODE_EXE if exist "%LocalAppData%\nvs\default\node.exe" set "NODE_EXE=%LocalAppData%\nvs\default\node.exe"
+
+REM -------------------- node_modules --------------------
+if exist "%APP_DIR%\node_modules\" (
+  echo Removing node_modules...
+  rmdir /s /q "%APP_DIR%\node_modules"
+  if exist "%APP_DIR%\node_modules\" (
+    echo WARNING: Could not fully delete node_modules.
+  ) else (
+    echo   node_modules removed.
+  )
+) else (
+  echo   node_modules not present.
+)
+
+if exist "%START_BAT%" (
+  del /f /q "%START_BAT%" >nul 2>&1
+  echo   start-sat-tracker.bat removed.
+) else (
+  echo   start-sat-tracker.bat not present.
+)
+
+pushd "%APP_DIR%"
+del /f /q npm-debug.log* 2>nul
+del /f /q yarn-error.log 2>nul
+if exist ".npm\" rmdir /s /q ".npm" 2>nul
+popd
+echo   local npm logs cleaned.
+
+REM -------------------- Node.js (optional, confirmed) --------------------
+if "%REMOVE_NODE%"=="1" (
+  echo.
+  echo Node.js uninstall is optional and system-wide.
+  if exist "%NODE_MARKER%" (
+    echo Marker found - install-win.bat previously auto-installed Node on this PC:
+    echo   %NODE_MARKER%
+  )
+  echo.
+  set /p "YN_NODE=Uninstall Node.js from this computer? Type YES: "
+  if /I "!YN_NODE!"=="YES" (
+    call :uninstall_node
+    if exist "%NODE_MARKER%" del /f /q "%NODE_MARKER%" >nul 2>&1
+  ) else (
+    echo   Node.js left installed.
+  )
+)
+
+REM -------------------- cache --------------------
+if "%REMOVE_CACHE%"=="1" (
+  if exist "%CACHE_DIR%\" (
+    echo Removing cache %CACHE_DIR% ...
+    REM Keep marker removal already done; wipe whole cache
+    rmdir /s /q "%CACHE_DIR%"
+    if exist "%CACHE_DIR%\" (
+      echo WARNING: Could not fully delete cache folder.
+    ) else (
+      echo   cache removed.
+    )
+  ) else (
+    echo   cache folder not present.
+  )
+) else (
+  echo   cache kept at %CACHE_DIR%
+)
+
+if "%PURGE_APP%"=="1" (
+  echo.
+  echo Purging entire app folder:
+  echo   %APP_DIR%
+  set /p "CONFIRM2=Type DELETE to permanently remove the app folder: "
+  if /I not "!CONFIRM2!"=="DELETE" (
+    echo App folder kept. Runtime cleanup is done.
+    goto :done
+  )
+
+  set "CLEANER=%TEMP%\pi-sat-track-purge-%RANDOM%.bat"
+  (
+    echo @echo off
+    echo timeout /t 2 /nobreak ^>nul
+    echo rmdir /s /q "%APP_DIR%"
+    echo if exist "%APP_DIR%" ^(
+    echo   echo WARNING: App folder still exists - delete manually:
+    echo   echo   %APP_DIR%
+    echo ^) else ^(
+    echo   echo App folder deleted.
+    echo ^)
+    echo del /f /q "%%~f0"
+  ) > "%CLEANER%"
+  echo Scheduling folder delete...
+  start "" /min cmd /c "%CLEANER%"
+  echo This window can be closed. Cleanup runs in the background.
+  exit /b 0
+)
+
+:done
+echo.
+echo =============================================================================
+echo  Uninstall finished.
+echo  To reinstall: run install-win.bat from an extracted release tree.
+echo =============================================================================
+echo.
 exit /b 0
 
 REM =============================================================================
-:install_node
-echo Attempting to install Node.js LTS...
+:uninstall_node
+echo.
+echo Uninstalling Node.js...
 echo.
 
-REM --- 1) winget (built into most Windows 11 systems) ---
+REM 1) winget
 where winget >nul 2>&1
 if not errorlevel 1 (
-  echo Using winget: OpenJS.NodeJS.LTS
-  winget install -e --id OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements
+  echo Trying winget uninstall OpenJS.NodeJS.LTS ...
+  winget uninstall -e --id OpenJS.NodeJS.LTS --accept-source-agreements
   if not errorlevel 1 (
-    echo winget install finished.
-    exit /b 0
+    echo   winget removed OpenJS.NodeJS.LTS
+    goto :node_uninstalled
   )
-  echo winget install did not succeed - trying MSI download...
-  echo.
+  echo Trying winget uninstall OpenJS.NodeJS ...
+  winget uninstall -e --id OpenJS.NodeJS --accept-source-agreements
+  if not errorlevel 1 (
+    echo   winget removed OpenJS.NodeJS
+    goto :node_uninstalled
+  )
+  echo winget did not remove Node - trying MSI product code...
 )
 
-REM --- 2) Download official LTS MSI and silent-install ---
-set "MSI_PATH=%TEMP%\node-lts-x64.msi"
-echo Downloading Node.js LTS MSI from nodejs.org ...
+REM 2) MSI product uninstall via Win32_Product / registry uninstall keys is slow;
+REM    use Get-Package / Uninstall-Package when available, else msiexec by name.
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$ErrorActionPreference='Stop'; ^
+  "$ErrorActionPreference='Continue'; ^
+  $removed = $false; ^
   try { ^
-    $idx = Invoke-RestMethod -Uri 'https://nodejs.org/dist/index.json' -UseBasicParsing; ^
-    $rel = $idx | Where-Object { $_.lts -ne $false } | Select-Object -First 1; ^
-    if (-not $rel) { throw 'No LTS release found in index.json' } ^
-    $ver = $rel.version; ^
-    $url = 'https://nodejs.org/dist/' + $ver + '/node-' + $ver + '-x64.msi'; ^
-    Write-Host ('  Version: ' + $ver); ^
-    Write-Host ('  URL:     ' + $url); ^
-    Invoke-WebRequest -Uri $url -OutFile '%MSI_PATH%' -UseBasicParsing; ^
-    if (-not (Test-Path '%MSI_PATH%')) { throw 'Download failed' } ^
-    Write-Host ('  Saved:   %MSI_PATH%') ^
-  } catch { ^
-    Write-Host ('ERROR: ' + $_.Exception.Message); ^
-    exit 1 ^
-  }"
+    $pkgs = Get-Package -Name 'Node.js*' -ErrorAction SilentlyContinue; ^
+    foreach ($p in @($pkgs)) { ^
+      Write-Host ('  Uninstalling package: ' + $p.Name + ' ' + $p.Version); ^
+      $p | Uninstall-Package -Force -ErrorAction SilentlyContinue; ^
+      $removed = $true ^
+    } ^
+  } catch {} ^
+  if (-not $removed) { ^
+    $keys = @( ^
+      'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*', ^
+      'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*' ^
+    ); ^
+    foreach ($k in $keys) { ^
+      Get-ItemProperty $k -ErrorAction SilentlyContinue | ^
+        Where-Object { $_.DisplayName -like 'Node.js*' } | ^
+        ForEach-Object { ^
+          if ($_.UninstallString) { ^
+            Write-Host ('  Running: ' + $_.UninstallString); ^
+            $us = $_.UninstallString; ^
+            if ($us -match 'msiexec') { ^
+              $guid = [regex]::Match($us, '\{[0-9A-Fa-f\-]+\}').Value; ^
+              if ($guid) { Start-Process msiexec.exe -ArgumentList \"/x $guid /qn /norestart\" -Wait -Verb RunAs } ^
+            } else { ^
+              Start-Process cmd.exe -ArgumentList \"/c $us /S\" -Wait -Verb RunAs -ErrorAction SilentlyContinue ^
+            } ^
+            $removed = $true ^
+          } ^
+        } ^
+    } ^
+  } ^
+  if ($removed) { exit 0 } else { Write-Host '  No Node.js product found to uninstall.'; exit 1 }"
+
 if errorlevel 1 (
-  echo MSI download failed.
+  echo WARNING: Could not fully uninstall Node.js automatically.
+  echo Remove it from Settings - Apps - Installed apps if it is still listed.
   exit /b 1
 )
 
-echo Installing MSI silently (may prompt for UAC)...
-msiexec /i "%MSI_PATH%" /qn /norestart ADDLOCAL=ALL
-set "MSI_EC=%ERRORLEVEL%"
-REM msiexec 0 = success, 3010 = success reboot required
-if not "%MSI_EC%"=="0" if not "%MSI_EC%"=="3010" (
-  echo Silent install returned %MSI_EC% - trying interactive MSI...
-  msiexec /i "%MSI_PATH%"
-  set "MSI_EC=%ERRORLEVEL%"
-)
-del /f /q "%MSI_PATH%" >nul 2>&1
-
-if not "%MSI_EC%"=="0" if not "%MSI_EC%"=="3010" (
-  echo MSI install failed with code %MSI_EC%
-  exit /b 1
-)
-
-echo Node.js MSI install finished.
+:node_uninstalled
+echo   Node.js uninstall attempted.
 exit /b 0
 
 :help
 echo.
-echo Usage: install-win.bat [--update] [--start] [--skip-node]
+echo Usage: uninstall-win.bat [--cache ^| --all ^| --remove-node ^| --purge]
 echo.
-echo   --update      npm install in the app folder
-echo   --start       After install, start node server.js
-echo   --skip-node   Do not auto-install Node if missing
+echo   (no flags)     Remove node_modules, launcher, local npm logs
+echo   --cache/--all  Also remove %%USERPROFILE%%\.rpitrack
+echo   --remove-node  Offer to uninstall Node.js (also auto if marker present)
+echo   --purge        --all and delete the application folder
 echo.
-echo If Node is missing, installs Node.js LTS via winget or official MSI.
-echo Run as Administrator if auto-install fails due to permissions.
+echo Node.js is only removed after you type YES at the Node prompt.
 echo.
 exit /b 0
