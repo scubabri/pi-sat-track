@@ -460,7 +460,10 @@ body {
 }
 
 .form-row input:not([type="checkbox"]),
-.form-row .cfg-select {
+.form-row-2 input:not([type="checkbox"]),
+.form-row .cfg-select,
+.form-row-2 .cfg-select,
+#config-panel .cfg-select {
   width: 100%;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -470,9 +473,13 @@ body {
   font-size: 0.9rem;
 }
 
-.form-row .cfg-select {
+.form-row .cfg-select,
+.form-row-2 .cfg-select,
+#config-panel .cfg-select {
   cursor: pointer;
   appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--bg);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%238b949e' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
@@ -480,9 +487,24 @@ body {
 }
 
 .form-row .cfg-select:focus,
-.form-row input:not([type="checkbox"]):focus {
+.form-row-2 .cfg-select:focus,
+#config-panel .cfg-select:focus,
+.form-row input:not([type="checkbox"]):focus,
+.form-row-2 input:not([type="checkbox"]):focus {
   outline: none;
   border-color: var(--accent);
+}
+
+/* Custom path field next to device selects */
+#config-panel .cfg-serial-custom {
+  width: 100%;
+  margin-top: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 0.9rem;
 }
 
 .form-hint {

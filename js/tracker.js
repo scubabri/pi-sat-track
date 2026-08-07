@@ -189,10 +189,7 @@ function applyRotorStatus(msg) {
     // Below horizon / preposition: pass null so gauges derive sky
     // direction from rotor (rotor+180 when flipped).
     const showSat =
-      antennaOn &&
-      !parking &&
-      lastGaugeSatEl != null &&
-      lastGaugeSatEl >= 0;
+      antennaOn && !parking && lastGaugeSatEl != null && lastGaugeSatEl >= 0;
     updateRotorGauges(
       msg.az,
       msg.el,
@@ -332,10 +329,7 @@ function applyFreqAndLook(msg) {
           ? msg.look.el
           : lastGaugeSatEl;
       const showSat =
-        antennaOn &&
-        !parking &&
-        elVal != null &&
-        Number(elVal) >= 0;
+        antennaOn && !parking && elVal != null && Number(elVal) >= 0;
       const azVal = msg.look ? msg.look.az : lastGaugeSatAz;
       updateRotorGauges(
         msg.rotorAz != null ? msg.rotorAz : null,
@@ -449,6 +443,12 @@ function connectTracker() {
       }
 
       if (msg.type === "host" || msg.type === "endpoints") {
+        if (
+          Array.isArray(msg.serialDevices) &&
+          typeof setHostSerialDevices === "function"
+        ) {
+          setHostSerialDevices(msg.serialDevices);
+        }
         if (msg.rotorCatalog && typeof setRotorCatalog === "function") {
           setRotorCatalog(msg.rotorCatalog);
           if (typeof populateRotorTypes === "function") {
@@ -459,11 +459,30 @@ function connectTracker() {
           if (document.getElementById("cfg-rotor-type")) {
             setVal("cfg-rotor-type", msg.rotorType);
             if (msg.rotorAzDevice) {
-              setVal("cfg-rotor-device", msg.rotorAzDevice);
-              setVal("cfg-rotor-az-device", msg.rotorAzDevice);
+              if (typeof populateSerialDeviceSelect === "function") {
+                populateSerialDeviceSelect(
+                  "cfg-rotor-device",
+                  msg.rotorAzDevice,
+                );
+                populateSerialDeviceSelect(
+                  "cfg-rotor-az-device",
+                  msg.rotorAzDevice,
+                );
+              } else {
+                setVal("cfg-rotor-device", msg.rotorAzDevice);
+                setVal("cfg-rotor-az-device", msg.rotorAzDevice);
+              }
             }
-            if (msg.rotorElDevice)
-              setVal("cfg-rotor-el-device", msg.rotorElDevice);
+            if (msg.rotorElDevice) {
+              if (typeof populateSerialDeviceSelect === "function") {
+                populateSerialDeviceSelect(
+                  "cfg-rotor-el-device",
+                  msg.rotorElDevice,
+                );
+              } else {
+                setVal("cfg-rotor-el-device", msg.rotorElDevice);
+              }
+            }
             if (msg.rotorBaud != null) setVal("cfg-rotor-baud", msg.rotorBaud);
             if (typeof updateRotorFormVisibility === "function") {
               updateRotorFormVisibility();

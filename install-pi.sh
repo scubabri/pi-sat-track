@@ -1,194 +1,112 @@
 #!/usr/bin/env bash
 # =============================================================================
-# install-pi.sh — Pi Sat Track (Node web UI) installer
+# Pi Sat Track — install / update (zip distribution)
 # =============================================================================
+# Expects this script to live inside an extracted release tree that already
+# contains package.json and server.js. Does NOT clone or pull from any remote.
 #
-# Installs and configures everything needed to run the dual-radio Node sat
-# tracker on Raspberry Pi OS (Bookworm / Trixie) or similar Debian-based hosts.
-#
-# Covers:
-#   • system packages (build tools, udev for serialport, nginx)
-#   • Node.js 22.x LTS (NodeSource)
-#   • npm install (satellite.js, serialport, ws)
-#   • dialout group for CI-V / serial radios
-#   • ~/.rpitrack cache directory
-#   • nginx reverse proxy :80 → Node :3000 (WebSocket headers)
-#   • systemd --user service "sat-tracker"
-#   • optional git pull on --upgrade (stays on current branch, e.g. CAT)
-#
-# Usage (run as a normal user — script sudo's only for apt / nginx / linger):
-#
-#   cd ~/pi-sat-track/node/sat-tracker   # or repo root
+# Typical first install:
+#   unzip pi-sat-track-*.zip -d ~/pi-sat-track
+#   cd ~/pi-sat-track
 #   chmod +x install-pi.sh
 #   ./install-pi.sh
 #
 # Flags:
-#   --no-nginx      Skip nginx install and site config
-#   --no-service    Skip systemd user service
-#   --update        Re-run npm install only (no apt / nginx / git)
-#   --upgrade       git pull + npm install + restart service
-#   --branch NAME   On --upgrade, checkout/pull NAME (default: keep current)
-#   -h, --help      Show this header
-#
-# Day-to-day after first install:
-#   ./install-pi.sh --upgrade
-#
+#   --no-nginx    Skip nginx reverse-proxy setup
+#   --no-service  Skip systemd user service
+#   --update      npm install only (no apt / nginx / service changes)
 # =============================================================================
 
 set -euo pipefail
 
-# -------------------- defaults --------------------
 NODE_MAJOR=22
 PROXY_PORT=3000
-NGINX_SITE="sat-tracker"
 SERVICE_NAME="sat-tracker"
+NGINX_SITE="sat-tracker"
 
 INSTALL_NGINX=1
 INSTALL_SERVICE=1
 UPDATE_ONLY=0
-UPGRADE=0
-BRANCH=""   # empty = keep current branch on upgrade
 
-# -------------------- args --------------------
-for arg in "$@"; do
-  case "$arg" in
-    --no-nginx)   INSTALL_NGINX=0 ;;
-    --no-service) INSTALL_SERVICE=0 ;;
-    --update)     UPDATE_ONLY=1 ;;
-    --upgrade)    UPGRADE=1; UPDATE_ONLY=1; INSTALL_NGINX=0; INSTALL_SERVICE=0 ;;
-    --branch)
-      # handled below with shift-style parse
-      ;;
-    --branch=*)
-      BRANCH="${arg#--branch=}"
-      ;;
-    -h|--help)
-      sed -n '2,40p' "$0"
-      exit 0
-      ;;
-    *)
-      if [[ "${PREV_ARG:-}" == "--branch" ]]; then
-        BRANCH="$arg"
-      fi
-      ;;
-  esac
-  PREV_ARG="$arg"
-done
-
-# -------------------- paths / user --------------------
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Detect app dir: script may live in repo root or in node/sat-tracker
-if [[ -f "${SCRIPT_DIR}/package.json" ]]; then
-  APP_DIR="${SCRIPT_DIR}"
-elif [[ -f "${SCRIPT_DIR}/node/sat-tracker/package.json" ]]; then
-  APP_DIR="${SCRIPT_DIR}/node/sat-tracker"
-else
-  echo "ERROR: package.json not found relative to ${SCRIPT_DIR}"
-  echo "Expected either:"
-  echo "  ${SCRIPT_DIR}/package.json"
-  echo "  ${SCRIPT_DIR}/node/sat-tracker/package.json"
-  exit 1
-fi
-
-# Git root (may be APP_DIR or a parent)
-GIT_ROOT="${APP_DIR}"
-if git -C "${APP_DIR}" rev-parse --show-toplevel >/dev/null 2>&1; then
-  GIT_ROOT="$(git -C "${APP_DIR}" rev-parse --show-toplevel)"
-elif git -C "${SCRIPT_DIR}" rev-parse --show-toplevel >/dev/null 2>&1; then
-  GIT_ROOT="$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel)"
-fi
-
-if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
-  APP_USER="${SUDO_USER}"
-  APP_HOME="$(getent passwd "${APP_USER}" | cut -d: -f6)"
-else
-  APP_USER="$(id -un)"
-  APP_HOME="${HOME}"
-fi
-
-if [[ "${APP_USER}" == "root" ]]; then
-  echo "Do not run this installer as root."
-  echo "Run as a normal user; the script will sudo only for apt / nginx / linger."
-  exit 1
-fi
+die()  { echo "ERROR: $*" >&2; exit 1; }
+log()  { echo; echo "==> $*"; }
+warn() { echo "WARN: $*" >&2; }
 
 need_sudo() {
-  if [[ $EUID -eq 0 ]]; then
+  if [[ "$(id -u)" -eq 0 ]]; then
     "$@"
   else
     sudo "$@"
   fi
 }
 
-log()  { printf '==> %s\n' "$*"; }
-warn() { printf 'WARN: %s\n' "$*" >&2; }
-die()  { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
-
-# Ensure user systemd bus works over SSH / headless
 ensure_user_systemd() {
   if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
-    export XDG_RUNTIME_DIR="/run/user/$(id -u "${APP_USER}")"
+    export XDG_RUNTIME_DIR="/run/user/$(id -u)"
   fi
-  if [[ ! -d "${XDG_RUNTIME_DIR}" ]]; then
-    need_sudo mkdir -p "${XDG_RUNTIME_DIR}"
-    need_sudo chown "${APP_USER}:${APP_USER}" "${XDG_RUNTIME_DIR}"
-    need_sudo chmod 700 "${XDG_RUNTIME_DIR}"
-  fi
-  # Import environment so systemctl --user works without a login session
-  if ! systemctl --user status >/dev/null 2>&1; then
-    if command -v loginctl >/dev/null 2>&1; then
-      need_sudo loginctl enable-linger "${APP_USER}" || true
-    fi
-    # Give linger a moment
-    sleep 1
+  if [[ ! -S "${XDG_RUNTIME_DIR}/bus" ]]; then
+    warn "User systemd bus not available — service commands may fail until you log in graphically or via linger"
   fi
 }
 
-# -------------------- banner --------------------
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --no-nginx)   INSTALL_NGINX=0 ;;
+    --no-service) INSTALL_SERVICE=0 ;;
+    --update)     UPDATE_ONLY=1 ;;
+    -h|--help)
+      sed -n '2,20p' "$0"
+      exit 0
+      ;;
+    *)
+      die "Unknown option: $1 (try --help)"
+      ;;
+  esac
+  shift
+done
+
+# -------------------- identity / paths --------------------
+if [[ "$(id -u)" -eq 0 && -z "${SUDO_USER:-}" ]]; then
+  die "Run as a normal user (not root). The script will sudo when needed."
+fi
+
+APP_USER="${SUDO_USER:-$(id -un)}"
+APP_HOME="$(getent passwd "${APP_USER}" | cut -d: -f6)"
+[[ -n "${APP_HOME}" && -d "${APP_HOME}" ]] || die "Cannot resolve home for ${APP_USER}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# App root = directory that contains package.json + server.js
+APP_DIR=""
+if [[ -f "${SCRIPT_DIR}/package.json" && -f "${SCRIPT_DIR}/server.js" ]]; then
+  APP_DIR="${SCRIPT_DIR}"
+elif [[ -f "${SCRIPT_DIR}/node/sat-tracker/package.json" ]]; then
+  APP_DIR="${SCRIPT_DIR}/node/sat-tracker"
+else
+  # Walk up a level (script in scripts/ or similar)
+  if [[ -f "${SCRIPT_DIR}/../package.json" && -f "${SCRIPT_DIR}/../server.js" ]]; then
+    APP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+  fi
+fi
+[[ -n "${APP_DIR}" ]] || die "Cannot find package.json + server.js near ${SCRIPT_DIR}. Extract the full zip first."
+
+cd "${APP_DIR}"
+
 echo
 echo "============================================================"
-echo "  Pi Sat Track installer"
+echo "  Pi Sat Track install"
 echo "============================================================"
 echo "  User     ${APP_USER}"
 echo "  Home     ${APP_HOME}"
 echo "  App      ${APP_DIR}"
-echo "  Git root ${GIT_ROOT}"
-if [[ $UPGRADE -eq 1 ]]; then
-  echo "  Mode     UPGRADE"
-elif [[ $UPDATE_ONLY -eq 1 ]]; then
+if [[ $UPDATE_ONLY -eq 1 ]]; then
   echo "  Mode     UPDATE (npm only)"
 else
-  echo "  Mode     FULL INSTALL"
+  echo "  Mode     FULL install"
+  echo "  nginx    $([[ $INSTALL_NGINX -eq 1 ]] && echo yes || echo no)"
+  echo "  service  $([[ $INSTALL_SERVICE -eq 1 ]] && echo yes || echo no)"
 fi
 echo "============================================================"
-echo
-
-# -------------------- upgrade: git pull --------------------
-if [[ $UPGRADE -eq 1 ]]; then
-  if ! git -C "${GIT_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    die "Not a git repo: ${GIT_ROOT}"
-  fi
-
-  CURRENT_BRANCH="$(git -C "${GIT_ROOT}" rev-parse --abbrev-ref HEAD)"
-  TARGET_BRANCH="${BRANCH:-$CURRENT_BRANCH}"
-
-  log "Git: on branch ${CURRENT_BRANCH}"
-  if [[ "${TARGET_BRANCH}" != "${CURRENT_BRANCH}" ]]; then
-    log "Checking out ${TARGET_BRANCH}"
-    git -C "${GIT_ROOT}" fetch origin
-    git -C "${GIT_ROOT}" checkout "${TARGET_BRANCH}"
-  else
-    log "Pulling origin/${TARGET_BRANCH}"
-    git -C "${GIT_ROOT}" fetch origin
-    # Prefer rebase to avoid noisy merge commits on a Pi
-    if ! git -C "${GIT_ROOT}" pull --rebase origin "${TARGET_BRANCH}"; then
-      warn "git pull --rebase failed — trying plain pull"
-      git -C "${GIT_ROOT}" pull origin "${TARGET_BRANCH}"
-    fi
-  fi
-  echo "    HEAD $(git -C "${GIT_ROOT}" rev-parse --short HEAD) ($(git -C "${GIT_ROOT}" rev-parse --abbrev-ref HEAD))"
-fi
 
 # -------------------- system packages --------------------
 if [[ $UPDATE_ONLY -eq 0 ]]; then
@@ -196,14 +114,12 @@ if [[ $UPDATE_ONLY -eq 0 ]]; then
   need_sudo apt-get update -qq
 
   log "Installing system packages"
-  # build-essential + python3: only for compiling serialport (node-gyp).
-  # No Python app is installed or run — Node-only stack (no RTL-SDR tools).
+  # build-essential + python3: node-gyp for serialport native build
   # libudev-dev: serialport udev bindings
   PKGS=(
     curl
     ca-certificates
     gnupg
-    git
     build-essential
     python3
     libudev-dev
@@ -214,7 +130,6 @@ if [[ $UPDATE_ONLY -eq 0 ]]; then
   fi
   need_sudo apt-get install -y --no-install-recommends "${PKGS[@]}"
 
-  # dialout for serial CI-V (Icom etc.)
   if getent group dialout >/dev/null 2>&1; then
     if id -nG "${APP_USER}" | tr ' ' '\n' | grep -qx dialout; then
       echo "    ${APP_USER} already in dialout"
@@ -256,7 +171,6 @@ echo "    npm   $(npm -v)"
 CACHE_DIR="${APP_HOME}/.rpitrack"
 log "Ensuring cache directory ${CACHE_DIR}"
 mkdir -p "${CACHE_DIR}"
-# If we were sudo'd somehow, fix ownership
 if [[ -n "${SUDO_USER:-}" ]]; then
   need_sudo chown -R "${APP_USER}:${APP_USER}" "${CACHE_DIR}" 2>/dev/null || true
 fi
@@ -264,38 +178,18 @@ fi
 # -------------------- npm install --------------------
 log "npm install in ${APP_DIR}"
 cd "${APP_DIR}"
-# Prefer clean install when package-lock exists
 if [[ -f package-lock.json ]]; then
   npm ci --omit=dev 2>/dev/null || npm install --omit=dev
 else
   npm install --omit=dev
 fi
-
-# Sanity: drivers load
-log "Sanity-check radio drivers"
-node -e '
-  const path = require("path");
-  const fs = require("fs");
-  // node -e sets __dirname to "." — always resolve to absolute paths
-  const root = process.cwd();
-  const radios = require(path.join(root, "lib", "radios"));
-  const dir = path.join(root, "lib", "radios");
-  const files = fs.readdirSync(dir).filter(f => f.endsWith(".js") && f !== "index.js" && f !== "flex-api.js");
-  console.log("    radio modules:", files.map(f => f.replace(/\.js$/, "")).join(", "));
-  for (const f of files) {
-    require(path.resolve(dir, f));
-  }
-  console.log("    drivers OK");
-' || warn "Driver load check failed — start server manually to see errors"
+echo "    node_modules ready"
 
 # -------------------- nginx --------------------
 if [[ $INSTALL_NGINX -eq 1 && $UPDATE_ONLY -eq 0 ]]; then
-  log "Writing nginx site: /etc/nginx/sites-available/${NGINX_SITE}"
+  log "Configuring nginx reverse proxy (:80 → 127.0.0.1:${PROXY_PORT})"
 
-  need_sudo tee "/etc/nginx/sites-available/${NGINX_SITE}" >/dev/null <<EOF
-# Pi Sat Track – Node UI reverse proxy
-# Node listens on 127.0.0.1:${PROXY_PORT}
-
+  need_sudo tee "/etc/nginx/sites-available/${NGINX_SITE}" >/dev/null <<NGX
 map \$http_upgrade \$connection_upgrade {
     default upgrade;
     ''      close;
@@ -305,13 +199,6 @@ server {
     listen 80 default_server;
     listen [::]:80 default_server;
     server_name _;
-
-    # Optional static shortcut (if you ever publish a build/ folder)
-    location /static/ {
-        alias ${APP_DIR}/public/;
-        expires 7d;
-        access_log off;
-    }
 
     location / {
         proxy_pass         http://127.0.0.1:${PROXY_PORT};
@@ -330,13 +217,12 @@ server {
         proxy_send_timeout  3600s;
     }
 }
-EOF
+NGX
 
   need_sudo ln -sfn \
     "/etc/nginx/sites-available/${NGINX_SITE}" \
     "/etc/nginx/sites-enabled/${NGINX_SITE}"
 
-  # Avoid fighting with default site on :80
   if [[ -e /etc/nginx/sites-enabled/default ]]; then
     need_sudo rm -f /etc/nginx/sites-enabled/default
   fi
@@ -355,7 +241,7 @@ if [[ $INSTALL_SERVICE -eq 1 && $UPDATE_ONLY -eq 0 ]]; then
   NODE_BIN="$(command -v node)"
   log "Writing systemd user unit ${UNIT_DIR}/${SERVICE_NAME}.service"
 
-  cat > "${UNIT_DIR}/${SERVICE_NAME}.service" <<EOF
+  cat > "${UNIT_DIR}/${SERVICE_NAME}.service" <<UNIT
 [Unit]
 Description=Pi Sat Track (Node web UI / dual-radio)
 After=network-online.target
@@ -369,12 +255,10 @@ Restart=on-failure
 RestartSec=5
 Environment=NODE_ENV=production
 Environment=HOME=${APP_HOME}
-# Uncomment if you need more open files for many WS clients:
-# LimitNOFILE=65535
 
 [Install]
 WantedBy=default.target
-EOF
+UNIT
 
   if [[ -n "${SUDO_USER:-}" ]]; then
     need_sudo chown -R "${APP_USER}:${APP_USER}" "${APP_HOME}/.config/systemd" 2>/dev/null || true
@@ -393,8 +277,8 @@ EOF
   echo "    logs: journalctl --user -u ${SERVICE_NAME} -f"
 fi
 
-# --upgrade: restart if unit exists
-if [[ $UPGRADE -eq 1 ]]; then
+# --update: restart service if present
+if [[ $UPDATE_ONLY -eq 1 ]]; then
   ensure_user_systemd
   if systemctl --user list-unit-files "${SERVICE_NAME}.service" 2>/dev/null | grep -q "${SERVICE_NAME}"; then
     log "Restarting ${SERVICE_NAME} service"
@@ -408,10 +292,10 @@ if [[ $UPGRADE -eq 1 ]]; then
   fi
 fi
 
-# -------------------- quick health probe --------------------
+# -------------------- health probe --------------------
 log "Health probe (localhost:${PROXY_PORT})"
 PROBE_OK=0
-for i in 1 2 3 4 5 6; do
+for _ in 1 2 3 4 5 6; do
   if curl -fsS -o /dev/null --max-time 2 "http://127.0.0.1:${PROXY_PORT}/" 2>/dev/null; then
     PROBE_OK=1
     break
@@ -428,19 +312,14 @@ fi
 
 # -------------------- summary --------------------
 PI_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
-BRANCH_NOW="?"
-if git -C "${GIT_ROOT}" rev-parse --abbrev-ref HEAD >/dev/null 2>&1; then
-  BRANCH_NOW="$(git -C "${GIT_ROOT}" rev-parse --abbrev-ref HEAD) @ $(git -C "${GIT_ROOT}" rev-parse --short HEAD)"
-fi
 
-cat <<EOF
+cat <<SUM
 
 ============================================================
   Done
 ============================================================
 
   App        ${APP_DIR}
-  Branch     ${BRANCH_NOW}
   Node       $(node -v 2>/dev/null || echo '?') / npm $(npm -v 2>/dev/null || echo '?')
   Cache      ${CACHE_DIR}
 
@@ -448,15 +327,14 @@ cat <<EOF
     http://127.0.0.1:${PROXY_PORT}/
     http://${PI_IP:-<pi-ip>}/
 
-  Dual-radio config is in the browser (gear icon):
-    Radio UL (TX)  and  Radio DL (RX)  are independent
-    (TCI / Flex CAT / Icom CI-V / rigctl TCP can be mixed)
+  Config is in the browser (gear icon): radios, rotors, profiles.
 
-  Day-to-day update
-    cd ${APP_DIR}
-    ./install-pi.sh --upgrade
-    # or stay on a branch:
-    ./install-pi.sh --upgrade --branch CAT
+  Update from a new release zip
+    1. Stop service:  systemctl --user stop ${SERVICE_NAME}
+    2. Extract zip over this tree (or into a new folder)
+    3. cd into the app directory
+    4. ./install-pi.sh --update
+       (or full ./install-pi.sh if system packages changed)
 
   Service
     systemctl --user status ${SERVICE_NAME}
@@ -464,13 +342,8 @@ cat <<EOF
     journalctl --user -u ${SERVICE_NAME} -f
 
   Serial radios
-    User should be in dialout. Re-login if you just got added.
-    Default device often /dev/ttyACM0 or /dev/ttyUSB0
-
-  Rotors (optional, separate)
-    Green Heron RT-21 via dual rotctld, e.g.:
-      rotctld -m 601 -r /dev/ttyUSB0 -s 9600 -t 4535   # AZ
-      rotctld -m 601 -r /dev/ttyUSB1 -s 9600 -t 4536   # EL
+    User should be in dialout. Re-login if you were just added.
+    Devices are often /dev/ttyACM0 or /dev/ttyUSB0
 
 ============================================================
-EOF
+SUM

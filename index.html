@@ -145,9 +145,13 @@
               </div>
 
               <div class="form-row">
+                <label class="cfg-check-label" for="cfg-single-radio">
+                  <input type="checkbox" id="cfg-single-radio" />
+                  Single radio
+                </label>
                 <label class="cfg-check-label" for="cfg-tx-split">
                   <input type="checkbox" id="cfg-tx-split" checked />
-                  TX radio split (VFO B = downlink)
+                  TX radio split (VFO B = uplink)
                 </label>
               </div>
 
@@ -282,15 +286,27 @@
                   <label for="cfg-ul-serial-model">Model</label>
                   <select id="cfg-ul-serial-model" class="cfg-select">
                     <option value="ic-705">IC-705</option>
+                    <option value="ic-9700">IC-9700</option>
+                    <option value="ft-991">FT-991 / FT-991A</option>
+                    <option value="ft-817">FT-817 / 817ND / 818</option>
+                    <option value="ts-2000">TS-2000</option>
+                    <option value="other">Other</option>
                   </select>
                 </div>
                 <div class="form-row">
                   <label for="cfg-ul-serial-device">Serial device</label>
+                  <select
+                    id="cfg-ul-serial-device"
+                    class="cfg-select cfg-serial-device"
+                  ></select>
                   <input
                     type="text"
-                    id="cfg-ul-serial-device"
+                    id="cfg-ul-serial-device-custom"
+                    class="cfg-serial-custom"
                     placeholder="/dev/ttyACM0"
                     autocomplete="off"
+                    spellcheck="false"
+                    hidden
                   />
                 </div>
                 <div class="form-row">
@@ -440,15 +456,27 @@
                   <label for="cfg-dl-serial-model">Model</label>
                   <select id="cfg-dl-serial-model" class="cfg-select">
                     <option value="ic-705">IC-705</option>
+                    <option value="ic-9700">IC-9700</option>
+                    <option value="ft-991">FT-991 / FT-991A</option>
+                    <option value="ft-817">FT-817 / 817ND / 818</option>
+                    <option value="ts-2000">TS-2000</option>
+                    <option value="other">Other</option>
                   </select>
                 </div>
                 <div class="form-row">
                   <label for="cfg-dl-serial-device">Serial device</label>
+                  <select
+                    id="cfg-dl-serial-device"
+                    class="cfg-select cfg-serial-device"
+                  ></select>
                   <input
                     type="text"
-                    id="cfg-dl-serial-device"
+                    id="cfg-dl-serial-device-custom"
+                    class="cfg-serial-custom"
                     placeholder="/dev/ttyACM0"
                     autocomplete="off"
+                    spellcheck="false"
+                    hidden
                   />
                 </div>
                 <div class="form-row">
@@ -472,15 +500,28 @@
                 <select id="cfg-rotor-type" class="cfg-select"></select>
               </div>
 
+              <div class="form-row">
+                <label class="cfg-check-label" for="cfg-rotor-az-only">
+                  <input type="checkbox" id="cfg-rotor-az-only" />
+                  AZ only (fixed elevation)
+                </label>
+              </div>
+
               <div id="cfg-rotor-single-block">
                 <div class="form-row">
                   <label for="cfg-rotor-device">Serial device</label>
+                  <select
+                    id="cfg-rotor-device"
+                    class="cfg-select cfg-serial-device"
+                  ></select>
                   <input
                     type="text"
-                    id="cfg-rotor-device"
+                    id="cfg-rotor-device-custom"
+                    class="cfg-serial-custom"
                     placeholder="/dev/ttyACM0"
                     autocomplete="off"
                     spellcheck="false"
+                    hidden
                   />
                 </div>
               </div>
@@ -489,24 +530,37 @@
                 <div class="form-row-2">
                   <div>
                     <label for="cfg-rotor-az-device">AZ device</label>
+                    <select
+                      id="cfg-rotor-az-device"
+                      class="cfg-select cfg-serial-device"
+                    ></select>
                     <input
                       type="text"
-                      id="cfg-rotor-az-device"
+                      id="cfg-rotor-az-device-custom"
+                      class="cfg-serial-custom"
                       placeholder="/dev/ttyUSB0"
                       autocomplete="off"
                       spellcheck="false"
+                      hidden
                     />
                   </div>
-                  <div>
+                  <div id="cfg-rotor-el-device-wrap">
                     <label for="cfg-rotor-el-device">EL device</label>
+                    <select
+                      id="cfg-rotor-el-device"
+                      class="cfg-select cfg-serial-device"
+                    ></select>
                     <input
                       type="text"
-                      id="cfg-rotor-el-device"
+                      id="cfg-rotor-el-device-custom"
+                      class="cfg-serial-custom"
                       placeholder="/dev/ttyUSB1"
                       autocomplete="off"
                       spellcheck="false"
+                      hidden
                     />
                   </div>
+                  <!-- el-device-wrap -->
                 </div>
               </div>
 
@@ -521,7 +575,7 @@
                     step="1"
                   />
                 </div>
-                <div>
+                <div id="cfg-rotor-el-180-wrap">
                   <label class="cfg-check-label" for="cfg-rotor-el-180">
                     <input type="checkbox" id="cfg-rotor-el-180" checked />
                     180° elevation
@@ -541,7 +595,7 @@
                     step="0.1"
                   />
                 </div>
-                <div>
+                <div id="cfg-rotor-park-el-wrap">
                   <label for="cfg-rotor-park-el">Park EL °</label>
                   <input
                     type="number"

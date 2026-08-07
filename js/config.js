@@ -236,9 +236,14 @@ function initProfileControls() {
 
 function initConfig() {
   const cfg = migrateLegacy(loadConfig());
+  if (typeof initSerialDeviceSelects === "function") initSerialDeviceSelects();
   fillForm(cfg);
   fillProfileSelect();
   initProfileControls();
+  // Initial device list (also arrives via WebSocket host message)
+  if (typeof refreshHostSerialDevices === "function") {
+    refreshHostSerialDevices();
+  }
 
   const btn = document.getElementById("btn-config");
   const panel = document.getElementById("config-panel");
@@ -247,8 +252,16 @@ function initConfig() {
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     if (!panel.classList.contains("open")) {
-      fillForm(migrateLegacy(loadConfig()));
-      fillProfileSelect();
+      // Re-scan USB/ACM devices each time the panel opens
+      if (typeof refreshHostSerialDevices === "function") {
+        refreshHostSerialDevices().then(() => {
+          fillForm(migrateLegacy(loadConfig()));
+          fillProfileSelect();
+        });
+      } else {
+        fillForm(migrateLegacy(loadConfig()));
+        fillProfileSelect();
+      }
     }
     panel.classList.toggle("open");
   });
@@ -264,7 +277,23 @@ function initConfig() {
       const el = document.getElementById("cfg-" + side + "-" + field);
       if (el) el.addEventListener("change", () => updateSideVisibility(side));
     });
+    const makeEl = document.getElementById("cfg-" + side + "-serial-make");
+    if (makeEl) {
+      makeEl.addEventListener("change", () => {
+        if (typeof populateSerialModels === "function")
+          populateSerialModels(side);
+        updateSideVisibility(side);
+      });
+    }
   });
+
+  const singleEl = document.getElementById("cfg-single-radio");
+  if (singleEl) {
+    singleEl.addEventListener("change", () => {
+      if (typeof updateSingleRadioVisibility === "function")
+        updateSingleRadioVisibility();
+    });
+  }
 
   const rotorTypeEl = document.getElementById("cfg-rotor-type");
   if (rotorTypeEl) rotorTypeEl.addEventListener("change", onRotorTypeChange);

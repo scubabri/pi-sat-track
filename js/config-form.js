@@ -19,16 +19,34 @@ function populateRotorTypes(selected) {
   updateRotorFormVisibility();
 }
 
+function isRotorAzOnlyChecked() {
+  const el = document.getElementById("cfg-rotor-az-only");
+  return !!(el && el.checked);
+}
+
 function updateRotorFormVisibility() {
   const type = val("cfg-rotor-type") || "rt21";
   const info = findRotorDriver(type);
   const ports = info && info.ports != null ? info.ports : 2;
+  const azOnly = isRotorAzOnlyChecked();
   const single = document.getElementById("cfg-rotor-single-block");
   const dual = document.getElementById("cfg-rotor-dual-block");
   const hint = document.getElementById("cfg-rotor-hint");
   if (single) single.hidden = ports !== 1;
   if (dual) dual.hidden = ports !== 2;
-  if (hint) hint.textContent = info && info.hint ? info.hint : "";
+  // AZ-only: hide EL device, park EL, 180° elevation
+  const elDev = document.getElementById("cfg-rotor-el-device-wrap");
+  const el180 = document.getElementById("cfg-rotor-el-180-wrap");
+  const parkEl = document.getElementById("cfg-rotor-park-el-wrap");
+  if (elDev) elDev.hidden = azOnly;
+  if (el180) el180.hidden = azOnly;
+  if (parkEl) parkEl.hidden = azOnly;
+  if (hint) {
+    const base = info && info.hint ? info.hint : "";
+    hint.textContent = azOnly
+      ? (base ? base + " " : "") + "AZ only — elevation is not commanded."
+      : base;
+  }
 }
 
 function onRotorTypeChange() {
@@ -38,10 +56,201 @@ function onRotorTypeChange() {
   if (!info) return;
   if (info.defaultBaud) setVal("cfg-rotor-baud", info.defaultBaud);
   if (info.ports === 1) {
-    if (info.defaultDevice) setVal("cfg-rotor-device", info.defaultDevice);
+    if (info.defaultDevice)
+      populateSerialDeviceSelect("cfg-rotor-device", info.defaultDevice);
   } else {
-    if (info.defaultDevice) setVal("cfg-rotor-az-device", info.defaultDevice);
+    if (info.defaultDevice)
+      populateSerialDeviceSelect("cfg-rotor-az-device", info.defaultDevice);
   }
+}
+
+function listSerialModels(makeId) {
+  const make = SERIAL_CATALOG[String(makeId || "").toLowerCase()];
+  if (!make || !Array.isArray(make.models)) return [];
+  return make.models;
+}
+
+/** Live list from server platform.listSerialDevices() via host message. */
+let HOST_SERIAL_DEVICES = [];
+
+const SERIAL_DEVICE_SELECT_IDS = [
+  "cfg-ul-serial-device",
+  "cfg-dl-serial-device",
+  "cfg-rotor-device",
+  "cfg-rotor-az-device",
+  "cfg-rotor-el-device",
+];
+
+function setHostSerialDevices(list) {
+  HOST_SERIAL_DEVICES = Array.isArray(list)
+    ? list.filter((d) => d && String(d).trim())
+    : [];
+  populateAllSerialDeviceSelects();
+}
+
+function populateAllSerialDeviceSelects() {
+  SERIAL_DEVICE_SELECT_IDS.forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const custom = document.getElementById(id + "-custom");
+    let preferred = el.value;
+    if (preferred === "__custom__" && custom) preferred = custom.value;
+    else if (!preferred && custom && custom.value) preferred = custom.value;
+    // Prefer currently displayed/custom value; fall back to nothing
+    populateSerialDeviceSelect(id, preferred || null);
+  });
+}
+
+/**
+ * Fill a <select> with discovered /dev/ttyUSB* and /dev/ttyACM* (etc.).
+ * Keeps preferred path even if not currently plugged in.
+ * "Custom…" reveals a free-text field.
+ */
+function populateSerialDeviceSelect(elId, preferred) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (el.tagName !== "SELECT") {
+    // Legacy text input — leave alone
+    if (preferred != null && preferred !== "") el.value = preferred;
+    return;
+  }
+  const custom = document.getElementById(elId + "-custom");
+  const prev =
+    preferred != null && preferred !== ""
+      ? String(preferred).trim()
+      : el.value === "__custom__" && custom
+        ? (custom.value || "").trim()
+        : (el.value || "").trim();
+
+  const devices = HOST_SERIAL_DEVICES.slice();
+  if (prev && prev !== "__custom__" && devices.indexOf(prev) < 0) {
+    devices.unshift(prev);
+  }
+
+  el.innerHTML = "";
+  if (!devices.length) {
+    const o = document.createElement("option");
+    o.value = "";
+    o.textContent = "(no serial devices found)";
+    el.appendChild(o);
+  } else {
+    devices.forEach((d) => {
+      const o = document.createElement("option");
+      o.value = d;
+      o.textContent = d;
+      el.appendChild(o);
+    });
+  }
+  const custOpt = document.createElement("option");
+  custOpt.value = "__custom__";
+  custOpt.textContent = "Custom…";
+  el.appendChild(custOpt);
+
+  if (prev && devices.indexOf(prev) >= 0) {
+    el.value = prev;
+    if (custom) {
+      custom.hidden = true;
+      custom.value = prev;
+    }
+  } else if (prev) {
+    el.value = "__custom__";
+    if (custom) {
+      custom.hidden = false;
+      custom.value = prev;
+    }
+  } else if (HOST_SERIAL_DEVICES.length) {
+    el.value = HOST_SERIAL_DEVICES[0];
+    if (custom) custom.hidden = true;
+  } else if (devices.length) {
+    el.value = devices[0];
+    if (custom) custom.hidden = true;
+  } else {
+    el.value = "__custom__";
+    if (custom) custom.hidden = false;
+  }
+}
+
+function onSerialDeviceSelectChange(elId) {
+  const el = document.getElementById(elId);
+  const custom = document.getElementById(elId + "-custom");
+  if (!el || !custom) return;
+  if (el.value === "__custom__") {
+    custom.hidden = false;
+    custom.focus();
+  } else {
+    custom.hidden = true;
+    if (el.value) custom.value = el.value;
+  }
+}
+
+function readSerialDeviceField(elId) {
+  const el = document.getElementById(elId);
+  if (!el) return "";
+  if (el.tagName === "SELECT") {
+    if (el.value === "__custom__") {
+      const c = document.getElementById(elId + "-custom");
+      return c ? c.value.trim() : "";
+    }
+    return (el.value || "").trim();
+  }
+  return (el.value || "").trim();
+}
+
+function initSerialDeviceSelects() {
+  SERIAL_DEVICE_SELECT_IDS.forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el || el.tagName !== "SELECT") return;
+    if (el.dataset.serialBound) return;
+    el.dataset.serialBound = "1";
+    el.addEventListener("change", () => onSerialDeviceSelectChange(id));
+  });
+}
+
+/** Re-scan devices from the Pi via /api/host (plug/unplug without reload). */
+function refreshHostSerialDevices() {
+  return fetch("/api/host", { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      if (data && Array.isArray(data.serialDevices)) {
+        setHostSerialDevices(data.serialDevices);
+      }
+      return data;
+    })
+    .catch(() => null);
+}
+
+function populateSerialModels(side, selectedModel) {
+  const makeEl = document.getElementById("cfg-" + side + "-serial-make");
+  const modelEl = document.getElementById("cfg-" + side + "-serial-model");
+  if (!modelEl) return;
+  const make = makeEl ? makeEl.value : "icom";
+  const models = listSerialModels(make);
+  const prev = selectedModel || modelEl.value;
+  modelEl.innerHTML = "";
+  models.forEach((m) => {
+    const opt = document.createElement("option");
+    opt.value = m.id;
+    opt.textContent = m.label || m.id;
+    if (m.supported === false) opt.textContent += " (soon)";
+    modelEl.appendChild(opt);
+  });
+  if (models.some((m) => m.id === prev)) modelEl.value = prev;
+  else if (models.length) modelEl.value = models[0].id;
+  applySerialModelDefaultsToForm(side);
+}
+
+function applySerialModelDefaultsToForm(side) {
+  const make = val("cfg-" + side + "-serial-make") || "icom";
+  const model = val("cfg-" + side + "-serial-model");
+  const models = listSerialModels(make);
+  const m = models.find((x) => x.id === model);
+  if (!m) return;
+  if (m.defaultBaud) setVal("cfg-" + side + "-serial-baud", m.defaultBaud);
+  if (m.defaultDevice)
+    populateSerialDeviceSelect(
+      "cfg-" + side + "-serial-device",
+      m.defaultDevice,
+    );
 }
 
 function readSide(side) {
@@ -65,7 +274,8 @@ function readSide(side) {
     apiEndpoint: val(p + "-api-endpoint") || "",
     serialMake: val(p + "-serial-make") || "icom",
     serialModel: val(p + "-serial-model") || "ic-705",
-    serialDevice: val(p + "-serial-device") || "/dev/ttyACM0",
+    serialDevice:
+      readSerialDeviceField("cfg-" + side + "-serial-device") || "/dev/ttyACM0",
     serialBaud: parseInt(val(p + "-serial-baud"), 10) || 19200,
   };
 }
@@ -83,8 +293,12 @@ function fillSide(side, s) {
   setVal(p + "-sdrconnect-endpoint", d.sdrconnectEndpoint || "127.0.0.1:5454");
   setVal(p + "-api-endpoint", d.apiEndpoint || "");
   setVal(p + "-serial-make", d.serialMake || "icom");
+  populateSerialModels(side, d.serialModel || "ic-705");
   setVal(p + "-serial-model", d.serialModel || "ic-705");
-  setVal(p + "-serial-device", d.serialDevice || "/dev/ttyACM0");
+  populateSerialDeviceSelect(
+    p + "-serial-device",
+    d.serialDevice || "/dev/ttyACM0",
+  );
   setVal(p + "-serial-baud", d.serialBaud != null ? d.serialBaud : 19200);
   updateSideVisibility(side);
 }
@@ -168,18 +382,20 @@ function updateSideVisibility(side) {
 }
 
 function isSingleRadioChecked() {
-  // Single-radio checkbox removed — always show both UL and DL sides.
-  // TX split is independent (txSplit / cfg-tx-split).
-  return false;
+  const el = document.getElementById("cfg-single-radio");
+  return el ? !!el.checked : false;
 }
 
 function updateSingleRadioVisibility() {
+  const single = isSingleRadioChecked();
   const dlSection = document.getElementById("cfg-dl-section");
   const ulTitle = document.getElementById("cfg-ul-title");
-  if (dlSection) dlSection.hidden = false;
-  if (ulTitle) ulTitle.textContent = "Radio UL (TX)";
+  if (dlSection) dlSection.hidden = single;
+  if (ulTitle) {
+    ulTitle.textContent = single ? "Radio (TX/RX)" : "Radio UL (TX)";
+  }
   updateSideVisibility("ul");
-  updateSideVisibility("dl");
+  if (!single) updateSideVisibility("dl");
 }
 
 function updateRadioFormVisibility() {
@@ -219,18 +435,18 @@ function readFormConfig() {
       const info = findRotorDriver(t);
       const ports = info && info.ports != null ? info.ports : 2;
       if (ports === 1) {
-        return val("cfg-rotor-device").trim() || "/dev/ttyACM0";
+        return readSerialDeviceField("cfg-rotor-device") || "/dev/ttyACM0";
       }
-      return val("cfg-rotor-az-device").trim() || "/dev/ttyUSB0";
+      return readSerialDeviceField("cfg-rotor-az-device") || "/dev/ttyUSB0";
     })(),
     rotorElDevice: (function () {
       const t = val("cfg-rotor-type") || "rt21";
       const info = findRotorDriver(t);
       const ports = info && info.ports != null ? info.ports : 2;
       if (ports === 1) {
-        return val("cfg-rotor-device").trim() || "/dev/ttyACM0";
+        return readSerialDeviceField("cfg-rotor-device") || "/dev/ttyACM0";
       }
-      return val("cfg-rotor-el-device").trim() || "/dev/ttyUSB1";
+      return readSerialDeviceField("cfg-rotor-el-device") || "/dev/ttyUSB1";
     })(),
     rotorBaud: parseInt(val("cfg-rotor-baud"), 10) || 4800,
     rotorParkAz: parseFloat(val("cfg-rotor-park-az")) || 0,
@@ -239,6 +455,7 @@ function readFormConfig() {
       const el = document.getElementById("cfg-rotor-el-180");
       return el && el.checked ? 180 : 90;
     })(),
+    rotorAzOnly: isRotorAzOnlyChecked(),
   };
 }
 
@@ -247,15 +464,26 @@ function fillForm(cfg) {
   setVal("cfg-callsign", d.callsign || "");
   setVal("cfg-grid", d.grid || "");
   setVal("cfg-elev", d.elevation != null ? d.elevation : "");
+  const singleEl = document.getElementById("cfg-single-radio");
+  if (singleEl) singleEl.checked = !!d.singleRadio;
   const txSplitEl = document.getElementById("cfg-tx-split");
   if (txSplitEl) txSplitEl.checked = d.txSplit !== false;
   fillSide("ul", d.radioUl);
   fillSide("dl", d.radioDl);
   updateSingleRadioVisibility();
   populateRotorTypes(d.rotorType || "rt21");
-  setVal("cfg-rotor-device", d.rotorAzDevice || "/dev/ttyACM0");
-  setVal("cfg-rotor-az-device", d.rotorAzDevice || "/dev/ttyUSB0");
-  setVal("cfg-rotor-el-device", d.rotorElDevice || "/dev/ttyUSB1");
+  populateSerialDeviceSelect(
+    "cfg-rotor-device",
+    d.rotorAzDevice || "/dev/ttyACM0",
+  );
+  populateSerialDeviceSelect(
+    "cfg-rotor-az-device",
+    d.rotorAzDevice || "/dev/ttyUSB0",
+  );
+  populateSerialDeviceSelect(
+    "cfg-rotor-el-device",
+    d.rotorElDevice || "/dev/ttyUSB1",
+  );
   setVal("cfg-rotor-baud", d.rotorBaud != null ? d.rotorBaud : 4800);
   setVal("cfg-rotor-park-az", d.rotorParkAz != null ? d.rotorParkAz : 0);
   setVal("cfg-rotor-park-el", d.rotorParkEl != null ? d.rotorParkEl : 0);
@@ -264,5 +492,7 @@ function fillForm(cfg) {
     const max = d.rotorElMax != null ? Number(d.rotorElMax) : 180;
     el180.checked = max !== 90;
   }
+  const azOnlyEl = document.getElementById("cfg-rotor-az-only");
+  if (azOnlyEl) azOnlyEl.checked = !!d.rotorAzOnly;
   updateRotorFormVisibility();
 }

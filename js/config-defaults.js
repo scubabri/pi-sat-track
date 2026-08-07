@@ -18,10 +18,74 @@ const SERIAL_CATALOG = {
         defaultBaud: 19200,
         hint: "CI-V over USB.",
       },
+      {
+        id: "ic-9700",
+        label: "IC-9700",
+        supported: true,
+        defaultDevice: "/dev/ttyUSB0",
+        defaultBaud: 19200,
+        hint: "CI-V (addr 0xA2).",
+      },
+      {
+        id: "other",
+        label: "Other (CI-V)",
+        supported: true,
+        defaultDevice: "/dev/ttyUSB0",
+        defaultBaud: 19200,
+        hint: "Generic Icom CI-V.",
+      },
     ],
   },
-  kenwood: { label: "Kenwood", models: [] },
-  yaesu: { label: "Yaesu", models: [] },
+  kenwood: {
+    label: "Kenwood",
+    models: [
+      {
+        id: "ts-2000",
+        label: "TS-2000",
+        supported: true,
+        defaultDevice: "/dev/ttyUSB0",
+        defaultBaud: 9600,
+        hint: "Kenwood CAT serial.",
+      },
+      {
+        id: "other",
+        label: "Other (Kenwood CAT)",
+        supported: true,
+        defaultDevice: "/dev/ttyUSB0",
+        defaultBaud: 9600,
+        hint: "Generic Kenwood CAT.",
+      },
+    ],
+  },
+  yaesu: {
+    label: "Yaesu",
+    models: [
+      {
+        id: "ft-991",
+        label: "FT-991 / FT-991A",
+        supported: true,
+        defaultDevice: "/dev/ttyUSB0",
+        defaultBaud: 38400,
+        hint: "Yaesu CAT serial.",
+      },
+      {
+        id: "ft-817",
+        label: "FT-817 / 817ND / 818",
+        supported: true,
+        defaultDevice: "/dev/ttyUSB0",
+        defaultBaud: 9600,
+        hint: "Split only FM+fixed UL; linear/VFO A only; dual 817s OK.",
+      },
+      {
+        id: "other",
+        label: "Other (Yaesu CAT)",
+        supported: true,
+        defaultDevice: "/dev/ttyUSB0",
+        defaultBaud: 38400,
+        hint: "Generic Yaesu CAT.",
+      },
+    ],
+  },
 };
 
 /** Filled from server host/endpoints message (rotors.catalog()). */
@@ -110,6 +174,7 @@ function defaultsEndpoints() {
     rotorParkAz: 0,
     rotorParkEl: 0,
     rotorElMax: 180,
+    rotorAzOnly: false,
   };
 }
 
