@@ -64,6 +64,22 @@ if not defined APP_DIR (
   exit /b 1
 )
 
+REM Require Administrator (port 80 proxy, firewall, optional Node install)
+net session >nul 2>&1
+if errorlevel 1 (
+  echo.
+  echo =============================================================================
+  echo  ERROR: This script must be run as Administrator.
+  echo =============================================================================
+  echo.
+  echo Right-click the script - "Run as administrator"
+  echo   or open an elevated Command Prompt and run it from there.
+  echo.
+  pause
+  exit /b 1
+)
+
+
 set "CACHE_DIR=%USERPROFILE%\.rpitrack"
 set "START_BAT=%APP_DIR%\start-sat-tracker.bat"
 set "NODE_MARKER=%CACHE_DIR%\.node-installed-by-sat-tracker"
@@ -116,6 +132,13 @@ if not errorlevel 1 (
     echo.
   )
 )
+
+REM -------------------- port 80 proxy (if we added it) --------------------
+echo Removing port 80 proxy (if present)...
+netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=80 >nul 2>&1
+netsh advfirewall firewall delete rule name="Pi Sat Track HTTP 80" >nul 2>&1
+echo   port 80 proxy/firewall rule cleared (if they existed).
+echo.
 
 REM -------------------- node_modules --------------------
 if exist "%APP_DIR%\node_modules\" (

@@ -52,6 +52,22 @@ if not defined APP_DIR (
   exit /b 1
 )
 
+REM Require Administrator (port 80 proxy, firewall, optional Node install)
+net session >nul 2>&1
+if errorlevel 1 (
+  echo.
+  echo =============================================================================
+  echo  ERROR: This script must be run as Administrator.
+  echo =============================================================================
+  echo.
+  echo Right-click the script - "Run as administrator"
+  echo   or open an elevated Command Prompt and run it from there.
+  echo.
+  pause
+  exit /b 1
+)
+
+
 echo.
 echo =============================================================================
 echo  Pi Sat Track - Windows setup
@@ -204,6 +220,9 @@ echo Wrote launcher:
 echo   %START_BAT%
 echo.
 
+REM -------------------- port 80 proxy (if free) --------------------
+call :setup_port80
+
 echo =============================================================================
 echo  Install complete.
 echo.
@@ -211,7 +230,12 @@ echo  Start the tracker:
 echo    %START_BAT%
 echo    or:  cd /d "%APP_DIR%" ^& node server.js
 echo.
-echo  Then open:  http://127.0.0.1:3000
+echo  Open the UI:
+echo    http://127.0.0.1:3000
+echo    http://127.0.0.1/        (if port 80 proxy was enabled)
+echo.
+echo  Port 80: enabled automatically when the port is free.
+echo  Uninstall removes the port 80 proxy.
 echo =============================================================================
 echo.
 
@@ -225,6 +249,51 @@ if "%DO_START%"=="1" (
 exit /b 0
 
 REM =============================================================================
+REM =============================================================================
+:setup_port80
+echo Checking TCP port 80...
+
+REM Already have our portproxy?
+netsh interface portproxy show v4tov4 2>nul | findstr /I /C:"listenport" | findstr /R /C:"\<80\>" >nul 2>&1
+if not errorlevel 1 (
+  netsh interface portproxy show all 2>nul | findstr /I "0.0.0.0 80" >nul 2>&1
+)
+
+REM Detect listeners on port 80 (LISTENING)
+set "PORT80_BUSY=0"
+netstat -ano 2>nul | findstr /R /C:":80[ ]" | findstr /I "LISTENING" >nul 2>&1
+if not errorlevel 1 set "PORT80_BUSY=1"
+
+REM Also treat IIS http.sys reservations as busy if something is bound
+if "%PORT80_BUSY%"=="1" (
+  echo   Port 80 is already in use - leaving it alone.
+  echo   Node will be available at http://127.0.0.1:3000
+  echo   To force a proxy later: enable-port80.bat ^(as Administrator^)
+  echo.
+  exit /b 0
+)
+
+echo   Port 80 looks free - adding proxy 80 -^> 127.0.0.1:3000 ...
+
+REM Admin already verified at script start
+netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=80 >nul 2>&1
+netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=80 connectaddress=127.0.0.1 connectport=3000
+if errorlevel 1 (
+  echo   WARNING: netsh portproxy add failed.
+  echo   Use http://127.0.0.1:3000  or re-run install-win.bat as Administrator.
+  echo.
+  exit /b 0
+)
+
+netsh advfirewall firewall delete rule name="Pi Sat Track HTTP 80" >nul 2>&1
+netsh advfirewall firewall add rule name="Pi Sat Track HTTP 80" dir=in action=allow protocol=TCP localport=80 >nul 2>&1
+
+echo   Port 80 proxy enabled:  http://127.0.0.1/  -^>  Node :3000
+echo   ^(removed automatically by uninstall-win.bat as Admin^)
+echo.
+exit /b 0
+
+
 :find_node
 set "NODE_EXE="
 where node >nul 2>&1
@@ -251,6 +320,7 @@ if not errorlevel 1 (
   winget install -e --id OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements
   if not errorlevel 1 (
     echo winget install finished.
+    call :mark_node_installed
     exit /b 0
   )
   echo winget install did not succeed - trying MSI download...
@@ -299,7 +369,22 @@ if not "%MSI_EC%"=="0" if not "%MSI_EC%"=="3010" (
 )
 
 echo Node.js MSI install finished.
+call :mark_node_installed
 exit /b 0
+
+REM =============================================================================
+:mark_node_installed
+set "MARKER=%USERPROFILE%\.rpitrack\.node-installed-by-sat-tracker"
+if not exist "%USERPROFILE%\.rpitrack" mkdir "%USERPROFILE%\.rpitrack"
+(
+  echo installed_by=install-win.bat
+  echo installed_at=%DATE% %TIME%
+  echo host=%COMPUTERNAME%
+) > "%MARKER%"
+echo Recorded Node auto-install marker:
+echo   %MARKER%
+exit /b 0
+
 
 :help
 echo.

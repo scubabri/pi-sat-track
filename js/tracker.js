@@ -481,7 +481,11 @@ function connectTracker() {
           Array.isArray(msg.serialDevices) &&
           typeof setHostSerialDevices === "function"
         ) {
-          setHostSerialDevices(msg.serialDevices);
+          setHostSerialDevices(
+            msg.serialDevices,
+            msg.defaultCatDevice || "",
+            msg.kind || msg.platform || "",
+          );
         }
         if (msg.rotorCatalog && typeof setRotorCatalog === "function") {
           setRotorCatalog(msg.rotorCatalog);
