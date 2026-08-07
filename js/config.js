@@ -1,283 +1,314 @@
 /**
- * Config defaults, migration, localStorage, endpoint parse helpers.
- * Loaded before config-form.js and config.js (global script order).
+ * Config panel: profiles, send endpoints to server, init.
+ * Requires config-defaults.js and config-form.js (script order).
  */
-const CONFIG_KEY = "satTrackerConfig";
-const PROFILE_CACHE_KEY = "satTrackerProfileName";
 
-/** Mirrors lib/serial-catalog.js — keep in sync when adding models. */
-const SERIAL_CATALOG = {
-  icom: {
-    label: "Icom",
-    models: [
-      {
-        id: "ic-705",
-        label: "IC-705",
-        supported: true,
-        defaultDevice: "/dev/ttyACM0",
-        defaultBaud: 19200,
-        hint: "CI-V over USB.",
-      },
-      {
-        id: "ic-9700",
-        label: "IC-9700",
-        supported: true,
-        defaultDevice: "/dev/ttyUSB0",
-        defaultBaud: 19200,
-        hint: "CI-V (addr 0xA2).",
-      },
-      {
-        id: "other",
-        label: "Other (CI-V)",
-        supported: true,
-        defaultDevice: "/dev/ttyUSB0",
-        defaultBaud: 19200,
-        hint: "Generic Icom CI-V.",
-      },
-    ],
-  },
-  kenwood: {
-    label: "Kenwood",
-    models: [
-      {
-        id: "ts-2000",
-        label: "TS-2000",
-        supported: true,
-        defaultDevice: "/dev/ttyUSB0",
-        defaultBaud: 9600,
-        hint: "Kenwood CAT serial.",
-      },
-      {
-        id: "other",
-        label: "Other (Kenwood CAT)",
-        supported: true,
-        defaultDevice: "/dev/ttyUSB0",
-        defaultBaud: 9600,
-        hint: "Generic Kenwood CAT.",
-      },
-    ],
-  },
-  yaesu: {
-    label: "Yaesu",
-    models: [
-      {
-        id: "ft-991",
-        label: "FT-991 / FT-991A",
-        supported: true,
-        defaultDevice: "/dev/ttyUSB0",
-        defaultBaud: 38400,
-        hint: "Yaesu CAT serial.",
-      },
-      {
-        id: "ft-847",
-        label: "FT-847",
-        supported: true,
-        defaultDevice: "/dev/ttyUSB0",
-        defaultBaud: 9600,
-        hint: "Binary CAT; SAT mode for dual Doppler.",
-      },
-      {
-        id: "ft-817",
-        label: "FT-817 / 817ND / 818",
-        supported: true,
-        defaultDevice: "/dev/ttyUSB0",
-        defaultBaud: 9600,
-        hint: "Split only FM+fixed UL; linear/VFO A only; dual 817s OK.",
-      },
-      {
-        id: "other",
-        label: "Other (Yaesu CAT)",
-        supported: true,
-        defaultDevice: "/dev/ttyUSB0",
-        defaultBaud: 38400,
-        hint: "Generic Yaesu CAT.",
-      },
-    ],
-  },
-};
+/** Active profile name from server (null until first profiles message). */
+let activeProfileName = localStorage.getItem(PROFILE_CACHE_KEY) || null;
+let profileNames = [];
+let profilesReady = false;
+let migratedLocalToServer = false;
 
-/** Filled from server host/endpoints message (rotors.catalog()). */
-let ROTOR_CATALOG = [
-  {
-    id: "rt21",
-    label: "Green Heron RT-21",
-    ports: 2,
-    defaultBaud: 4800,
-    defaultDevice: "/dev/ttyUSB0",
-    hint: "Two serial ports — one for AZ, one for EL.",
-  },
-  {
-    id: "gs232",
-    label: "GS-232 (K3NG / Fox Delta)",
-    ports: 1,
-    defaultBaud: 9600,
-    defaultDevice: "/dev/ttyACM0",
-    hint: "Single USB serial. AZ and EL on one controller.",
-  },
-];
-
-function findRotorDriver(id) {
-  const key = String(id || "").toLowerCase();
-  return ROTOR_CATALOG.find((d) => d.id === key) || null;
+function sideToServerFields(side, s) {
+  return s;
 }
 
-function setRotorCatalog(list) {
-  if (Array.isArray(list) && list.length) {
-    ROTOR_CATALOG = list.slice();
+function sendEndpointsToServer(cfg) {
+  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN)
+    return;
+  const singleRadio = !!cfg.singleRadio;
+  const ul = cfg.radioUl || defaultSide("ul");
+  const dl = singleRadio
+    ? Object.assign({}, ul)
+    : cfg.radioDl || defaultSide("dl");
+
+  const ulCat = parseEndpoint(ul.catEndpoint, "172.17.18.229", 60002);
+  const dlCat = parseEndpoint(dl.catEndpoint, "172.17.18.229", 60001);
+  const ulRig = parseEndpoint(ul.rigctlEndpoint, "127.0.0.1", 4532);
+  const dlRig = parseEndpoint(dl.rigctlEndpoint, "127.0.0.1", 4532);
+  const ulTci = parseEndpoint(ul.tciEndpoint, "127.0.0.1", 50001);
+  const dlTci = parseEndpoint(dl.tciEndpoint, "127.0.0.1", 50001);
+  const ulSdr = parseEndpoint(ul.sdrconnectEndpoint, "127.0.0.1", 5454);
+  const dlSdr = parseEndpoint(dl.sdrconnectEndpoint, "127.0.0.1", 5454);
+  const api = parseEndpoint(dl.apiEndpoint || ul.apiEndpoint, "", 4992);
+
+  const serialDevice = singleRadio ? ul.serialDevice : dl.serialDevice;
+  const serialBaud = singleRadio ? ul.serialBaud : dl.serialBaud;
+  const serialDevice2 = singleRadio ? "" : ul.serialDevice;
+  const serialBaud2 = singleRadio ? 19200 : ul.serialBaud;
+
+  ws.send(
+    JSON.stringify({
+      type: "endpoints",
+      callsign: cfg.callsign,
+      grid: cfg.grid,
+      elevation: cfg.elevation,
+      singleRadio,
+      txSplit: cfg.txSplit !== false,
+      radioUl: ul,
+      radioDl: dl,
+      radioTransport: dl.transport,
+      radioType: dl.type,
+      radioProtocol: dl.protocol,
+      tciHost: (dl.protocol === "tci" ? dlTci : ulTci).host,
+      tciPort: (dl.protocol === "tci" ? dlTci : ulTci).port,
+      sdrconnectHost: (dl.type === "sdrconnect" || dl.type === "sdrplay"
+        ? dlSdr
+        : ulSdr
+      ).host,
+      sdrconnectPort: (dl.type === "sdrconnect" || dl.type === "sdrplay"
+        ? dlSdr
+        : ulSdr
+      ).port,
+      rigctlHost: dlRig.host,
+      rigctlPort: dlRig.port,
+      rigctlUlHost: singleRadio
+        ? ""
+        : ul.protocol === "rigctl" || ul.type === "rigctl"
+          ? ulRig.host
+          : "",
+      rigctlUlPort: singleRadio
+        ? 0
+        : ul.protocol === "rigctl" || ul.type === "rigctl"
+          ? ulRig.port
+          : 0,
+      flexUlHost: ulCat.host,
+      flexUlPort: ulCat.port,
+      flexDlHost: singleRadio ? ulCat.host : dlCat.host,
+      flexDlPort: singleRadio ? ulCat.port : dlCat.port,
+      flexApiHost: api.host || "",
+      flexApiPort: api.port || 4992,
+      serialDevice,
+      serialBaud,
+      serialDevice2,
+      serialBaud2,
+      serialMake: (singleRadio ? ul : dl).serialMake,
+      serialModel: (singleRadio ? ul : dl).serialModel,
+      rotorHost: cfg.rotorHost,
+      rotorAzPort: cfg.rotorAzPort,
+      rotorElPort: cfg.rotorElPort,
+      rotorType: cfg.rotorType,
+      rotorAzDevice: cfg.rotorAzDevice,
+      rotorElDevice: cfg.rotorElDevice,
+      rotorBaud: cfg.rotorBaud,
+      rotorParkAz: cfg.rotorParkAz,
+      rotorParkEl: cfg.rotorParkEl,
+      rotorElMax: cfg.rotorElMax != null ? cfg.rotorElMax : 180,
+    }),
+  );
+}
+
+function sendProfileSelect(name) {
+  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN)
+    return;
+  ws.send(JSON.stringify({ type: "profile-select", name: name }));
+}
+function sendProfileCreate(name) {
+  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN)
+    return;
+  ws.send(
+    JSON.stringify({ type: "profile-create", name: name, fromActive: true }),
+  );
+}
+function sendProfileDelete(name) {
+  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN)
+    return;
+  ws.send(JSON.stringify({ type: "profile-delete", name: name }));
+}
+function sendProfileRename(from, to) {
+  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN)
+    return;
+  ws.send(JSON.stringify({ type: "profile-rename", from: from, to: to }));
+}
+
+function fillProfileSelect() {
+  const el = document.getElementById("cfg-profile");
+  if (!el) return;
+  const names = profileNames.slice();
+  if (activeProfileName && names.indexOf(activeProfileName) < 0)
+    names.push(activeProfileName);
+  names.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  el.innerHTML = "";
+  names.forEach((n) => {
+    const opt = document.createElement("option");
+    opt.value = n;
+    opt.textContent = n;
+    el.appendChild(opt);
+  });
+  if (activeProfileName) el.value = activeProfileName;
+}
+
+function applyProfilesMessage(msg) {
+  if (!msg || msg.type !== "profiles") return;
+  profilesReady = true;
+  activeProfileName = msg.active || activeProfileName;
+  profileNames = Array.isArray(msg.names) ? msg.names.slice() : [];
+  if (activeProfileName)
+    localStorage.setItem(PROFILE_CACHE_KEY, activeProfileName);
+  fillProfileSelect();
+
+  const cfg = msg.config && typeof msg.config === "object" ? msg.config : {};
+  const hasServerCfg = Object.keys(cfg).length > 0;
+  const hasServerFavs =
+    Array.isArray(msg.favorites) && msg.favorites.length > 0;
+
+  if (!migratedLocalToServer && !hasServerCfg && !hasServerFavs) {
+    const localCfg = loadConfig();
+    const localFavs =
+      typeof loadFavorites === "function" ? loadFavorites() : [];
+    const localHas =
+      (localCfg &&
+        (localCfg.grid ||
+          localCfg.callsign ||
+          localCfg.tciHost ||
+          localCfg.radioUl)) ||
+      (localFavs && localFavs.length);
+    if (localHas && typeof ws !== "undefined" && ws && ws.readyState === 1) {
+      migratedLocalToServer = true;
+      const merged = migrateLegacy(
+        Object.assign(defaultsEndpoints(), localCfg),
+      );
+      saveConfig(merged);
+      fillForm(merged);
+      sendEndpointsToServer(merged);
+      if (localFavs.length && typeof saveFavorites === "function") {
+        saveFavorites(localFavs);
+        if (typeof sendFavoritesToServer === "function")
+          sendFavoritesToServer();
+      }
+      return;
+    }
+  }
+
+  if (hasServerCfg) {
+    const merged = migrateLegacy(Object.assign(defaultsEndpoints(), cfg));
+    saveConfig(merged);
+    fillForm(merged);
+    if (merged.grid && typeof centerOnGrid === "function")
+      centerOnGrid(merged.grid);
+    if (typeof notifyObserverChanged === "function") notifyObserverChanged();
+  }
+
+  if (typeof applyFavoritesFromServer === "function") {
+    applyFavoritesFromServer(msg.favorites || []);
   }
 }
 
-function loadConfig() {
-  try {
-    const cfg = JSON.parse(localStorage.getItem(CONFIG_KEY)) || {};
-    if (cfg.radioType === "flex") cfg.radioType = "smartsdr";
-    return cfg;
-  } catch {
-    return {};
+function initProfileControls() {
+  const profileSel = document.getElementById("cfg-profile");
+  if (profileSel) {
+    profileSel.addEventListener("change", () => {
+      const name = profileSel.value;
+      if (name && name !== activeProfileName) sendProfileSelect(name);
+    });
+  }
+  const btnNew = document.getElementById("btn-profile-new");
+  if (btnNew) {
+    btnNew.addEventListener("click", () => {
+      const name = prompt("New profile name:");
+      if (name && name.trim()) sendProfileCreate(name.trim());
+    });
+  }
+  const btnRen = document.getElementById("btn-profile-rename");
+  if (btnRen) {
+    btnRen.addEventListener("click", () => {
+      if (!activeProfileName) return;
+      const name = prompt("Rename profile to:", activeProfileName);
+      if (name && name.trim() && name.trim() !== activeProfileName) {
+        sendProfileRename(activeProfileName, name.trim());
+      }
+    });
+  }
+  const btnDel = document.getElementById("btn-profile-delete");
+  if (btnDel) {
+    btnDel.addEventListener("click", () => {
+      if (!activeProfileName) return;
+      if (profileNames.length <= 1) {
+        alert("Cannot delete the only profile.");
+        return;
+      }
+      if (confirm('Delete profile "' + activeProfileName + '"?')) {
+        sendProfileDelete(activeProfileName);
+      }
+    });
   }
 }
 
-function saveConfig(cfg) {
-  localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
+function initConfig() {
+  const cfg = migrateLegacy(loadConfig());
+  fillForm(cfg);
+  fillProfileSelect();
+  initProfileControls();
+
+  const btn = document.getElementById("btn-config");
+  const panel = document.getElementById("config-panel");
+  if (!btn || !panel) return;
+
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!panel.classList.contains("open")) {
+      fillForm(migrateLegacy(loadConfig()));
+      fillProfileSelect();
+    }
+    panel.classList.toggle("open");
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!panel.contains(e.target) && e.target !== btn) {
+      panel.classList.remove("open");
+    }
+  });
+
+  ["ul", "dl"].forEach((side) => {
+    ["transport", "type", "protocol"].forEach((field) => {
+      const el = document.getElementById("cfg-" + side + "-" + field);
+      if (el) el.addEventListener("change", () => updateSideVisibility(side));
+    });
+    const makeEl = document.getElementById("cfg-" + side + "-serial-make");
+    if (makeEl) {
+      makeEl.addEventListener("change", () => {
+        if (typeof populateSerialModels === "function")
+          populateSerialModels(side);
+        updateSideVisibility(side);
+      });
+    }
+  });
+
+  const singleEl = document.getElementById("cfg-single-radio");
+  if (singleEl) {
+    singleEl.addEventListener("change", () => {
+      if (typeof updateSingleRadioVisibility === "function")
+        updateSingleRadioVisibility();
+    });
+  }
+
+  const rotorTypeEl = document.getElementById("cfg-rotor-type");
+  if (rotorTypeEl) rotorTypeEl.addEventListener("change", onRotorTypeChange);
+
+  const saveBtn = document.getElementById("btn-save-config");
+  if (saveBtn) {
+    saveBtn.addEventListener("click", () => {
+      const newCfg = readFormConfig();
+      saveConfig(newCfg);
+      if (newCfg.grid && typeof centerOnGrid === "function")
+        centerOnGrid(newCfg.grid);
+      if (typeof notifyObserverChanged === "function") notifyObserverChanged();
+      sendEndpointsToServer(newCfg);
+      panel.classList.remove("open");
+    });
+  }
 }
 
-function defaultSide(side) {
-  return {
-    transport: "tcp",
-    type: side === "ul" ? "smartsdr" : "smartsdr",
-    protocol: "cat",
-    endpoint: side === "ul" ? "172.17.18.229:60002" : "172.17.18.229:60001",
-    tciEndpoint: "127.0.0.1:50001",
-    rigctlEndpoint: "127.0.0.1:4532",
-    catEndpoint: side === "ul" ? "172.17.18.229:60002" : "172.17.18.229:60001",
-    sdrconnectEndpoint: "127.0.0.1:5454",
-    apiEndpoint: "172.17.18.46:4992",
-    serialMake: "icom",
-    serialModel: "ic-705",
-    serialDevice: "/dev/ttyACM0",
-    serialBaud: 19200,
-  };
+function applySavedGrid() {
+  const cfg = loadConfig();
+  if (cfg.grid) centerOnGrid(cfg.grid);
 }
 
-function defaultsEndpoints() {
-  return {
-    callsign: "",
-    grid: "",
-    elevation: 0,
-    singleRadio: false,
-    txSplit: true,
-    radioUl: defaultSide("ul"),
-    radioDl: defaultSide("dl"),
-    // legacy flat fields kept for older server/profiles
-    radioTransport: "tcp",
-    radioType: "smartsdr",
-    radioProtocol: "cat",
-    rotorHost: "127.0.0.1",
-    rotorAzPort: 4535,
-    rotorElPort: 4536,
-    rotorType: "rt21",
-    rotorAzDevice: "/dev/ttyUSB0",
-    rotorElDevice: "/dev/ttyUSB1",
-    rotorBaud: 4800,
-    rotorParkAz: 0,
-    rotorParkEl: 0,
-    rotorElMax: 180,
-    rotorAzOnly: false,
-  };
-}
-
-/** Migrate old single-radio config into radioUl / radioDl. */
-function migrateLegacy(cfg) {
-  const d = Object.assign(defaultsEndpoints(), cfg || {});
-  if (d.radioUl && d.radioDl && d.radioUl.transport) return d;
-
-  const transport = d.radioTransport || "tcp";
-  const type = d.radioType === "flex" ? "smartsdr" : d.radioType || "smartsdr";
-  let protocol = d.radioProtocol || "cat";
-  if (type === "rigctl") protocol = "rigctl";
-
-  const ul = defaultSide("ul");
-  const dl = defaultSide("dl");
-  ul.transport = transport;
-  dl.transport = transport;
-  ul.type = type;
-  dl.type = type;
-  ul.protocol = protocol;
-  dl.protocol = protocol;
-
-  if (d.tciHost) {
-    const ep = (d.tciHost || "127.0.0.1") + ":" + (d.tciPort || 50001);
-    ul.tciEndpoint = ep;
-    dl.tciEndpoint = ep;
-  }
-  if (d.rigctlHost) {
-    dl.rigctlEndpoint =
-      (d.rigctlHost || "127.0.0.1") + ":" + (d.rigctlPort || 4532);
-  }
-  if (d.rigctlUlHost) {
-    ul.rigctlEndpoint = d.rigctlUlHost + ":" + (d.rigctlUlPort || 4532);
-  } else if (d.rigctlHost) {
-    ul.rigctlEndpoint = dl.rigctlEndpoint;
-  }
-  if (d.flexUlHost) {
-    ul.catEndpoint = d.flexUlHost + ":" + (d.flexUlPort || 60002);
-  }
-  if (d.flexDlHost) {
-    dl.catEndpoint = d.flexDlHost + ":" + (d.flexDlPort || 60001);
-  }
-  if (d.flexApiHost) {
-    const api = d.flexApiHost + ":" + (d.flexApiPort || 4992);
-    ul.apiEndpoint = api;
-    dl.apiEndpoint = api;
-  }
-  if (d.serialDevice) {
-    dl.serialDevice = d.serialDevice;
-    dl.serialBaud = d.serialBaud || 19200;
-    dl.serialMake = d.serialMake || "icom";
-    dl.serialModel = d.serialModel || "ic-705";
-  }
-  if (d.serialDevice2) {
-    ul.serialDevice = d.serialDevice2;
-    ul.serialBaud = d.serialBaud2 || 19200;
-  } else if (d.serialDevice) {
-    ul.serialDevice = d.serialDevice;
-    ul.serialBaud = d.serialBaud || 19200;
-  }
-
-  d.radioUl = ul;
-  d.radioDl = dl;
-  return d;
-}
-
-function val(id) {
-  const el = document.getElementById(id);
-  return el ? el.value : "";
-}
-
-function setVal(id, v) {
-  const el = document.getElementById(id);
-  if (el) el.value = v != null ? v : "";
-}
-
-function parseEndpoint(str, defaultHost, defaultPort) {
-  const s = (str || "").trim();
-  if (!s) return { host: defaultHost, port: defaultPort };
-  const m6 = s.match(/^\[([^\]]+)\]:(\d+)$/);
-  if (m6) {
-    const p = parseInt(m6[2], 10);
-    return { host: m6[1], port: p > 0 && p < 65536 ? p : defaultPort };
-  }
-  const idx = s.lastIndexOf(":");
-  if (idx > 0) {
-    const host = s.slice(0, idx).trim();
-    const p = parseInt(s.slice(idx + 1).trim(), 10);
-    if (host && Number.isFinite(p) && p > 0 && p < 65536)
-      return { host, port: p };
-  }
-  return { host: s || defaultHost, port: defaultPort };
-}
-
-function formatEndpoint(host, port) {
-  if (!host) return "";
-  return host + ":" + (port != null ? port : "");
+function pushSavedEndpoints() {
+  if (profilesReady) return;
+  setTimeout(() => {
+    if (profilesReady) return;
+    const cfg = migrateLegacy(Object.assign(defaultsEndpoints(), loadConfig()));
+    sendEndpointsToServer(cfg);
+  }, 1500);
 }
