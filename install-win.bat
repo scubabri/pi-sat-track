@@ -133,23 +133,24 @@ popd
 echo node_modules ready.
 echo.
 
-REM Launcher
 set "START_BAT=%APP_DIR%\start-sat-tracker.bat"
-echo @echo off> "%START_BAT%"
-echo setlocal>> "%START_BAT%"
-echo cd /d "%%~dp0">> "%START_BAT%"
-echo if exist "%%ProgramFiles%%\nodejs\node.exe" set "PATH=%%ProgramFiles%%\nodejs;%%PATH%%">> "%START_BAT%"
-echo where node ^>nul 2^>^&1>> "%START_BAT%"
-echo if errorlevel 1 (>> "%START_BAT%"
-echo   echo ERROR: node.exe not found.>> "%START_BAT%"
-echo   pause>> "%START_BAT%"
-echo   exit /b 1>> "%START_BAT%"
-echo ^)>> "%START_BAT%"
-echo echo Starting Pi Sat Track...>> "%START_BAT%"
-echo echo Open http://127.0.0.1:3000>> "%START_BAT%"
-echo echo Press Ctrl+C to stop>> "%START_BAT%"
-echo node server.js>> "%START_BAT%"
-echo pause>> "%START_BAT%"
+(
+  echo @echo off
+  echo setlocal
+  echo cd /d "%%~dp0"
+  echo if exist "%%ProgramFiles%%\nodejs\node.exe" set "PATH=%%ProgramFiles%%\nodejs;%%PATH%%"
+  echo where node ^>nul
+  echo if errorlevel 1 ^(
+  echo   echo ERROR: node.exe not found.
+  echo   pause
+  echo   exit /b 1
+  echo ^)
+  echo echo Starting Pi Sat Track...
+  echo echo Open http://127.0.0.1:3000
+  echo echo Press Ctrl+C to stop
+  echo node server.js
+  echo pause
+) > "%START_BAT%"
 echo Wrote launcher: %START_BAT%
 echo.
 
@@ -163,10 +164,18 @@ echo ===========================================================================
 echo.
 
 if "%DO_START%"=="1" (
-  echo Starting server in a new window...
-  start "Pi Sat Track" "%START_BAT%"
-  timeout /t 2 /nobreak >nul
-  echo Server window launched.
+  echo Starting server minimized...
+  echo   Dir:  %APP_DIR%
+  echo   Node: %NODE_EXE%
+  if not exist "%NODE_EXE%" (
+    echo ERROR: node.exe not found at %NODE_EXE%
+  ) else if not exist "%APP_DIR%\server.js" (
+    echo ERROR: server.js not found in %APP_DIR%
+  ) else (
+    start "Pi Sat Track" /min /D "%APP_DIR%" "%NODE_EXE%" server.js
+    timeout /t 2 /nobreak >nul
+    echo Server started minimized.
+  )
 ) else (
   echo Server not started. Run start-sat-tracker.bat when ready.
 )
