@@ -1,6 +1,7 @@
 /**
  * Config panel connection test buttons (radio UL/DL + rotor).
- * Rotor test is guided: read → confirm → nudge → confirm → return, per axis.
+ * Rotor test is guided: open session → read → confirm → nudge → confirm →
+ * return → close session, per axis (holds serial port open between steps).
  */
 function setTestButtonState(btn, state, title) {
   if (!btn) return;
@@ -68,7 +69,6 @@ function rotorConfigFromForm() {
   };
 }
 
-/** Pending rotor step resolvers keyed by request id */
 const pendingRotorTests = new Map();
 let rotorReqSeq = 1;
 
@@ -87,7 +87,7 @@ function sendRotorStep(payload) {
     const timer = setTimeout(() => {
       pendingRotorTests.delete(id);
       reject(new Error("Rotor step timed out"));
-    }, 25000);
+    }, 30000);
     pendingRotorTests.set(id, {
       resolve: (msg) => {
         clearTimeout(timer);
@@ -118,7 +118,6 @@ function sendRotorStep(payload) {
 function applyTestResult(msg) {
   if (!msg) return;
 
-  // Step responses for guided rotor test
   if (msg.type === "test-rotor-step-result" && msg.reqId) {
     const pending = pendingRotorTests.get(msg.reqId);
     if (pending) {
@@ -177,9 +176,7 @@ function runRadioTest(side) {
 }
 
 /**
- * Guided rotor test:
- *  AZ: read → confirm → +10° → confirm → return
- *  EL: same (unless AZ-only)
+ * Guided rotor test with held serial session per axis.
  */
 async function runRotorTestGuided() {
   const btn = document.getElementById("btn-test-rotor");
@@ -202,43 +199,82 @@ async function runRotorTestGuided() {
 
   async function axisSequence(axis) {
     const label = axis.toUpperCase();
+    setTestButtonState(btn, "busy", "Opening " + label + " port…");
 
-    // 1) Read
-    setTestButtonState(btn, "busy", "Reading " + label + "…");
-    const read = await sendRotorStep(
-      Object.assign({}, base, { action: "read", axis: axis }),
+    const opened = await sendRotorStep(
+      Object.assign({}, base, { action: "open", axis: axis }),
     );
-    if (!read.ok) {
-      throw new Error(read.message || label + " read failed");
-    }
-    const pos0 =
-      read.detail && read.detail.pos != null ? read.detail.pos : null;
-    if (pos0 == null) throw new Error(label + ": no position in reply");
-
-    if (
-      !confirm(
-        label +
-          " reads " +
-          Math.round(pos0) +
-          "°.\n\nDoes that match the rotator / controller display?",
-      )
-    ) {
-      throw new Error(label + " read rejected by user");
+    if (!opened.ok) {
+      throw new Error(opened.message || label + " open failed");
     }
 
-    // 2) Nudge +10
-    setTestButtonState(btn, "busy", "Moving " + label + " +10°…");
-    const nudge = await sendRotorStep(
-      Object.assign({}, base, {
-        action: "nudge",
-        axis: axis,
-        from: pos0,
-        delta: 10,
-      }),
-    );
-    if (!nudge.ok) {
-      // try to return home
-      try {
+    try {
+      // 1) Read
+      setTestButtonState(btn, "busy", "Reading " + label + "…");
+      const read = await sendRotorStep(
+        Object.assign({}, base, { action: "read", axis: axis }),
+      );
+      if (!read.ok) {
+        throw new Error(read.message || label + " read failed");
+      }
+      const pos0 =
+        read.detail && read.detail.pos != null ? read.detail.pos : null;
+      if (pos0 == null) throw new Error(label + ": no position in reply");
+
+      if (
+        !confirm(
+          label +
+            " reads " +
+            Math.round(pos0) +
+            "° on " +
+            ((read.detail && read.detail.device) || "?") +
+            ".\n\nDoes that match the rotator / controller display?",
+        )
+      ) {
+        throw new Error(label + " read rejected by user");
+      }
+
+      // 2) Nudge +10
+      setTestButtonState(btn, "busy", "Moving " + label + " +10°…");
+      const nudge = await sendRotorStep(
+        Object.assign({}, base, {
+          action: "nudge",
+          axis: axis,
+          from: pos0,
+          delta: 10,
+        }),
+      );
+      if (!nudge.ok) {
+        try {
+          await sendRotorStep(
+            Object.assign({}, base, {
+              action: "goto",
+              axis: axis,
+              degrees: pos0,
+            }),
+          );
+        } catch (_) {}
+        throw new Error(nudge.message || label + " nudge failed");
+      }
+      const pos1 =
+        nudge.detail && nudge.detail.pos != null
+          ? nudge.detail.pos
+          : nudge.detail && nudge.detail.target;
+
+      if (
+        !confirm(
+          label +
+            " commanded +10° (target " +
+            (nudge.detail && nudge.detail.target != null
+              ? Math.round(nudge.detail.target)
+              : "?") +
+            "°).\n" +
+            (pos1 != null
+              ? "Controller now reads " + Math.round(pos1) + "°.\n\n"
+              : "\n") +
+            "Did the rotator move about 10° in the expected direction?",
+        )
+      ) {
         await sendRotorStep(
           Object.assign({}, base, {
             action: "goto",
@@ -246,56 +282,40 @@ async function runRotorTestGuided() {
             degrees: pos0,
           }),
         );
-      } catch (_) {}
-      throw new Error(nudge.message || label + " nudge failed");
-    }
-    const pos1 =
-      nudge.detail && nudge.detail.pos != null
-        ? nudge.detail.pos
-        : nudge.detail && nudge.detail.target;
+        throw new Error(label + " move rejected by user");
+      }
 
-    if (
-      !confirm(
-        label +
-          " commanded +10° (target " +
-          (nudge.detail && nudge.detail.target != null
-            ? Math.round(nudge.detail.target)
-            : "?") +
-          "°).\n" +
-          (pos1 != null
-            ? "Controller now reads " + Math.round(pos1) + "°.\n\n"
-            : "\n") +
-          "Did the rotator move about 10° in the expected direction?",
-      )
-    ) {
-      await sendRotorStep(
+      // 3) Return
+      setTestButtonState(btn, "busy", "Returning " + label + "…");
+      const back = await sendRotorStep(
         Object.assign({}, base, {
           action: "goto",
           axis: axis,
           degrees: pos0,
         }),
       );
-      throw new Error(label + " move rejected by user");
-    }
-
-    // 3) Return
-    setTestButtonState(btn, "busy", "Returning " + label + "…");
-    const back = await sendRotorStep(
-      Object.assign({}, base, {
-        action: "goto",
-        axis: axis,
-        degrees: pos0,
-      }),
-    );
-    if (!back.ok) {
-      throw new Error(back.message || label + " return failed");
-    }
-    if (
-      !confirm(
-        label + " returned toward " + Math.round(pos0) + "°.\n\nLooks correct?",
-      )
-    ) {
-      throw new Error(label + " return rejected by user");
+      if (!back.ok) {
+        throw new Error(back.message || label + " return failed");
+      }
+      if (
+        !confirm(
+          label +
+            " returned toward " +
+            Math.round(pos0) +
+            "°.\n\nLooks correct?",
+        )
+      ) {
+        throw new Error(label + " return rejected by user");
+      }
+    } finally {
+      // Always release the port before the other axis / live driver
+      try {
+        await sendRotorStep(
+          Object.assign({}, base, { action: "close", axis: axis }),
+        );
+      } catch (e) {
+        console.warn("[connection-test] session close", e);
+      }
     }
   }
 
