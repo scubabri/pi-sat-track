@@ -5,14 +5,17 @@ REM ============================================================================
 REM Pi Sat Track - Windows uninstall (single file)
 REM Run as Administrator.
 REM
-REM   uninstall-win.bat
-REM   uninstall-win.bat --cache
-REM   uninstall-win.bat --remove-node
-REM   uninstall-win.bat --purge
+REM   uninstall-win.bat                 remove app + port80 (+ Node if marked)
+REM   uninstall-win.bat --cache         also delete %USERPROFILE%\.rpitrack
+REM   uninstall-win.bat --remove-node   force offer Node.js uninstall
+REM   uninstall-win.bat --keep-app      leave the app folder (runtime cleanup only)
+REM
+REM App folder delete runs from %TEMP% after this script exits so the bat can
+REM remove the directory it lives in.
 REM =============================================================================
 
 set "REMOVE_CACHE=0"
-set "PURGE_APP=0"
+set "KEEP_APP=0"
 set "FORCE_NODE=0"
 
 if /I "%~1"=="-h" goto :help
@@ -22,10 +25,7 @@ if /I "%~1"=="--help" goto :help
 if "%~1"=="" goto :parsed
 if /I "%~1"=="--cache" set "REMOVE_CACHE=1"
 if /I "%~1"=="--all" set "REMOVE_CACHE=1"
-if /I "%~1"=="--purge" (
-  set "REMOVE_CACHE=1"
-  set "PURGE_APP=1"
-)
+if /I "%~1"=="--keep-app" set "KEEP_APP=1"
 if /I "%~1"=="--remove-node" set "FORCE_NODE=1"
 shift
 goto :parse
@@ -67,11 +67,15 @@ echo ===========================================================================
 echo  Pi Sat Track - Windows uninstall
 echo =============================================================================
 echo  App:    %APP_DIR%
-echo  Remove: node_modules, launcher, port 80 proxy
+echo  Remove: port 80 proxy, node_modules, launcher
+if "%KEEP_APP%"=="0" (
+  echo          entire app folder %APP_DIR%
+) else (
+  echo          app folder KEPT (--keep-app)
+)
 if exist "%NODE_MARKER%" echo          Node.js via Windows installer - will ask
 if not exist "%NODE_MARKER%" if "%FORCE_NODE%"=="1" echo          Node.js --remove-node - will ask
-if "%REMOVE_CACHE%"=="1" echo          cache folder
-if "%PURGE_APP%"=="1" echo          entire app folder
+if "%REMOVE_CACHE%"=="1" echo          cache %CACHE_DIR%
 echo =============================================================================
 echo.
 set /p "CONFIRM=Type YES to continue: "
@@ -132,25 +136,45 @@ if "%REMOVE_CACHE%"=="1" (
   )
 )
 
-if "%PURGE_APP%"=="1" (
+if "%KEEP_APP%"=="1" (
   echo.
-  set /p "CONFIRM2=Type DELETE to remove app folder: "
-  if /I "!CONFIRM2!"=="DELETE" (
-    set "CLEANER=%TEMP%\pi-sat-purge.bat"
-    echo @echo off> "%CLEANER%"
-    echo timeout /t 2 /nobreak ^>nul>> "%CLEANER%"
-    echo rmdir /s /q "%APP_DIR%">> "%CLEANER%"
-    echo del /f /q "%%~f0">> "%CLEANER%"
-    start "" /min cmd /c "%CLEANER%"
-    echo App folder delete scheduled.
-    pause
-    exit /b 0
-  )
+  echo App folder kept: %APP_DIR%
+  echo Uninstall finished.
+  pause
+  exit /b 0
 )
 
+REM ---------------------------------------------------------------------------
+REM Delete app folder from %%TEMP%% after we exit — cannot rmdir the folder
+REM while this .bat is still running inside it.
+REM ---------------------------------------------------------------------------
 echo.
-echo Uninstall finished.
-pause
+echo Scheduling removal of app folder:
+echo   %APP_DIR%
+echo.
+
+set "CLEANER=%TEMP%\pi-sat-track-remove-app.bat"
+(
+  echo @echo off
+  echo setlocal
+  echo echo Removing Pi Sat Track app folder...
+  echo timeout /t 2 /nobreak ^>nul
+  echo rmdir /s /q "%APP_DIR%"
+  echo if exist "%APP_DIR%" ^(
+  echo   echo WARNING: Could not fully delete:
+  echo   echo   %APP_DIR%
+  echo   echo Close any Explorer windows open on that folder and delete manually.
+  echo   pause
+  echo ^) else ^(
+  echo   echo App folder removed.
+  echo   timeout /t 2 /nobreak ^>nul
+  echo ^)
+  echo del /f /q "%%~f0" ^>nul 2^>^&1
+) > "%CLEANER%"
+
+echo This window will close; cleanup runs from TEMP.
+echo.
+start "" /min cmd /c "%CLEANER%"
 exit /b 0
 
 REM =============================================================================
@@ -159,8 +183,6 @@ echo.
 echo Running Windows uninstall for Node.js...
 echo.
 
-REM Write a short helper to %%TEMP%% then run it (avoids bat quoting issues;
-REM still ships as one uninstall-win.bat — no extra file in the app folder).
 set "PS1=%TEMP%\pi-sat-uninstall-node-%RANDOM%.ps1"
 
 > "%PS1%" (
@@ -230,6 +252,7 @@ echo.
 exit /b 0
 
 :help
-echo Usage: uninstall-win.bat [--cache] [--remove-node] [--purge]
+echo Usage: uninstall-win.bat [--cache] [--remove-node] [--keep-app]
 echo Run as Administrator.
+echo Default: removes the pi-sat-track app folder after cleanup.
 exit /b 0
