@@ -442,7 +442,7 @@ function connectTracker() {
         return;
       }
 
-      if (msg.type === "test-result") {
+      if (msg.type === "test-result" || msg.type === "test-rotor-step-result") {
         if (typeof applyTestResult === "function") applyTestResult(msg);
         return;
       }

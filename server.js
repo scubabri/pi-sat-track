@@ -382,6 +382,48 @@ wss.on("connection", (ws) => {
         });
       }
 
+      if (msg.type === "test-rotor-step") {
+        const reqId = msg.reqId || null;
+        console.log(
+          "Test rotor step",
+          msg.action,
+          msg.axis,
+          msg.rotorAzDevice || msg.rotorElDevice,
+        );
+        connectionTest
+          .testRotorStep(msg)
+          .then((r) => {
+            console.log(
+              "Test rotor step result",
+              msg.action,
+              msg.axis,
+              r.ok,
+              r.message,
+            );
+            ws.send(
+              JSON.stringify({
+                type: "test-rotor-step-result",
+                reqId,
+                ok: !!r.ok,
+                message: r.message || "",
+                detail: r.detail || null,
+              }),
+            );
+          })
+          .catch((e) => {
+            console.warn("Test rotor step error", e.message);
+            ws.send(
+              JSON.stringify({
+                type: "test-rotor-step-result",
+                reqId,
+                ok: false,
+                message: e.message || "Test error",
+              }),
+            );
+          });
+        return;
+      }
+
       if (msg.type === "test-radio") {
         const side = msg.side === "dl" ? "dl" : "ul";
         const target = "radio-" + side;
