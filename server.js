@@ -4,6 +4,9 @@ const fs = require("fs");
 const path = require("path");
 const { WebSocketServer } = require("ws");
 
+// Capture console as early as possible (before radio/rotor registration logs)
+const logHub = require("./lib/log-hub");
+
 const {
   ROOT,
   PORT,
@@ -37,8 +40,7 @@ function broadcast(obj) {
 }
 
 state.init({ broadcast });
-
-const logHub = require("./lib/log-hub");
+logHub.setBroadcast(broadcast);
 logHub.init({ broadcast });
 
 function applyProfileToRuntime(prof) {

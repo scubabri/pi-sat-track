@@ -1,52 +1,355 @@
-/**
- * Open server log popup (log-viewer.html).
- * Wire from index.html: <script src="js/log-viewer.js"></script>
- * Button: <button class="btn" id="btn-log" title="Server log">Log</button>
- */
-(function () {
-  let logWin = null;
-
-  function openLogViewer() {
-    const url = "/log-viewer.html";
-    try {
-      if (logWin && !logWin.closed) {
-        logWin.focus();
-        return logWin;
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pi Sat Track — Server log</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0d1117;
+        --panel: #161b22;
+        --border: #30363d;
+        --text: #e6edf3;
+        --muted: #8b949e;
+        --log: #c9d1d9;
+        --warn: #d29922;
+        --error: #f85149;
+        --info: #58a6ff;
+        --ok: #3fb950;
       }
-    } catch (_) {
-      logWin = null;
-    }
-    const features =
-      "width=900,height=560,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes";
-    logWin = window.open(url, "piSatTrackLog", features);
-    if (!logWin) {
-      console.warn(
-        "Log popup blocked — allow popups for this site, or open /log-viewer.html",
-      );
-      // Fallback: same tab
-      try {
-        window.location.href = url;
-      } catch (_) {}
-      return null;
-    }
-    return logWin;
-  }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          12px/1.45 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+      }
+      #bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        padding: 8px 10px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        z-index: 2;
+      }
+      #bar .title {
+        font-weight: 600;
+        margin-right: 8px;
+      }
+      #status {
+        color: var(--muted);
+        margin-right: auto;
+      }
+      #status.ok {
+        color: var(--ok);
+      }
+      #status.bad {
+        color: var(--error);
+      }
+      button {
+        background: #21262d;
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 4px 10px;
+        cursor: pointer;
+        font: inherit;
+      }
+      button:hover {
+        background: #30363d;
+      }
+      button.active {
+        border-color: var(--info);
+        color: var(--info);
+      }
+      #filter {
+        background: #0d1117;
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 4px 8px;
+        min-width: 140px;
+        font: inherit;
+      }
+      #log {
+        padding: 8px 10px 24px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .line {
+        padding: 1px 0;
+        border-bottom: 1px solid transparent;
+      }
+      .line:hover {
+        background: #161b22;
+      }
+      .ts {
+        color: var(--muted);
+        margin-right: 8px;
+      }
+      .lvl {
+        display: inline-block;
+        min-width: 4.5em;
+        margin-right: 8px;
+        font-weight: 600;
+      }
+      .lvl.log,
+      .lvl.info {
+        color: var(--log);
+      }
+      .lvl.warn {
+        color: var(--warn);
+      }
+      .lvl.error {
+        color: var(--error);
+      }
+      .lvl.debug {
+        color: var(--info);
+      }
+      .msg {
+        color: var(--log);
+      }
+      .line.warn .msg {
+        color: var(--warn);
+      }
+      .line.error .msg {
+        color: var(--error);
+      }
+      #empty {
+        color: var(--muted);
+        padding: 24px 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="bar">
+      <span class="title">Server log</span>
+      <span id="status">Connecting…</span>
+      <input
+        id="filter"
+        type="search"
+        placeholder="Filter…"
+        spellcheck="false"
+        autocomplete="off"
+      />
+      <button type="button" id="btn-pause" title="Pause auto-scroll">
+        Pause
+      </button>
+      <button
+        type="button"
+        id="btn-clear"
+        title="Clear view (server ring kept)"
+      >
+        Clear
+      </button>
+      <button type="button" id="btn-bottom" title="Jump to latest">
+        Bottom
+      </button>
+    </div>
+    <div id="empty">Waiting for log lines…</div>
+    <div id="log" hidden></div>
 
-  function initLogViewerButton() {
-    const btn = document.getElementById("btn-log");
-    if (!btn) return;
-    btn.addEventListener("click", function (ev) {
-      ev.preventDefault();
-      openLogViewer();
-    });
-  }
+    <script>
+      (function () {
+        const statusEl = document.getElementById("status");
+        const logEl = document.getElementById("log");
+        const emptyEl = document.getElementById("empty");
+        const filterEl = document.getElementById("filter");
+        const btnPause = document.getElementById("btn-pause");
+        const btnClear = document.getElementById("btn-clear");
+        const btnBottom = document.getElementById("btn-bottom");
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initLogViewerButton);
-  } else {
-    initLogViewerButton();
-  }
+        let paused = false;
+        let filter = "";
+        /** @type {{ t: string, level: string, msg: string }[]} */
+        const lines = [];
+        const MAX_DOM = 1200;
+        let ws = null;
+        let reconnectTimer = null;
 
-  // Optional global for console debugging
-  window.openLogViewer = openLogViewer;
-})();
+        function setStatus(text, cls) {
+          statusEl.textContent = text;
+          statusEl.className = cls || "";
+        }
+
+        function fmtTime(iso) {
+          if (!iso) return "";
+          try {
+            const d = new Date(iso);
+            return d.toLocaleTimeString(undefined, { hour12: false });
+          } catch (_) {
+            return iso.slice(11, 19);
+          }
+        }
+
+        function lineMatches(entry) {
+          if (!filter) return true;
+          const q = filter.toLowerCase();
+          return (
+            (entry.msg && entry.msg.toLowerCase().includes(q)) ||
+            (entry.level && entry.level.toLowerCase().includes(q))
+          );
+        }
+
+        function renderAll() {
+          logEl.innerHTML = "";
+          const frag = document.createDocumentFragment();
+          let shown = 0;
+          for (const entry of lines) {
+            if (!lineMatches(entry)) continue;
+            frag.appendChild(makeRow(entry));
+            shown++;
+          }
+          logEl.appendChild(frag);
+          emptyEl.hidden = shown > 0;
+          logEl.hidden = shown === 0;
+          if (!paused) scrollBottom();
+        }
+
+        function makeRow(entry) {
+          const row = document.createElement("div");
+          row.className = "line " + (entry.level || "log");
+          const ts = document.createElement("span");
+          ts.className = "ts";
+          ts.textContent = fmtTime(entry.t);
+          const lvl = document.createElement("span");
+          lvl.className = "lvl " + (entry.level || "log");
+          lvl.textContent = (entry.level || "log").toUpperCase();
+          const msg = document.createElement("span");
+          msg.className = "msg";
+          msg.textContent = entry.msg || "";
+          row.appendChild(ts);
+          row.appendChild(lvl);
+          row.appendChild(msg);
+          return row;
+        }
+
+        function appendEntry(entry) {
+          if (!entry || entry.msg == null) return;
+          lines.push(entry);
+          while (lines.length > MAX_DOM) lines.shift();
+
+          if (!lineMatches(entry)) return;
+
+          emptyEl.hidden = true;
+          logEl.hidden = false;
+          logEl.appendChild(makeRow(entry));
+          // Trim DOM if filter is empty and we grew past MAX
+          while (!filter && logEl.childNodes.length > MAX_DOM) {
+            logEl.removeChild(logEl.firstChild);
+          }
+          if (!paused) scrollBottom();
+        }
+
+        function scrollBottom() {
+          window.scrollTo(0, document.body.scrollHeight);
+        }
+
+        function connect() {
+          const proto = location.protocol === "https:" ? "wss" : "ws";
+          const url = proto + "://" + location.host + "/ws";
+          setStatus("Connecting…", "");
+          try {
+            ws = new WebSocket(url);
+          } catch (e) {
+            setStatus("WS error", "bad");
+            scheduleReconnect();
+            return;
+          }
+
+          ws.onopen = function () {
+            setStatus("Live", "ok");
+          };
+
+          ws.onmessage = function (ev) {
+            let msg;
+            try {
+              msg = JSON.parse(ev.data);
+            } catch (_) {
+              return;
+            }
+            if (msg.type === "log-history" && Array.isArray(msg.lines)) {
+              lines.length = 0;
+              for (const line of msg.lines) {
+                if (line && line.msg != null) {
+                  lines.push({
+                    t: line.t || "",
+                    level: line.level || "log",
+                    msg: line.msg,
+                  });
+                }
+              }
+              renderAll();
+              return;
+            }
+            if (msg.type === "log") {
+              appendEntry({
+                t: msg.t || "",
+                level: msg.level || "log",
+                msg: msg.msg || "",
+              });
+            }
+          };
+
+          ws.onclose = function () {
+            setStatus("Disconnected — retrying", "bad");
+            scheduleReconnect();
+          };
+
+          ws.onerror = function () {
+            try {
+              ws.close();
+            } catch (_) {}
+          };
+        }
+
+        function scheduleReconnect() {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(connect, 2000);
+        }
+
+        btnPause.addEventListener("click", function () {
+          paused = !paused;
+          btnPause.textContent = paused ? "Resume" : "Pause";
+          btnPause.classList.toggle("active", paused);
+          if (!paused) scrollBottom();
+        });
+
+        btnClear.addEventListener("click", function () {
+          lines.length = 0;
+          logEl.innerHTML = "";
+          emptyEl.hidden = false;
+          logEl.hidden = true;
+        });
+
+        btnBottom.addEventListener("click", function () {
+          paused = false;
+          btnPause.textContent = "Pause";
+          btnPause.classList.remove("active");
+          scrollBottom();
+        });
+
+        filterEl.addEventListener("input", function () {
+          filter = (filterEl.value || "").trim();
+          renderAll();
+        });
+
+        connect();
+      })();
+    </script>
+  </body>
+</html>
