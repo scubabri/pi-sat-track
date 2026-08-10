@@ -38,6 +38,9 @@ function broadcast(obj) {
 
 state.init({ broadcast });
 
+const logHub = require("./lib/log-hub");
+logHub.init({ broadcast });
+
 function applyProfileToRuntime(prof) {
   if (!prof) return;
   state.setFavorites(Array.isArray(prof.favorites) ? prof.favorites : []);
@@ -203,6 +206,7 @@ function pushNow() {
 
 wss.on("connection", (ws) => {
   console.log("Client connected");
+  logHub.sendHistory(ws);
   ws.send(JSON.stringify({ type: "sats", ...state.satsPayload("trackable") }));
   ws.send(
     JSON.stringify({
