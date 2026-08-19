@@ -175,6 +175,7 @@ function defaultsEndpoints() {
     rotorParkEl: 0,
     rotorElMax: 180,
     rotorAzOnly: false,
+    rotorHoldAfterPass: true,
     rotorAzStop: "north",
   };
 }

@@ -25,13 +25,6 @@ on:
         description: "Upload to S3"
         type: boolean
         default: true
-  push:
-    branches:
-      - CAT
-      - main
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
 
 permissions:
   contents: read

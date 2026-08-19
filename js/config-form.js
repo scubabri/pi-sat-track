@@ -539,6 +539,10 @@ function readFormConfig() {
       return el && el.checked ? 180 : 90;
     })(),
     rotorAzOnly: isRotorAzOnlyChecked(),
+    rotorHoldAfterPass: (function () {
+      const el = document.getElementById("cfg-rotor-hold-after-pass");
+      return el ? !!el.checked : true;
+    })(),
     rotorAzStop: (function () {
       const s = document.getElementById("cfg-rotor-az-stop-s");
       if (s && s.checked) return "south";
@@ -585,6 +589,11 @@ function fillForm(cfg) {
   }
   const azOnlyEl = document.getElementById("cfg-rotor-az-only");
   if (azOnlyEl) azOnlyEl.checked = !!d.rotorAzOnly;
+  const holdEl = document.getElementById("cfg-rotor-hold-after-pass");
+  if (holdEl) {
+    holdEl.checked =
+      d.rotorHoldAfterPass === undefined ? true : !!d.rotorHoldAfterPass;
+  }
   const stop =
     String(d.rotorAzStop || "north").toLowerCase() === "south"
       ? "south"
