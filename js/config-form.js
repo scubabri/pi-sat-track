@@ -539,6 +539,11 @@ function readFormConfig() {
       return el && el.checked ? 180 : 90;
     })(),
     rotorAzOnly: isRotorAzOnlyChecked(),
+    rotorAzStop: (function () {
+      const s = document.getElementById("cfg-rotor-az-stop-s");
+      if (s && s.checked) return "south";
+      return "north";
+    })(),
   };
 }
 
@@ -580,5 +585,13 @@ function fillForm(cfg) {
   }
   const azOnlyEl = document.getElementById("cfg-rotor-az-only");
   if (azOnlyEl) azOnlyEl.checked = !!d.rotorAzOnly;
+  const stop =
+    String(d.rotorAzStop || "north").toLowerCase() === "south"
+      ? "south"
+      : "north";
+  const stopN = document.getElementById("cfg-rotor-az-stop-n");
+  const stopS = document.getElementById("cfg-rotor-az-stop-s");
+  if (stopN) stopN.checked = stop === "north";
+  if (stopS) stopS.checked = stop === "south";
   updateRotorFormVisibility();
 }

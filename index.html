@@ -596,9 +596,40 @@
                     180° elevation
                   </label>
                 </div>
+              </div>
+
+              <div class="form-row" id="cfg-rotor-az-stop-wrap">
+                <label>AZ mechanical stop</label>
+                <div class="cfg-radio-row">
+                  <label class="cfg-check-label" for="cfg-rotor-az-stop-n">
+                    <input
+                      type="radio"
+                      name="cfg-rotor-az-stop"
+                      id="cfg-rotor-az-stop-n"
+                      value="north"
+                      checked
+                    />
+                    North (0°)
+                  </label>
+                  <label class="cfg-check-label" for="cfg-rotor-az-stop-s">
+                    <input
+                      type="radio"
+                      name="cfg-rotor-az-stop"
+                      id="cfg-rotor-az-stop-s"
+                      value="south"
+                    />
+                    South (180°)
+                  </label>
+                </div>
+                <p class="form-hint">
+                  Never drive across this stop — tracking and rotator test go the
+                  long way instead.
+                </p>
+              </div>
+
               <div class="form-row">
                 <button type="button" class="btn-test" id="btn-test-rotor">
-                  Test rotor
+                  Test rotator
                 </button>
               </div>
 
