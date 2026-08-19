@@ -63,7 +63,12 @@ tar -czf "${PAYLOAD}" \
   --exclude='node_modules/*' \
   --exclude='.rpitrack' \
   --exclude='.github' \
+  --exclude='.github/*' \
   --exclude='dist' \
+  --exclude='dist/*' \
+  --exclude='build-sfx.sh' \
+  --exclude='*.run' \
+  --exclude='build-sfx.meta' \
   --transform "s,^${BASE},pi-sat-track," \
   -C "${PARENT}" "${BASE}"
 
