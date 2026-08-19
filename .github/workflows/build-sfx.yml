@@ -4,7 +4,7 @@
 #   AWS_ACCESS_KEY_ID
 #   AWS_SECRET_ACCESS_KEY
 # Optional secrets:
-#   AWS_REGION   (default us-east-1)
+#   AWS_REGION   (default us-east-1) — leave unset if unsure; do NOT set to empty
 #   S3_BUCKET    (default pi-sat-track)
 #   S3_PREFIX    (default empty = bucket root)
 #
@@ -27,14 +27,7 @@ on:
         description: "Upload to S3"
         type: boolean
         default: true
-  push:
-    branches:
-      - CAT
-      - main
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-
+        
 permissions:
   contents: read
 
@@ -86,13 +79,29 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Set AWS region
+      - name: Resolve AWS settings
         if: ${{ github.event_name == 'push' || github.event.inputs.upload == 'true' }}
-        id: awsreg
+        id: aws
         env:
-          AWS_REGION_SECRET: ${{ secrets.AWS_REGION }}
+          # Secrets that may be unset must not become empty env overrides
+          SECRET_REGION: ${{ secrets.AWS_REGION }}
+          SECRET_BUCKET: ${{ secrets.S3_BUCKET }}
+          SECRET_PREFIX: ${{ secrets.S3_PREFIX }}
         run: |
-          echo "region=${AWS_REGION_SECRET:-us-east-1}" >> "$GITHUB_OUTPUT"
+          REGION="${SECRET_REGION:-}"
+          BUCKET="${SECRET_BUCKET:-}"
+          PREFIX="${SECRET_PREFIX:-}"
+          # Treat blank secrets as unset
+          [[ -n "${REGION// }" ]] || REGION="us-east-1"
+          [[ -n "${BUCKET// }" ]] || BUCKET="pi-sat-track"
+          PREFIX="${PREFIX#/}"
+          if [[ -n "$PREFIX" && "$PREFIX" != */ ]]; then
+            PREFIX="${PREFIX}/"
+          fi
+          echo "region=$REGION" >> "$GITHUB_OUTPUT"
+          echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
+          echo "prefix=$PREFIX" >> "$GITHUB_OUTPUT"
+          echo "AWS region=$REGION bucket=$BUCKET prefix='${PREFIX}'"
 
       - name: Configure AWS credentials
         if: ${{ github.event_name == 'push' || github.event.inputs.upload == 'true' }}
@@ -100,38 +109,48 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ steps.awsreg.outputs.region }}
+          aws-region: ${{ steps.aws.outputs.region }}
 
       - name: Upload to S3
         if: ${{ github.event_name == 'push' || github.event.inputs.upload == 'true' }}
         env:
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-          S3_BUCKET: ${{ secrets.S3_BUCKET }}
-          S3_PREFIX: ${{ secrets.S3_PREFIX }}
+          # Only set non-empty region — never export blank AWS_REGION
+          AWS_DEFAULT_REGION: ${{ steps.aws.outputs.region }}
+          AWS_REGION: ${{ steps.aws.outputs.region }}
+          S3_BUCKET: ${{ steps.aws.outputs.bucket }}
+          S3_PREFIX: ${{ steps.aws.outputs.prefix }}
           VER: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
-          REGION="${AWS_REGION:-us-east-1}"
-          BUCKET="${S3_BUCKET:-pi-sat-track}"
+          REGION="${AWS_REGION}"
+          BUCKET="${S3_BUCKET}"
           PREFIX="${S3_PREFIX:-}"
-          PREFIX="${PREFIX#/}"
-          if [[ -n "$PREFIX" && "$PREFIX" != */ ]]; then
-            PREFIX="${PREFIX}/"
+
+          if [[ -z "$REGION" || "$REGION" == *..* ]]; then
+            echo "ERROR: invalid AWS region: '${REGION}'" >&2
+            exit 1
           fi
-          export AWS_DEFAULT_REGION="$REGION"
+          if [[ -z "$BUCKET" ]]; then
+            echo "ERROR: empty S3 bucket" >&2
+            exit 1
+          fi
 
           SRC_VER="dist/pi-sat-track-alpha.${VER}.run"
           SRC_LATEST="dist/pi-sat-track-alpha.run"
           DEST_VER="s3://${BUCKET}/${PREFIX}pi-sat-track-alpha.${VER}.run"
           DEST_LATEST="s3://${BUCKET}/${PREFIX}pi-sat-track-alpha.run"
 
-          echo "Uploading ${SRC_VER} → ${DEST_VER}"
+          echo "Region:  ${REGION}"
+          echo "Upload:  ${SRC_VER} → ${DEST_VER}"
           aws s3 cp "${SRC_VER}" "${DEST_VER}" \
+            --region "${REGION}" \
             --content-type application/octet-stream
 
-          echo "Uploading latest → ${DEST_LATEST}"
+          echo "Upload:  ${SRC_LATEST} → ${DEST_LATEST}"
           aws s3 cp "${SRC_LATEST}" "${DEST_LATEST}" \
+            --region "${REGION}" \
             --content-type application/octet-stream
 
           echo "S3 listing:"
-          aws s3 ls "s3://${BUCKET}/${PREFIX}" | grep -E 'pi-sat-track-alpha' || true
+          aws s3 ls "s3://${BUCKET}/${PREFIX}" --region "${REGION}" \
+            | grep -E 'pi-sat-track-alpha' || true
