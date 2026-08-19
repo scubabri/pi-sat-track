@@ -9,7 +9,6 @@
 #
 # Produces:
 #   pi-sat-track-<BRANCH>-alpha.<VERSION>.run
-#   pi-sat-track-alpha.run  (latest pointer, same content)
 #
 # Version stamp written to tree + by the .run into ~/.rpitrack/version:
 #   <BRANCH>-alpha.<VERSION>
@@ -47,7 +46,6 @@ mkdir -p "${OUT_DIR}"
 PAYLOAD="${OUT_DIR}/payload.tar.gz"
 HEADER="${OUT_DIR}/sfx-header.sh"
 RUN_VER="${OUT_DIR}/pi-sat-track-${BRANCH}-alpha.${VERSION}.run"
-RUN_LATEST="${OUT_DIR}/pi-sat-track-alpha.run"
 
 # Stamp VERSION into the tree so extract always has it
 echo "${VERSION_LABEL}" > "${SRC}/VERSION"
@@ -126,8 +124,6 @@ EOF
 echo "==> Assembling ${RUN_VER}"
 cat "${HEADER}" "${PAYLOAD}" > "${RUN_VER}"
 chmod +x "${RUN_VER}"
-cp -f "${RUN_VER}" "${RUN_LATEST}"
-chmod +x "${RUN_LATEST}"
 rm -f "${PAYLOAD}" "${HEADER}"
 
 # Emit names for CI
@@ -137,7 +133,6 @@ echo "branch=${BRANCH}" >> "${OUT_DIR}/build-sfx.meta"
 
 echo
 echo "Created: ${RUN_VER}"
-echo "Latest:  ${RUN_LATEST}"
 echo "Label:   ${VERSION_LABEL}"
 echo "Size:    $(du -h "${RUN_VER}" | awk '{print $1}')"
 echo
