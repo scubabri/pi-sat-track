@@ -165,3 +165,55 @@ function initTimeToggle() {
     el.addEventListener("click", toggleTimeMode);
   });
 }
+
+/* ---- TLE source checkboxes (Satellite Status) ---- */
+function readTleSourceChecks() {
+  const root = document.getElementById("tle-sources");
+  if (!root) return ["celestrak", "amsat", "satnogs"];
+  const ids = [];
+  root.querySelectorAll("input[data-tle-src]").forEach(function (inp) {
+    if (inp.checked) ids.push(inp.getAttribute("data-tle-src"));
+  });
+  return ids;
+}
+
+function applyTleSourceChecks(sources) {
+  const root = document.getElementById("tle-sources");
+  if (!root || !Array.isArray(sources)) return;
+  const set = new Set(sources.map(String));
+  root.querySelectorAll("input[data-tle-src]").forEach(function (inp) {
+    const id = inp.getAttribute("data-tle-src");
+    inp.checked = set.has(id);
+  });
+}
+
+function sendTleSources() {
+  let ids = readTleSourceChecks();
+  if (!ids.length) {
+    // Keep at least one source enabled
+    const first = document.querySelector("#tle-sources input[data-tle-src]");
+    if (first) {
+      first.checked = true;
+      ids = [first.getAttribute("data-tle-src")];
+    }
+  }
+  if (typeof ws !== "undefined" && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "tle-sources", sources: ids }));
+  }
+}
+
+function initTleSourceUi() {
+  const root = document.getElementById("tle-sources");
+  if (!root || root.dataset.bound) return;
+  root.dataset.bound = "1";
+  root.addEventListener("change", function (ev) {
+    if (!ev.target || !ev.target.matches("input[data-tle-src]")) return;
+    sendTleSources();
+  });
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initTleSourceUi);
+} else {
+  initTleSourceUi();
+}
