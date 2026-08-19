@@ -7,6 +7,11 @@
 #   AWS_REGION   (default us-east-1)
 #   S3_BUCKET    (default pi-sat-track)
 #   S3_PREFIX    (default empty = bucket root)
+#
+# Artifacts / S3 objects:
+#   pi-sat-track-<branch>-alpha.<N>.run
+#   pi-sat-track-alpha.run  (latest for this build)
+# Version file content: <branch>-alpha.<N>
 
 name: Build SFX installer
 
@@ -21,7 +26,7 @@ on:
         description: "Upload to S3"
         type: boolean
         default: true
-
+        
 permissions:
   contents: read
 
@@ -32,14 +37,13 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # Hard default so the runner never inherits a blank region
     env:
       AWS_DEFAULT_REGION: us-east-1
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve version
+      - name: Resolve version and branch
         id: ver
         run: |
           if [[ -n "${{ github.event.inputs.version }}" ]]; then
@@ -49,8 +53,20 @@ jobs:
           fi
           V="$(echo "$V" | tr -cd '0-9.')"
           [[ -n "$V" ]] || V="${{ github.run_number }}"
+
+          # Prefer ref_name (branch or tag); fall back to head_ref for PRs
+          B="${GITHUB_REF_NAME:-}"
+          if [[ -z "$B" || "$B" == *"/"* && "$B" == refs/* ]]; then
+            B="${GITHUB_HEAD_REF:-${GITHUB_REF##*/}}"
+          fi
+          B="$(echo "$B" | sed 's#refs/heads/##' | tr -c 'A-Za-z0-9._-' '-' | sed 's/--*/-/g;s/^-//;s/-$//')"
+          [[ -n "$B" ]] || B="unknown"
+
           echo "version=$V" >> "$GITHUB_OUTPUT"
-          echo "Resolved alpha version: $V"
+          echo "branch=$B" >> "$GITHUB_OUTPUT"
+          echo "label=${B}-alpha.${V}" >> "$GITHUB_OUTPUT"
+          echo "run_file=pi-sat-track-${B}-alpha.${V}.run" >> "$GITHUB_OUTPUT"
+          echo "Resolved: branch=$B version=$V label=${B}-alpha.${V}"
 
       - name: Make build script executable
         run: chmod +x build-sfx.sh
@@ -58,20 +74,24 @@ jobs:
       - name: Build self-extracting installer
         env:
           VERSION: ${{ steps.ver.outputs.version }}
+          BRANCH: ${{ steps.ver.outputs.branch }}
           OUT_DIR: ${{ github.workspace }}/dist
         run: |
           mkdir -p "$OUT_DIR"
           ./build-sfx.sh "${{ github.workspace }}"
           ls -la "$OUT_DIR"
+          echo "VERSION file:"
           cat VERSION
+          cat dist/build-sfx.meta || true
 
       - name: Upload artifact to GitHub
         uses: actions/upload-artifact@v4
         with:
-          name: pi-sat-track-alpha-${{ steps.ver.outputs.version }}
+          name: pi-sat-track-${{ steps.ver.outputs.branch }}-alpha-${{ steps.ver.outputs.version }}
           path: |
-            dist/pi-sat-track-alpha.${{ steps.ver.outputs.version }}.run
+            dist/pi-sat-track-${{ steps.ver.outputs.branch }}-alpha.${{ steps.ver.outputs.version }}.run
             dist/pi-sat-track-alpha.run
+            dist/build-sfx.meta
           if-no-files-found: error
           retention-days: 30
 
@@ -86,7 +106,6 @@ jobs:
           REGION="${SECRET_REGION:-}"
           BUCKET="${SECRET_BUCKET:-}"
           PREFIX="${SECRET_PREFIX:-}"
-          # blank or whitespace-only secret → default
           REGION="$(echo -n "$REGION" | tr -d '[:space:]')"
           BUCKET="$(echo -n "$BUCKET" | tr -d '[:space:]')"
           [[ -n "$REGION" ]] || REGION="us-east-1"
@@ -113,14 +132,14 @@ jobs:
         if: ${{ github.event_name == 'push' || github.event.inputs.upload == 'true' }}
         env:
           VER: ${{ steps.ver.outputs.version }}
+          BRANCH: ${{ steps.ver.outputs.branch }}
+          RUN_FILE: ${{ steps.ver.outputs.run_file }}
           RESOLVED_REGION: ${{ steps.aws.outputs.region }}
           RESOLVED_BUCKET: ${{ steps.aws.outputs.bucket }}
           RESOLVED_PREFIX: ${{ steps.aws.outputs.prefix }}
         run: |
           set -euo pipefail
 
-          # Critical: GitHub may inject AWS_REGION="" from an empty secret.
-          # AWS CLI treats empty AWS_REGION as the region and builds s3..amazonaws.com.
           unset AWS_REGION || true
           export AWS_DEFAULT_REGION="${RESOLVED_REGION:-us-east-1}"
           export AWS_REGION="${RESOLVED_REGION:-us-east-1}"
@@ -130,17 +149,17 @@ jobs:
           PREFIX="${RESOLVED_PREFIX:-}"
 
           echo "AWS_REGION=${AWS_REGION}"
-          echo "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}"
-
           if [[ -z "$REGION" ]]; then
             echo "ERROR: region still empty after resolve" >&2
             exit 1
           fi
 
-          SRC_VER="dist/pi-sat-track-alpha.${VER}.run"
+          SRC_VER="dist/${RUN_FILE}"
           SRC_LATEST="dist/pi-sat-track-alpha.run"
-          DEST_VER="s3://${BUCKET}/${PREFIX}pi-sat-track-alpha.${VER}.run"
+          DEST_VER="s3://${BUCKET}/${PREFIX}${RUN_FILE}"
           DEST_LATEST="s3://${BUCKET}/${PREFIX}pi-sat-track-alpha.run"
+          # Also publish a branch-scoped "latest"
+          DEST_BRANCH_LATEST="s3://${BUCKET}/${PREFIX}pi-sat-track-${BRANCH}-alpha.run"
 
           echo "Upload: ${SRC_VER} → ${DEST_VER}"
           aws s3 cp "${SRC_VER}" "${DEST_VER}" \
@@ -152,6 +171,11 @@ jobs:
             --region "${REGION}" \
             --content-type application/octet-stream
 
+          echo "Upload: branch latest → ${DEST_BRANCH_LATEST}"
+          aws s3 cp "${SRC_VER}" "${DEST_BRANCH_LATEST}" \
+            --region "${REGION}" \
+            --content-type application/octet-stream
+
           echo "S3 listing:"
           aws s3 ls "s3://${BUCKET}/${PREFIX}" --region "${REGION}" \
-            | grep -E 'pi-sat-track-alpha' || true
+            | grep -E 'pi-sat-track' || true
