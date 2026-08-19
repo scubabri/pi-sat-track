@@ -1,0 +1,137 @@
+# Build versioned self-extracting installer and upload to S3.
+#
+# Required repo secrets:
+#   AWS_ACCESS_KEY_ID
+#   AWS_SECRET_ACCESS_KEY
+# Optional secrets:
+#   AWS_REGION   (default us-east-1)
+#   S3_BUCKET    (default pi-sat-track)
+#   S3_PREFIX    (default empty = bucket root)
+#
+# Output objects:
+#   s3://…/pi-sat-track-alpha.<N>.run   (versioned)
+#   s3://…/pi-sat-track-alpha.run       (latest)
+#
+# On the Pi, the .run writes ~/.rpitrack/version with "alpha.<N>".
+
+name: Build SFX installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Alpha version number (blank = use run number)"
+        required: false
+        default: ""
+      upload:
+        description: "Upload to S3"
+        type: boolean
+        default: true
+  push:
+    branches:
+      - CAT
+      - main
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-sfx-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+            V="${{ github.event.inputs.version }}"
+          else
+            V="${{ github.run_number }}"
+          fi
+          V="$(echo "$V" | tr -cd '0-9.')"
+          [[ -n "$V" ]] || V="${{ github.run_number }}"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Resolved alpha version: $V"
+
+      - name: Make build script executable
+        run: chmod +x build-sfx.sh
+
+      - name: Build self-extracting installer
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          OUT_DIR: ${{ github.workspace }}/dist
+        run: |
+          mkdir -p "$OUT_DIR"
+          ./build-sfx.sh "${{ github.workspace }}"
+          ls -la "$OUT_DIR"
+          echo "VERSION file:"
+          cat VERSION
+
+      - name: Upload artifact to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-sat-track-alpha-${{ steps.ver.outputs.version }}
+          path: |
+            dist/pi-sat-track-alpha.${{ steps.ver.outputs.version }}.run
+            dist/pi-sat-track-alpha.run
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Set AWS region
+        if: ${{ github.event_name == 'push' || github.event.inputs.upload == 'true' }}
+        id: awsreg
+        env:
+          AWS_REGION_SECRET: ${{ secrets.AWS_REGION }}
+        run: |
+          echo "region=${AWS_REGION_SECRET:-us-east-1}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        if: ${{ github.event_name == 'push' || github.event.inputs.upload == 'true' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ steps.awsreg.outputs.region }}
+
+      - name: Upload to S3
+        if: ${{ github.event_name == 'push' || github.event.inputs.upload == 'true' }}
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          S3_PREFIX: ${{ secrets.S3_PREFIX }}
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          REGION="${AWS_REGION:-us-east-1}"
+          BUCKET="${S3_BUCKET:-pi-sat-track}"
+          PREFIX="${S3_PREFIX:-}"
+          PREFIX="${PREFIX#/}"
+          if [[ -n "$PREFIX" && "$PREFIX" != */ ]]; then
+            PREFIX="${PREFIX}/"
+          fi
+          export AWS_DEFAULT_REGION="$REGION"
+
+          SRC_VER="dist/pi-sat-track-alpha.${VER}.run"
+          SRC_LATEST="dist/pi-sat-track-alpha.run"
+          DEST_VER="s3://${BUCKET}/${PREFIX}pi-sat-track-alpha.${VER}.run"
+          DEST_LATEST="s3://${BUCKET}/${PREFIX}pi-sat-track-alpha.run"
+
+          echo "Uploading ${SRC_VER} → ${DEST_VER}"
+          aws s3 cp "${SRC_VER}" "${DEST_VER}" \
+            --content-type application/octet-stream
+
+          echo "Uploading latest → ${DEST_LATEST}"
+          aws s3 cp "${SRC_LATEST}" "${DEST_LATEST}" \
+            --content-type application/octet-stream
+
+          echo "S3 listing:"
+          aws s3 ls "s3://${BUCKET}/${PREFIX}" | grep -E 'pi-sat-track-alpha' || true
