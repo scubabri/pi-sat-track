@@ -27,7 +27,7 @@ on:
         description: "Upload to S3"
         type: boolean
         default: true
-        
+
 permissions:
   contents: read
 
