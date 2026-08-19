@@ -4,18 +4,29 @@
 #   ./build-sfx.sh [path-to-app-tree]
 # Env:
 #   VERSION   alpha build number (default: 0)
+#   BRANCH    git branch name (default: unknown) — sanitized for filenames
 #   OUT_DIR   output directory (default: script dir)
 #
-# Produces: pi-sat-track-alpha.<VERSION>.run
-# Also writes a copy as pi-sat-track-alpha.run (latest pointer).
+# Produces:
+#   pi-sat-track-<BRANCH>-alpha.<VERSION>.run
+#   pi-sat-track-alpha.run  (latest pointer, same content)
+#
+# Version stamp written to tree + by the .run into ~/.rpitrack/version:
+#   <BRANCH>-alpha.<VERSION>
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="${1:-}"
 VERSION="${VERSION:-0}"
-# normalize: digits only suffix ok; allow 1, 1.2, 20260819.1
 VERSION="$(echo "${VERSION}" | tr -cd '0-9.')"
 [[ -n "${VERSION}" ]] || VERSION="0"
+
+# Sanitize branch for filenames: keep alnum, dot, underscore, hyphen
+BRANCH_RAW="${BRANCH:-unknown}"
+BRANCH="$(echo "${BRANCH_RAW}" | sed 's#refs/heads/##' | tr -c 'A-Za-z0-9._-' '-' | sed 's/--*/-/g;s/^-//;s/-$//')"
+[[ -n "${BRANCH}" ]] || BRANCH="unknown"
+
+VERSION_LABEL="${BRANCH}-alpha.${VERSION}"
 
 if [[ -z "${SRC}" ]]; then
   if [[ -f "${SCRIPT_DIR}/pi-sat-track/package.json" ]]; then
@@ -35,14 +46,15 @@ OUT_DIR="${OUT_DIR:-${SCRIPT_DIR}}"
 mkdir -p "${OUT_DIR}"
 PAYLOAD="${OUT_DIR}/payload.tar.gz"
 HEADER="${OUT_DIR}/sfx-header.sh"
-RUN_VER="${OUT_DIR}/pi-sat-track-alpha.${VERSION}.run"
+RUN_VER="${OUT_DIR}/pi-sat-track-${BRANCH}-alpha.${VERSION}.run"
 RUN_LATEST="${OUT_DIR}/pi-sat-track-alpha.run"
 
-# Stamp a VERSION file into the tree so the extract always has it
-echo "alpha.${VERSION}" > "${SRC}/VERSION"
-echo "alpha.${VERSION}" > "${SRC}/version.txt"
+# Stamp VERSION into the tree so extract always has it
+echo "${VERSION_LABEL}" > "${SRC}/VERSION"
+echo "${VERSION_LABEL}" > "${SRC}/version.txt"
 
-echo "==> Version: alpha.${VERSION}"
+echo "==> Version label: ${VERSION_LABEL}"
+echo "==> Branch:        ${BRANCH}"
 echo "==> Archiving ${SRC} as top-level pi-sat-track/"
 PARENT="$(dirname "${SRC}")"
 BASE="$(basename "${SRC}")"
@@ -53,18 +65,19 @@ tar -czf "${PAYLOAD}" \
   --exclude='node_modules/*' \
   --exclude='.rpitrack' \
   --exclude='.github' \
+  --exclude='dist' \
   --transform "s,^${BASE},pi-sat-track," \
   -C "${PARENT}" "${BASE}"
 
 echo "==> Writing extractor + installer header"
-# VERSION is expanded at build time into the header
 cat > "${HEADER}" << EOF
 #!/usr/bin/env bash
 # Self-extracting pi-sat-track archive — extract then run install-pi.sh
-# Build: alpha.${VERSION}
+# Build: ${VERSION_LABEL}
 set -euo pipefail
 
-PI_SAT_TRACK_VERSION="alpha.${VERSION}"
+PI_SAT_TRACK_VERSION="${VERSION_LABEL}"
+PI_SAT_TRACK_BRANCH="${BRANCH}"
 DEST="\$(cd "\$(dirname "\$0")" && pwd)"
 APP="\${DEST}/pi-sat-track"
 ARCHIVE_LINE="\$(awk '/^__ARCHIVE__\$/{print NR + 1; exit 0;}' "\$0")"
@@ -90,6 +103,7 @@ chmod +x "\${APP}/install-pi.sh"
 RPITRACK="\${HOME}/.rpitrack"
 mkdir -p "\${RPITRACK}"
 echo "\${PI_SAT_TRACK_VERSION}" > "\${RPITRACK}/version"
+echo "\${PI_SAT_TRACK_BRANCH}" > "\${RPITRACK}/branch"
 echo "\${PI_SAT_TRACK_VERSION}" > "\${APP}/VERSION"
 echo "\${PI_SAT_TRACK_VERSION}" > "\${APP}/version.txt"
 echo "Recorded version \${PI_SAT_TRACK_VERSION} → \${RPITRACK}/version"
@@ -98,13 +112,13 @@ echo
 echo "Running installer ..."
 echo "============================================================"
 cd "\${APP}"
-# Pass through any flags given to the .run file (e.g. --no-nginx)
 ./install-pi.sh "\$@"
 echo
 echo "============================================================"
 echo "Extract + install finished."
 echo "App:     \${APP}"
 echo "Version: \${PI_SAT_TRACK_VERSION}"
+echo "Branch:  \${PI_SAT_TRACK_BRANCH}"
 exit 0
 __ARCHIVE__
 EOF
@@ -116,13 +130,17 @@ cp -f "${RUN_VER}" "${RUN_LATEST}"
 chmod +x "${RUN_LATEST}"
 rm -f "${PAYLOAD}" "${HEADER}"
 
+# Emit names for CI
+echo "run_file=$(basename "${RUN_VER}")" > "${OUT_DIR}/build-sfx.meta"
+echo "version_label=${VERSION_LABEL}" >> "${OUT_DIR}/build-sfx.meta"
+echo "branch=${BRANCH}" >> "${OUT_DIR}/build-sfx.meta"
+
 echo
 echo "Created: ${RUN_VER}"
 echo "Latest:  ${RUN_LATEST}"
+echo "Label:   ${VERSION_LABEL}"
 echo "Size:    $(du -h "${RUN_VER}" | awk '{print $1}')"
 echo
 echo "On the Pi:"
-echo "  chmod +x pi-sat-track-alpha.${VERSION}.run"
-echo "  ./pi-sat-track-alpha.${VERSION}.run"
-echo "  # or with flags:"
-echo "  ./pi-sat-track-alpha.${VERSION}.run --no-nginx"
+echo "  chmod +x pi-sat-track-${BRANCH}-alpha.${VERSION}.run"
+echo "  ./pi-sat-track-${BRANCH}-alpha.${VERSION}.run"
