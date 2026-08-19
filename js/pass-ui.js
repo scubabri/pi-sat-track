@@ -56,52 +56,49 @@ function tickCountdown() {
   const dot = document.querySelector("#pass-status .status-dot");
   if (!countdownEl) return;
 
-  if (currentEl != null && currentEl >= 0) {
-    if (labelEl) labelEl.textContent = "LOS in";
-    if (dot) dot.className = "status-dot green";
-
-    if (lastPass && lastPass.los) {
-      const secToLos = (new Date(lastPass.los).getTime() - Date.now()) / 1000;
-      if (secToLos > 0) {
-        countdownEl.textContent = formatCountdown(secToLos);
-        return;
-      }
-    }
-    countdownEl.textContent = currentEl.toFixed(1) + "\u00B0";
-    return;
-  }
-
-  if (!lastPass || !lastPass.aos || !lastPass.los) {
-    if (labelEl) labelEl.textContent = "Next AOS in";
-    countdownEl.textContent = "-";
-    if (dot) dot.className = "status-dot";
-    return;
-  }
-
   const now = Date.now();
-  const aosMs = new Date(lastPass.aos).getTime();
-  const losMs = new Date(lastPass.los).getTime();
-  const secToAos = (aosMs - now) / 1000;
-  const secToLos = (losMs - now) / 1000;
 
-  if (secToAos > 0) {
-    if (labelEl) labelEl.textContent = "Next AOS in";
-    countdownEl.textContent = formatCountdown(secToAos);
-    if (dot) {
-      if (secToAos <= 5 * 60) dot.className = "status-dot red";
-      else if (secToAos <= 15 * 60) dot.className = "status-dot yellow";
-      else dot.className = "status-dot";
+  // Prefer pass window over elevation alone.
+  // Old bug: currentEl >= 0 forced "LOS in" using lastPass.los even when
+  // lastPass was still the *next* pass (AOS in the future), so the timer
+  // matched time-to-AOS while labeled LOS.
+  if (lastPass && lastPass.aos && lastPass.los) {
+    const aosMs = new Date(lastPass.aos).getTime();
+    const losMs = new Date(lastPass.los).getTime();
+    const secToAos = (aosMs - now) / 1000;
+    const secToLos = (losMs - now) / 1000;
+
+    if (secToAos > 0) {
+      if (labelEl) labelEl.textContent = "Next AOS in";
+      countdownEl.textContent = formatCountdown(secToAos);
+      if (dot) {
+        if (secToAos <= 5 * 60) dot.className = "status-dot red";
+        else if (secToAos <= 15 * 60) dot.className = "status-dot yellow";
+        else dot.className = "status-dot";
+      }
+      return;
     }
-  } else if (secToLos > 0) {
-    if (labelEl) labelEl.textContent = "LOS in";
-    countdownEl.textContent = formatCountdown(secToLos);
-    if (dot) dot.className = "status-dot green";
-  } else {
+
+    if (secToLos > 0) {
+      if (labelEl) labelEl.textContent = "LOS in";
+      countdownEl.textContent = formatCountdown(secToLos);
+      if (dot) dot.className = "status-dot green";
+      return;
+    }
+
     lastPass = null;
-    if (labelEl) labelEl.textContent = "Next AOS in";
-    countdownEl.textContent = "-";
-    if (dot) dot.className = "status-dot";
   }
+
+  if (currentEl != null && currentEl >= 0) {
+    if (labelEl) labelEl.textContent = "EL";
+    countdownEl.textContent = currentEl.toFixed(1) + "°";
+    if (dot) dot.className = "status-dot green";
+    return;
+  }
+
+  if (labelEl) labelEl.textContent = "Next AOS in";
+  countdownEl.textContent = "-";
+  if (dot) dot.className = "status-dot";
 }
 
 function startCountdownTimer() {
