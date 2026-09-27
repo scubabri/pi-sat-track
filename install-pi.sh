@@ -14,7 +14,7 @@
 # Flags:
 #   --no-nginx    Skip nginx reverse-proxy setup
 #   --no-service  Skip systemd user service
-#   --update      npm install only (no apt / nginx / service changes)
+#   --update      Refresh npm + rewrite/restart user service WorkingDirectory
 # =============================================================================
 
 set -euo pipefail
@@ -100,7 +100,7 @@ echo "  User     ${APP_USER}"
 echo "  Home     ${APP_HOME}"
 echo "  App      ${APP_DIR}"
 if [[ $UPDATE_ONLY -eq 1 ]]; then
-  echo "  Mode     UPDATE (npm only)"
+  echo "  Mode     UPDATE (npm + user service)"
 else
   echo "  Mode     FULL install"
   echo "  nginx    $([[ $INSTALL_NGINX -eq 1 ]] && echo yes || echo no)"
@@ -234,14 +234,14 @@ NGX
 fi
 
 # -------------------- systemd user service --------------------
-if [[ $INSTALL_SERVICE -eq 1 && $UPDATE_ONLY -eq 0 ]]; then
-  UNIT_DIR="${APP_HOME}/.config/systemd/user"
-  mkdir -p "${UNIT_DIR}"
+NODE_BIN="$(command -v node)"
 
-  NODE_BIN="$(command -v node)"
-  log "Writing systemd user unit ${UNIT_DIR}/${SERVICE_NAME}.service"
+write_user_service() {
+  local unit_dir="${APP_HOME}/.config/systemd/user"
+  mkdir -p "${unit_dir}"
 
-  cat > "${UNIT_DIR}/${SERVICE_NAME}.service" <<UNIT
+  log "Writing systemd user unit ${unit_dir}/${SERVICE_NAME}.service"
+  cat > "${unit_dir}/${SERVICE_NAME}.service" <<UNIT
 [Unit]
 Description=Pi Sat Track (Node web UI / dual-radio)
 After=network-online.target
@@ -263,6 +263,10 @@ UNIT
   if [[ -n "${SUDO_USER:-}" ]]; then
     need_sudo chown -R "${APP_USER}:${APP_USER}" "${APP_HOME}/.config/systemd" 2>/dev/null || true
   fi
+}
+
+if [[ $INSTALL_SERVICE -eq 1 && $UPDATE_ONLY -eq 0 ]]; then
+  write_user_service
 
   if command -v loginctl >/dev/null 2>&1; then
     need_sudo loginctl enable-linger "${APP_USER}" || true
@@ -277,12 +281,14 @@ UNIT
   echo "    logs: journalctl --user -u ${SERVICE_NAME} -f"
 fi
 
-# --update: restart service if present
-if [[ $UPDATE_ONLY -eq 1 ]]; then
+# --update: rewrite and restart service if present
+if [[ $UPDATE_ONLY -eq 1 && $INSTALL_SERVICE -eq 1 ]]; then
   ensure_user_systemd
   if systemctl --user list-unit-files "${SERVICE_NAME}.service" 2>/dev/null | grep -q "${SERVICE_NAME}"; then
-    log "Restarting ${SERVICE_NAME} service"
+    write_user_service
+    log "Refreshing ${SERVICE_NAME} service"
     systemctl --user daemon-reload
+    systemctl --user enable "${SERVICE_NAME}.service"
     systemctl --user restart "${SERVICE_NAME}.service"
     sleep 1
     systemctl --user --no-pager --full status "${SERVICE_NAME}.service" || true
