@@ -476,7 +476,20 @@ function connectTracker() {
         return;
       }
 
+      if (msg.type === "tle-sources" && Array.isArray(msg.sources)) {
+        if (typeof applyTleSourceChecks === "function") {
+          applyTleSourceChecks(msg.sources);
+        }
+        return;
+      }
+
       if (msg.type === "host" || msg.type === "endpoints") {
+        if (
+          Array.isArray(msg.tleSources) &&
+          typeof applyTleSourceChecks === "function"
+        ) {
+          applyTleSourceChecks(msg.tleSources);
+        }
         if (
           Array.isArray(msg.serialDevices) &&
           typeof setHostSerialDevices === "function"

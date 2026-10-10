@@ -56,52 +56,49 @@ function tickCountdown() {
   const dot = document.querySelector("#pass-status .status-dot");
   if (!countdownEl) return;
 
-  if (currentEl != null && currentEl >= 0) {
-    if (labelEl) labelEl.textContent = "LOS in";
-    if (dot) dot.className = "status-dot green";
-
-    if (lastPass && lastPass.los) {
-      const secToLos = (new Date(lastPass.los).getTime() - Date.now()) / 1000;
-      if (secToLos > 0) {
-        countdownEl.textContent = formatCountdown(secToLos);
-        return;
-      }
-    }
-    countdownEl.textContent = currentEl.toFixed(1) + "\u00B0";
-    return;
-  }
-
-  if (!lastPass || !lastPass.aos || !lastPass.los) {
-    if (labelEl) labelEl.textContent = "Next AOS in";
-    countdownEl.textContent = "-";
-    if (dot) dot.className = "status-dot";
-    return;
-  }
-
   const now = Date.now();
-  const aosMs = new Date(lastPass.aos).getTime();
-  const losMs = new Date(lastPass.los).getTime();
-  const secToAos = (aosMs - now) / 1000;
-  const secToLos = (losMs - now) / 1000;
 
-  if (secToAos > 0) {
-    if (labelEl) labelEl.textContent = "Next AOS in";
-    countdownEl.textContent = formatCountdown(secToAos);
-    if (dot) {
-      if (secToAos <= 5 * 60) dot.className = "status-dot red";
-      else if (secToAos <= 15 * 60) dot.className = "status-dot yellow";
-      else dot.className = "status-dot";
+  // Prefer pass window over elevation alone.
+  // Old bug: currentEl >= 0 forced "LOS in" using lastPass.los even when
+  // lastPass was still the *next* pass (AOS in the future), so the timer
+  // matched time-to-AOS while labeled LOS.
+  if (lastPass && lastPass.aos && lastPass.los) {
+    const aosMs = new Date(lastPass.aos).getTime();
+    const losMs = new Date(lastPass.los).getTime();
+    const secToAos = (aosMs - now) / 1000;
+    const secToLos = (losMs - now) / 1000;
+
+    if (secToAos > 0) {
+      if (labelEl) labelEl.textContent = "Next AOS in";
+      countdownEl.textContent = formatCountdown(secToAos);
+      if (dot) {
+        if (secToAos <= 5 * 60) dot.className = "status-dot red";
+        else if (secToAos <= 15 * 60) dot.className = "status-dot yellow";
+        else dot.className = "status-dot";
+      }
+      return;
     }
-  } else if (secToLos > 0) {
-    if (labelEl) labelEl.textContent = "LOS in";
-    countdownEl.textContent = formatCountdown(secToLos);
-    if (dot) dot.className = "status-dot green";
-  } else {
+
+    if (secToLos > 0) {
+      if (labelEl) labelEl.textContent = "LOS in";
+      countdownEl.textContent = formatCountdown(secToLos);
+      if (dot) dot.className = "status-dot green";
+      return;
+    }
+
     lastPass = null;
-    if (labelEl) labelEl.textContent = "Next AOS in";
-    countdownEl.textContent = "-";
-    if (dot) dot.className = "status-dot";
   }
+
+  if (currentEl != null && currentEl >= 0) {
+    if (labelEl) labelEl.textContent = "EL";
+    countdownEl.textContent = currentEl.toFixed(1) + "°";
+    if (dot) dot.className = "status-dot green";
+    return;
+  }
+
+  if (labelEl) labelEl.textContent = "Next AOS in";
+  countdownEl.textContent = "-";
+  if (dot) dot.className = "status-dot";
 }
 
 function startCountdownTimer() {
@@ -164,4 +161,56 @@ function initTimeToggle() {
   document.querySelectorAll(".time-toggle").forEach((el) => {
     el.addEventListener("click", toggleTimeMode);
   });
+}
+
+/* ---- TLE source checkboxes (Satellite Status) ---- */
+function readTleSourceChecks() {
+  const root = document.getElementById("tle-sources");
+  if (!root) return ["celestrak", "amsat", "satnogs"];
+  const ids = [];
+  root.querySelectorAll("input[data-tle-src]").forEach(function (inp) {
+    if (inp.checked) ids.push(inp.getAttribute("data-tle-src"));
+  });
+  return ids;
+}
+
+function applyTleSourceChecks(sources) {
+  const root = document.getElementById("tle-sources");
+  if (!root || !Array.isArray(sources)) return;
+  const set = new Set(sources.map(String));
+  root.querySelectorAll("input[data-tle-src]").forEach(function (inp) {
+    const id = inp.getAttribute("data-tle-src");
+    inp.checked = set.has(id);
+  });
+}
+
+function sendTleSources() {
+  let ids = readTleSourceChecks();
+  if (!ids.length) {
+    // Keep at least one source enabled
+    const first = document.querySelector("#tle-sources input[data-tle-src]");
+    if (first) {
+      first.checked = true;
+      ids = [first.getAttribute("data-tle-src")];
+    }
+  }
+  if (typeof ws !== "undefined" && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "tle-sources", sources: ids }));
+  }
+}
+
+function initTleSourceUi() {
+  const root = document.getElementById("tle-sources");
+  if (!root || root.dataset.bound) return;
+  root.dataset.bound = "1";
+  root.addEventListener("change", function (ev) {
+    if (!ev.target || !ev.target.matches("input[data-tle-src]")) return;
+    sendTleSources();
+  });
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initTleSourceUi);
+} else {
+  initTleSourceUi();
 }

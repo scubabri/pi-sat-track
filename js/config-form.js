@@ -534,11 +534,21 @@ function readFormConfig() {
     rotorBaud: parseInt(val("cfg-rotor-baud"), 10) || 4800,
     rotorParkAz: parseFloat(val("cfg-rotor-park-az")) || 0,
     rotorParkEl: parseFloat(val("cfg-rotor-park-el")) || 0,
+    rotorMinEl: (function () {
+      const v = parseFloat(val("cfg-rotor-min-el"));
+      if (!Number.isFinite(v)) return 0;
+      return Math.max(0, Math.min(90, v));
+    })(),
     rotorElMax: (function () {
       const el = document.getElementById("cfg-rotor-el-180");
       return el && el.checked ? 180 : 90;
     })(),
     rotorAzOnly: isRotorAzOnlyChecked(),
+    rotorAzStop: (function () {
+      const s = document.getElementById("cfg-rotor-az-stop-s");
+      if (s && s.checked) return "south";
+      return "north";
+    })(),
   };
 }
 
@@ -573,6 +583,12 @@ function fillForm(cfg) {
   setVal("cfg-rotor-baud", d.rotorBaud != null ? d.rotorBaud : 4800);
   setVal("cfg-rotor-park-az", d.rotorParkAz != null ? d.rotorParkAz : 0);
   setVal("cfg-rotor-park-el", d.rotorParkEl != null ? d.rotorParkEl : 0);
+  setVal(
+    "cfg-rotor-min-el",
+    d.rotorMinEl != null && Number.isFinite(Number(d.rotorMinEl))
+      ? d.rotorMinEl
+      : 0,
+  );
   const el180 = document.getElementById("cfg-rotor-el-180");
   if (el180) {
     const max = d.rotorElMax != null ? Number(d.rotorElMax) : 180;
@@ -580,5 +596,13 @@ function fillForm(cfg) {
   }
   const azOnlyEl = document.getElementById("cfg-rotor-az-only");
   if (azOnlyEl) azOnlyEl.checked = !!d.rotorAzOnly;
+  const stop =
+    String(d.rotorAzStop || "north").toLowerCase() === "south"
+      ? "south"
+      : "north";
+  const stopN = document.getElementById("cfg-rotor-az-stop-n");
+  const stopS = document.getElementById("cfg-rotor-az-stop-s");
+  if (stopN) stopN.checked = stop === "north";
+  if (stopS) stopS.checked = stop === "south";
   updateRotorFormVisibility();
 }

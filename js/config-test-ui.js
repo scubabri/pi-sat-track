@@ -102,12 +102,15 @@ function rotorConfigFromForm() {
   }
   const baudEl = document.getElementById("cfg-rotor-baud");
   const baud = baudEl ? parseInt(baudEl.value, 10) || 4800 : 4800;
+  const stopS = document.getElementById("cfg-rotor-az-stop-s");
+  const rotorAzStop = stopS && stopS.checked ? "south" : "north";
   return {
     rotorType: type,
     rotorAzDevice: az,
     rotorElDevice: el,
     rotorBaud: baud,
     rotorAzOnly: azOnly,
+    rotorAzStop: rotorAzStop,
   };
 }
 
@@ -289,7 +292,7 @@ function runRadioTest(side) {
 async function runRotorTestGuided() {
   const btn = document.getElementById("btn-test-rotor");
   if (!btn) return;
-  if (!btn.dataset.label) btn.dataset.label = "Test rotor";
+  if (!btn.dataset.label) btn.dataset.label = "Test rotator";
 
   if (
     !(await paintThenConfirm(
@@ -457,7 +460,7 @@ async function runRotorTestGuided() {
       btn.classList.contains("test-ok") ||
       btn.classList.contains("test-fail")
     ) {
-      btn.textContent = btn.dataset.label || "Test rotor";
+      btn.textContent = btn.dataset.label || "Test rotator";
     }
   }, 6000);
 }

@@ -4,6 +4,9 @@ const fs = require("fs");
 const path = require("path");
 const { WebSocketServer } = require("ws");
 
+// Capture console as early as possible (before radio/rotor registration logs)
+const logHub = require("./lib/log-hub");
+
 const {
   ROOT,
   PORT,
@@ -17,6 +20,7 @@ const {
 
 const catalog = require("./lib/catalog");
 const state = require("./lib/state");
+const tle = require("./lib/tle");
 const radios = require("./lib/radios");
 const rotor = require("./lib/rotor");
 const rotors = require("./lib/rotors");
@@ -37,6 +41,8 @@ function broadcast(obj) {
 }
 
 state.init({ broadcast });
+logHub.setBroadcast(broadcast);
+logHub.init({ broadcast });
 
 function applyProfileToRuntime(prof) {
   if (!prof) return;
@@ -203,6 +209,7 @@ function pushNow() {
 
 wss.on("connection", (ws) => {
   console.log("Client connected");
+  logHub.sendHistory(ws);
   ws.send(JSON.stringify({ type: "sats", ...state.satsPayload("trackable") }));
   ws.send(
     JSON.stringify({
@@ -213,6 +220,7 @@ wss.on("connection", (ws) => {
       rotorAzDevice: config.ROTOR_AZ_DEVICE,
       rotorElDevice: config.ROTOR_EL_DEVICE,
       rotorBaud: config.ROTOR_BAUD,
+      tleSources: tle.getTleSources(),
     }),
   );
   ws.send(JSON.stringify(profiles.publicPayload()));
@@ -230,6 +238,11 @@ wss.on("connection", (ws) => {
 
       if (msg.type === "observer" && typeof msg.lat === "number") {
         state.setObserver(msg.lat, msg.lon, msg.elevM);
+      }
+
+      if (msg.type === "tle-sources" && Array.isArray(msg.sources)) {
+        const next = tle.setTleSources(msg.sources);
+        broadcast({ type: "tle-sources", sources: next });
       }
 
       if (msg.type === "favorites" && Array.isArray(msg.keys)) {

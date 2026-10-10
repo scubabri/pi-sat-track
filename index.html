@@ -17,7 +17,7 @@
     <link rel="stylesheet" href="css/layout.css" />
     <link rel="stylesheet" href="css/sidebar.css" />
     <link rel="stylesheet" href="css/lock.css" />
-    <link rel="stylesheet" href="css/fine-ctcss.css"
+    <link rel="stylesheet" href="css/fine-ctcss.css" />
     <link rel="stylesheet" href="css/connection-test.css" />
   </head>
   <body>
@@ -67,6 +67,7 @@
       <div id="top-controls">
         <button class="btn" id="btn-radio">Radio</button>
         <button class="btn" id="btn-antenna">Antenna</button>
+        <button class="btn" id="btn-log" title="Server log (live)">Log</button>
 
         <div id="config-wrapper">
           <button class="btn btn-icon" id="btn-config" title="Configuration">
@@ -321,14 +322,13 @@
                   />
                 </div>
               </div>
-</div>
+            </div>
 
-            
-              <div class="form-row">
-                <button type="button" class="btn-test" id="btn-test-radio-ul">
-                  Test UL
-                </button>
-              </div>
+            <div class="form-row">
+              <button type="button" class="btn-test" id="btn-test-radio-ul">
+                Test UL
+              </button>
+            </div>
 
             <div class="form-section" id="cfg-dl-section">
               <div class="form-section-title">Radio DL (RX)</div>
@@ -595,15 +595,55 @@
                     180° elevation
                   </label>
                 </div>
+              </div>
+
+              <div class="form-row" id="cfg-rotor-az-stop-wrap">
+                <label>AZ mechanical stop</label>
+                <div class="cfg-radio-row">
+                  <label class="cfg-check-label" for="cfg-rotor-az-stop-n">
+                    <input
+                      type="radio"
+                      name="cfg-rotor-az-stop"
+                      id="cfg-rotor-az-stop-n"
+                      value="north"
+                      checked
+                    />
+                    North (0°)
+                  </label>
+                  <label class="cfg-check-label" for="cfg-rotor-az-stop-s">
+                    <input
+                      type="radio"
+                      name="cfg-rotor-az-stop"
+                      id="cfg-rotor-az-stop-s"
+                      value="south"
+                    />
+                    South (180°)
+                  </label>
+                </div>
+                <p class="form-hint">
+                  Never drive across this stop — tracking and rotator test go
+                  the long way instead.
+                </p>
+              </div>
+
               <div class="form-row">
                 <button type="button" class="btn-test" id="btn-test-rotor">
-                  Test rotor
+                  Test rotator
                 </button>
               </div>
 
-              </div>
-
-              <div class="form-row-2">
+              <div class="form-row-3">
+                <div>
+                  <label for="cfg-rotor-min-el">Min elevation °</label>
+                  <input
+                    type="number"
+                    id="cfg-rotor-min-el"
+                    placeholder="0"
+                    min="0"
+                    max="90"
+                    step="0.5"
+                  />
+                </div>
                 <div>
                   <label for="cfg-rotor-park-az">Park AZ °</label>
                   <input
@@ -627,6 +667,10 @@
                   />
                 </div>
               </div>
+              <p class="form-hint">
+                Min EL applies to tracking and pass AOS/LOS. After LOS, hold
+                min-EL az; Antenna on → preposition 5 min before next AOS.
+              </p>
               <p class="form-hint" id="cfg-rotor-hint"></p>
             </div>
 
@@ -927,6 +971,24 @@
           <div class="status-item">
             <span class="label">Catalog</span><span id="status-catalog">-</span>
           </div>
+          <div
+            class="tle-sources"
+            id="tle-sources"
+            title="TLE / GP data sources (try order = left to right)"
+          >
+            <label class="tle-src">
+              <input type="checkbox" data-tle-src="celestrak" checked />
+              Celestrak
+            </label>
+            <label class="tle-src">
+              <input type="checkbox" data-tle-src="amsat" checked />
+              AMSAT
+            </label>
+            <label class="tle-src">
+              <input type="checkbox" data-tle-src="satnogs" checked />
+              SatNOGS
+            </label>
+          </div>
         </section>
       </aside>
     </div>
@@ -955,6 +1017,7 @@
     <script src="js/lock-ui.js"></script>
     <script src="js/fine-ctcss.js"></script>
     <script src="js/ul-fixed.js"></script>
+    <script src="js/log-viewer.js"></script>
     <script src="js/app.js"></script>
   </body>
 </html>
