@@ -94,6 +94,9 @@ function sendEndpointsToServer(cfg) {
       rotorParkAz: cfg.rotorParkAz,
       rotorParkEl: cfg.rotorParkEl,
       rotorElMax: cfg.rotorElMax != null ? cfg.rotorElMax : 180,
+      rotorMinEl: cfg.rotorMinEl != null ? cfg.rotorMinEl : 0,
+      rotorAzOnly: !!cfg.rotorAzOnly,
+      rotorAzStop: cfg.rotorAzStop || "north",
     }),
   );
 }
