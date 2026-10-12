@@ -777,6 +777,49 @@
               </div>
             </div>
 
+            <div class="form-section" id="cfg-wsjtx-section">
+              <div class="form-section-title">WSJT-X listener</div>
+              <div class="form-row">
+                <label class="cfg-check-label" for="cfg-wsjtx-listen">
+                  <input type="checkbox" id="cfg-wsjtx-listen" />
+                  Receive WSJT-X logged QSOs, add satellite info, re-send
+                </label>
+              </div>
+              <div id="cfg-wsjtx-block" hidden>
+                <div class="form-row-2">
+                  <div>
+                    <label for="cfg-wsjtx-listen-bind">Bind address</label>
+                    <input
+                      type="text"
+                      id="cfg-wsjtx-listen-bind"
+                      placeholder="0.0.0.0"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                  </div>
+                  <div>
+                    <label for="cfg-wsjtx-listen-port">Listen port</label>
+                    <input
+                      type="number"
+                      id="cfg-wsjtx-listen-port"
+                      placeholder="2237"
+                      min="1"
+                      max="65535"
+                      step="1"
+                    />
+                  </div>
+                </div>
+                <p class="form-hint">
+                  In WSJT-X Settings &gt; Reporting set UDP Server to this Pi's IP
+                  and this port. QSOs are re-sent with PROP_MODE=SAT, SAT_NAME and
+                  tracker UL/DL frequencies through the Logging output above
+                  (only while the selected sat is up; otherwise unchanged).
+                </p>
+              </div>
+              <p class="form-hint wsjtx-status" id="cfg-wsjtx-status">Listener off</p>
+              <p class="form-hint wsjtx-warning" id="cfg-wsjtx-warning" hidden></p>
+            </div>
+
             <div id="config-actions">
               <button class="btn active" id="btn-save-config">Save</button>
             </div>

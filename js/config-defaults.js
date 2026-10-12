@@ -186,6 +186,10 @@ function defaultsEndpoints() {
     // multicast only (224.0.0.0-239.255.255.255)
     logUdpTtl: 1,
     logUdpIface: "", // "" = Auto (OS chooses)
+    // WSJT-X listener: receive WSJT-X log messages, add sat info, re-send
+    wsjtxListen: false,
+    wsjtxListenPort: 2237,
+    wsjtxListenBind: "0.0.0.0",
   };
 }
 

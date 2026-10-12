@@ -79,3 +79,14 @@
 .qso-log-status.err {
   color: var(--red);
 }
+
+/* Config: WSJT-X listener status */
+#config-panel .wsjtx-status.ok {
+  color: var(--green);
+}
+#config-panel .wsjtx-status.err {
+  color: var(--red);
+}
+#config-panel .wsjtx-warning {
+  color: var(--yellow);
+}

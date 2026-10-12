@@ -569,7 +569,58 @@ function readFormConfig() {
       return Number.isFinite(t) && t >= 0 && t <= 255 ? t : 1;
     })(),
     logUdpIface: val("cfg-log-udp-iface") || "",
+    wsjtxListen: (function () {
+      const el = document.getElementById("cfg-wsjtx-listen");
+      return !!(el && el.checked);
+    })(),
+    wsjtxListenPort: (function () {
+      const p = parseInt(val("cfg-wsjtx-listen-port"), 10);
+      return p > 0 && p < 65536 ? p : 2237;
+    })(),
+    wsjtxListenBind: (function () {
+      const b = val("cfg-wsjtx-listen-bind").trim();
+      return /^\d{1,3}(\.\d{1,3}){3}$/.test(b) ? b : "0.0.0.0";
+    })(),
   };
+}
+
+/** Last wsjtx-listener status from the server. */
+let WSJTX_LISTENER_STATUS = null;
+
+function applyWsjtxListenerStatus(msg) {
+  if (!msg || msg.type !== "wsjtx-listener") return;
+  WSJTX_LISTENER_STATUS = msg;
+  const el = document.getElementById("cfg-wsjtx-status");
+  const warnEl = document.getElementById("cfg-wsjtx-warning");
+  if (el) {
+    let text = "";
+    let cls = "";
+    if (msg.state === "listening") {
+      text =
+        "Listening on " +
+        (msg.bind || "0.0.0.0") +
+        ":" +
+        msg.port +
+        " \u00b7 " +
+        (msg.forwarded || 0) +
+        " forwarded" +
+        (msg.lastClient ? " \u00b7 last from " + msg.lastClient : "");
+      cls = "ok";
+    } else if (msg.state === "error") {
+      text = msg.error || "Listener error";
+      cls = "err";
+    } else if (msg.state === "starting") {
+      text = "Starting\u2026";
+    } else {
+      text = "Listener off";
+    }
+    el.textContent = text;
+    el.className = "form-hint wsjtx-status " + cls;
+  }
+  if (warnEl) {
+    warnEl.textContent = msg.warning || "";
+    warnEl.hidden = !msg.warning;
+  }
 }
 
 /** IPv4 multicast 224.0.0.0 - 239.255.255.255 */
@@ -623,6 +674,9 @@ function updateLogFormVisibility() {
   if (adif) adif.hidden = m !== "adif";
   if (udp) udp.hidden = m !== "udp";
   if (mc) mc.hidden = m !== "udp" || !isMulticastIPv4(val("cfg-log-udp-host"));
+  const wl = document.getElementById("cfg-wsjtx-listen");
+  const wb = document.getElementById("cfg-wsjtx-block");
+  if (wb) wb.hidden = !(wl && wl.checked);
 }
 
 function fillForm(cfg) {
@@ -685,5 +739,9 @@ function fillForm(cfg) {
   setVal("cfg-log-udp-format", d.logUdpFormat || "wsjtx");
   setVal("cfg-log-udp-ttl", d.logUdpTtl != null ? d.logUdpTtl : 1);
   populateLogIfaceSelect(d.logUdpIface || "");
+  const wl = document.getElementById("cfg-wsjtx-listen");
+  if (wl) wl.checked = !!d.wsjtxListen;
+  setVal("cfg-wsjtx-listen-port", d.wsjtxListenPort != null ? d.wsjtxListenPort : 2237);
+  setVal("cfg-wsjtx-listen-bind", d.wsjtxListenBind || "0.0.0.0");
   updateLogFormVisibility();
 }

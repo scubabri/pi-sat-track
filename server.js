@@ -29,6 +29,7 @@ const platform = require("./lib/platform");
 const profiles = require("./lib/profiles");
 const connectionTest = require("./lib/connection-test");
 const logbook = require("./lib/logbook");
+const wsjtxListener = require("./lib/wsjtx-listener");
 
 /** WebSocket server; set after createServer. broadcast() is safe before that. */
 let wss = null;
@@ -45,6 +46,97 @@ state.init({ broadcast });
 logHub.setBroadcast(broadcast);
 logHub.init({ broadcast });
 
+/** Current logging output settings (from lib/config). */
+function logOutputCfg() {
+  return {
+    method: config.LOG_METHOD,
+    adifPath: config.LOG_ADIF_PATH,
+    udpHost: config.LOG_UDP_HOST,
+    udpPort: config.LOG_UDP_PORT,
+    udpFormat: config.LOG_UDP_FORMAT,
+    udpTtl: config.LOG_UDP_TTL,
+    udpIface: config.LOG_UDP_IFACE,
+  };
+}
+
+function stationFromProfile(fallback) {
+  const prof = profiles.getActive() || {};
+  const pcfg = prof.config || {};
+  const fb = fallback || {};
+  return {
+    callsign: pcfg.callsign || fb.callsign || "",
+    grid: pcfg.grid || fb.grid || "",
+  };
+}
+
+/** WSJT-X listener: enrich with sat info and re-send via the logging output. */
+const wsjtx = wsjtxListener.createListener({
+  onQso: (q) => {
+    const ctx = state.getLogContext();
+    const e = wsjtxListener.enrichRecord(q.fields, ctx, stationFromProfile());
+    const rec = {
+      fields: e.fields,
+      txHz: e.txHz,
+      rxHz: e.rxHz,
+      time: new Date(),
+      warnings: e.warnings.concat(e.note ? [e.note] : []),
+      lotwAccepted: e.lotwAccepted,
+    };
+    logbook
+      .outputRecord(rec, logOutputCfg())
+      .then((r) => {
+        const out = Object.assign(
+          {
+            type: "log-result",
+            source: "wsjtx",
+            wsjtxClient: q.clientId,
+            wsjtxMessage: q.source,
+            enriched: e.enriched,
+          },
+          r,
+        );
+        console.log(
+          "WSJT-X QSO",
+          q.fields.CALL,
+          "from",
+          q.clientId,
+          q.source,
+          e.enriched ? "+ " + e.fields.SAT_NAME : "(pass-through)",
+          r.ok ? "-> " + r.method + " " + r.target : "FAILED: " + r.error,
+          rec.warnings.length ? rec.warnings.join("; ") : "",
+        );
+        broadcast(out);
+        broadcastWsjtxStatus(); // refresh forwarded count in config
+      })
+      .catch((err) => console.warn("WSJT-X forward:", err.message));
+  },
+  onStatus: () => broadcastWsjtxStatus(),
+});
+
+function wsjtxStatusPayload() {
+  const st = wsjtx.getStatus();
+  return Object.assign({ type: "wsjtx-listener" }, st, {
+    enabled: config.WSJTX_LISTEN,
+    warning: wsjtxListener.outputLoopWarning(
+      { enabled: config.WSJTX_LISTEN, port: config.WSJTX_LISTEN_PORT },
+      logOutputCfg(),
+    ),
+  });
+}
+
+function broadcastWsjtxStatus() {
+  broadcast(wsjtxStatusPayload());
+}
+
+function applyWsjtxListener() {
+  wsjtx.configure({
+    enabled: config.WSJTX_LISTEN,
+    port: config.WSJTX_LISTEN_PORT,
+    bind: config.WSJTX_LISTEN_BIND,
+  });
+  broadcastWsjtxStatus();
+}
+
 function applyProfileToRuntime(prof) {
   if (!prof) return;
   state.setFavorites(Array.isArray(prof.favorites) ? prof.favorites : []);
@@ -54,6 +146,7 @@ function applyProfileToRuntime(prof) {
     radios.applyEndpointChange(flags);
     if (flags.rotorChanged) rotor.applyEndpointChange();
   }
+  applyWsjtxListener();
 }
 
 function broadcastProfiles() {
@@ -225,6 +318,7 @@ wss.on("connection", (ws) => {
     }),
   );
   ws.send(JSON.stringify(profiles.publicPayload()));
+  ws.send(JSON.stringify(wsjtxStatusPayload()));
   radios.broadcastAllStatus();
   rotor.broadcastStatus();
 
@@ -381,6 +475,9 @@ wss.on("connection", (ws) => {
           logUdpFormat: msg.logUdpFormat,
           logUdpTtl: msg.logUdpTtl,
           logUdpIface: msg.logUdpIface,
+          wsjtxListen: !!msg.wsjtxListen,
+          wsjtxListenPort: msg.wsjtxListenPort,
+          wsjtxListenBind: msg.wsjtxListenBind,
         };
         const flags = config.applyEndpoints(ep);
         console.log("Endpoints updated", config.getEndpoints());
@@ -389,6 +486,7 @@ wss.on("connection", (ws) => {
 
         radios.applyEndpointChange(flags);
         if (flags.rotorChanged) rotor.applyEndpointChange();
+        applyWsjtxListener();
 
         const cfgPatch = Object.assign({}, ep);
         if (typeof msg.callsign === "string") cfgPatch.callsign = msg.callsign;
@@ -406,26 +504,16 @@ wss.on("connection", (ws) => {
       }
 
       if (msg.type === "log-qso") {
-        const prof = profiles.getActive() || {};
-        const pcfg = prof.config || {};
-        const station = {
-          callsign: pcfg.callsign || msg.stationCallsign || "",
-          grid: pcfg.grid || msg.stationGrid || "",
-        };
+        const station = stationFromProfile({
+          callsign: msg.stationCallsign,
+          grid: msg.stationGrid,
+        });
         logbook
           .logQso({
             call: msg.call,
             ctx: state.getLogContext(),
             station,
-            cfg: {
-              method: config.LOG_METHOD,
-              adifPath: config.LOG_ADIF_PATH,
-              udpHost: config.LOG_UDP_HOST,
-              udpPort: config.LOG_UDP_PORT,
-              udpFormat: config.LOG_UDP_FORMAT,
-              udpTtl: config.LOG_UDP_TTL,
-              udpIface: config.LOG_UDP_IFACE,
-            },
+            cfg: logOutputCfg(),
           })
           .then((r) => {
             if (r.ok) {
@@ -684,6 +772,7 @@ wss.on("connection", (ws) => {
           const flags = config.applyEndpoints(patch.config);
           radios.applyEndpointChange(flags);
           if (flags.rotorChanged) rotor.applyEndpointChange();
+          applyWsjtxListener();
         }
         if (Array.isArray(patch.favorites)) {
           state.setFavorites(patch.favorites);

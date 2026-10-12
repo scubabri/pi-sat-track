@@ -82,8 +82,37 @@
     }, 6000);
   }
 
+  function applyWsjtxResult(msg) {
+    const r = msg.record || {};
+    const warn =
+      Array.isArray(msg.warnings) && msg.warnings.length
+        ? msg.warnings.join("; ")
+        : "";
+    if (msg.ok) {
+      let text =
+        "Logged " +
+        (r.call || "") +
+        (r.satName ? " \u00b7 " + r.satName : "") +
+        " " +
+        (r.mode || "") +
+        " (from WSJT-X)";
+      if (warn) text += " \u2014 \u26a0 " + warn;
+      setStatus(text, warn ? "warn" : "ok", warn ? 10000 : 6000);
+    } else {
+      setStatus(
+        "WSJT-X " + (r.call || "QSO") + ": " + (msg.error || "forward failed"),
+        "err",
+        10000,
+      );
+    }
+  }
+
   function applyResult(msg) {
     if (!msg || msg.type !== "log-result") return;
+    if (msg.source === "wsjtx") {
+      applyWsjtxResult(msg);
+      return;
+    }
     if (msg.reqId && pendingReq && msg.reqId !== pendingReq) return;
     pendingReq = null;
     if (pendingTimer) clearTimeout(pendingTimer);
@@ -117,6 +146,16 @@
     }
   }
 
+  let lastListenerState = "";
+  /** Surface WSJT-X listener errors (e.g. port in use) once in the sidebar. */
+  function applyListenerState(msg) {
+    const stt = msg && msg.state;
+    if (stt === "error" && lastListenerState !== "error") {
+      setStatus("WSJT-X listener: " + (msg.error || "error"), "err", 10000);
+    }
+    lastListenerState = stt || "";
+  }
+
   window.applyQsoLogResult = applyResult;
 
   function patchWs() {
@@ -128,6 +167,7 @@
       try {
         const msg = JSON.parse(ev.data);
         if (msg.type === "log-result") applyResult(msg);
+        if (msg.type === "wsjtx-listener") applyListenerState(msg);
       } catch (_) {}
     };
     ws.__qsoLogPatched = true;

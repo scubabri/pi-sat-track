@@ -455,6 +455,12 @@ function connectTracker() {
         return;
       }
 
+      if (msg.type === "wsjtx-listener") {
+        if (typeof applyWsjtxListenerStatus === "function")
+          applyWsjtxListenerStatus(msg);
+        return;
+      }
+
       if (msg.type === "error") {
         console.warn("Server error:", msg.message);
         return;
