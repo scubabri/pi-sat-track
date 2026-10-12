@@ -28,6 +28,7 @@ const config = require("./lib/config");
 const platform = require("./lib/platform");
 const profiles = require("./lib/profiles");
 const connectionTest = require("./lib/connection-test");
+const logbook = require("./lib/logbook");
 
 /** WebSocket server; set after createServer. broadcast() is safe before that. */
 let wss = null;
@@ -373,6 +374,11 @@ wss.on("connection", (ws) => {
           rotorAzOnly: !!msg.rotorAzOnly,
           rotorMinEl: msg.rotorMinEl,
           rotorAzStop: msg.rotorAzStop,
+          logMethod: msg.logMethod,
+          logAdifPath: msg.logAdifPath,
+          logUdpHost: msg.logUdpHost,
+          logUdpPort: msg.logUdpPort,
+          logUdpFormat: msg.logUdpFormat,
         };
         const flags = config.applyEndpoints(ep);
         console.log("Endpoints updated", config.getEndpoints());
@@ -395,6 +401,61 @@ wss.on("connection", (ws) => {
           ...config.getEndpoints(),
           rotorCatalog: rotors.catalog(),
         });
+      }
+
+      if (msg.type === "log-qso") {
+        const prof = profiles.getActive() || {};
+        const pcfg = prof.config || {};
+        const station = {
+          callsign: pcfg.callsign || msg.stationCallsign || "",
+          grid: pcfg.grid || msg.stationGrid || "",
+        };
+        logbook
+          .logQso({
+            call: msg.call,
+            ctx: state.getLogContext(),
+            station,
+            cfg: {
+              method: config.LOG_METHOD,
+              adifPath: config.LOG_ADIF_PATH,
+              udpHost: config.LOG_UDP_HOST,
+              udpPort: config.LOG_UDP_PORT,
+              udpFormat: config.LOG_UDP_FORMAT,
+            },
+          })
+          .then((r) => {
+            if (r.ok) {
+              console.log(
+                "QSO logged",
+                r.record.call,
+                r.record.satName,
+                r.record.mode,
+                r.record.freq,
+                "->",
+                r.method,
+                r.target,
+                r.warnings && r.warnings.length ? r.warnings.join("; ") : "",
+              );
+            } else {
+              console.warn("QSO log failed:", r.error);
+            }
+            ws.send(
+              JSON.stringify(
+                Object.assign({ type: "log-result", reqId: msg.reqId || null }, r),
+              ),
+            );
+          })
+          .catch((e) => {
+            ws.send(
+              JSON.stringify({
+                type: "log-result",
+                reqId: msg.reqId || null,
+                ok: false,
+                error: e.message || "Log error",
+              }),
+            );
+          });
+        return;
       }
 
       if (msg.type === "test-rotor-step") {

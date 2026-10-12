@@ -16,6 +16,7 @@
     <link rel="stylesheet" href="css/pass-panel.css" />
     <link rel="stylesheet" href="css/layout.css" />
     <link rel="stylesheet" href="css/sidebar.css" />
+    <link rel="stylesheet" href="css/qso-log.css" />
     <link rel="stylesheet" href="css/lock.css" />
     <link rel="stylesheet" href="css/fine-ctcss.css" />
     <link rel="stylesheet" href="css/connection-test.css" />
@@ -674,6 +675,79 @@
               <p class="form-hint" id="cfg-rotor-hint"></p>
             </div>
 
+            <div class="form-section" id="cfg-log-section">
+              <div class="form-section-title">Logging</div>
+
+              <div class="form-row">
+                <label for="cfg-log-method">Log QSOs to</label>
+                <select id="cfg-log-method" class="cfg-select">
+                  <option value="off">Off</option>
+                  <option value="adif">ADIF file (on this server)</option>
+                  <option value="udp">UDP (WSJT-X protocol)</option>
+                </select>
+              </div>
+
+              <div id="cfg-log-adif-block" hidden>
+                <div class="form-row">
+                  <label for="cfg-log-adif-path">ADIF file path</label>
+                  <input
+                    type="text"
+                    id="cfg-log-adif-path"
+                    placeholder="~/.rpitrack/pi-sat-track.adi"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                </div>
+                <p class="form-hint">
+                  Records are appended; header is written when the file is
+                  new. ~ = home of the user running pi-sat-track.
+                </p>
+              </div>
+
+              <div id="cfg-log-udp-block" hidden>
+                <div class="form-row-2">
+                  <div>
+                    <label for="cfg-log-udp-host">IP address</label>
+                    <input
+                      type="text"
+                      id="cfg-log-udp-host"
+                      placeholder="127.0.0.1"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                  </div>
+                  <div>
+                    <label for="cfg-log-udp-port">Port</label>
+                    <input
+                      type="number"
+                      id="cfg-log-udp-port"
+                      placeholder="2237"
+                      min="1"
+                      max="65535"
+                      step="1"
+                    />
+                  </div>
+                </div>
+                <div class="form-row">
+                  <label for="cfg-log-udp-format">Message</label>
+                  <select id="cfg-log-udp-format" class="cfg-select">
+                    <option value="wsjtx">
+                      WSJT-X: QSO Logged (5) + Logged ADIF (12)
+                    </option>
+                    <option value="wsjtx12">WSJT-X: Logged ADIF (12) only</option>
+                    <option value="wsjtx5">WSJT-X: QSO Logged (5) only</option>
+                    <option value="adif">Plain ADIF text (ADIF UDP)</option>
+                  </select>
+                </div>
+                <p class="form-hint">
+                  GridTracker2 / Log4OM 2 listen on 2237 (WSJT-X). In Log4OM
+                  enable "Import QSO from JT Message #12" so SAT_NAME comes
+                  through. Plain ADIF: Log4OM ADIF inbound (2333) or
+                  GridTracker2 "Receive ADIF UDP Broadcasts".
+                </p>
+              </div>
+            </div>
+
             <div id="config-actions">
               <button class="btn active" id="btn-save-config">Save</button>
             </div>
@@ -768,6 +842,24 @@
       </div>
 
       <aside id="sidebar">
+        <section class="panel-section qso-log-section">
+          <form id="qso-log-form" class="qso-log-row" autocomplete="off">
+            <input
+              type="text"
+              id="qso-log-call"
+              class="qso-log-call"
+              placeholder="Callsign"
+              maxlength="20"
+              spellcheck="false"
+              autocapitalize="characters"
+              aria-label="Callsign to log"
+            />
+            <button type="submit" id="btn-qso-log" class="btn-qso-log">
+              Log
+            </button>
+          </form>
+          <div id="qso-log-status" class="qso-log-status" aria-live="polite"></div>
+        </section>
         <section class="panel-section">
           <h3>Frequencies</h3>
           <div class="freq-block">
@@ -1017,6 +1109,7 @@
     <script src="js/lock-ui.js"></script>
     <script src="js/fine-ctcss.js"></script>
     <script src="js/ul-fixed.js"></script>
+    <script src="js/qso-log.js"></script>
     <script src="js/log-viewer.js"></script>
     <script src="js/app.js"></script>
   </body>

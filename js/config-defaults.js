@@ -177,6 +177,12 @@ function defaultsEndpoints() {
     rotorElMax: 180,
     rotorAzOnly: false,
     rotorAzStop: "north",
+    // QSO logging (method: off | adif | udp)
+    logMethod: "off",
+    logAdifPath: "~/.rpitrack/pi-sat-track.adi",
+    logUdpHost: "127.0.0.1",
+    logUdpPort: 2237,
+    logUdpFormat: "wsjtx",
   };
 }
 

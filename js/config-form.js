@@ -549,7 +549,28 @@ function readFormConfig() {
       if (s && s.checked) return "south";
       return "north";
     })(),
+    logMethod: (function () {
+      const m = val("cfg-log-method") || "off";
+      return ["off", "adif", "udp"].indexOf(m) >= 0 ? m : "off";
+    })(),
+    logAdifPath:
+      val("cfg-log-adif-path").trim() || "~/.rpitrack/pi-sat-track.adi",
+    logUdpHost: val("cfg-log-udp-host").trim() || "127.0.0.1",
+    logUdpPort: (function () {
+      const p = parseInt(val("cfg-log-udp-port"), 10);
+      return p > 0 && p < 65536 ? p : 2237;
+    })(),
+    logUdpFormat: val("cfg-log-udp-format") || "wsjtx",
   };
+}
+
+/** Show ADIF path or UDP fields depending on the logging method. */
+function updateLogFormVisibility() {
+  const m = val("cfg-log-method") || "off";
+  const adif = document.getElementById("cfg-log-adif-block");
+  const udp = document.getElementById("cfg-log-udp-block");
+  if (adif) adif.hidden = m !== "adif";
+  if (udp) udp.hidden = m !== "udp";
 }
 
 function fillForm(cfg) {
@@ -605,4 +626,10 @@ function fillForm(cfg) {
   if (stopN) stopN.checked = stop === "north";
   if (stopS) stopS.checked = stop === "south";
   updateRotorFormVisibility();
+  setVal("cfg-log-method", d.logMethod || "off");
+  setVal("cfg-log-adif-path", d.logAdifPath || "~/.rpitrack/pi-sat-track.adi");
+  setVal("cfg-log-udp-host", d.logUdpHost || "127.0.0.1");
+  setVal("cfg-log-udp-port", d.logUdpPort != null ? d.logUdpPort : 2237);
+  setVal("cfg-log-udp-format", d.logUdpFormat || "wsjtx");
+  updateLogFormVisibility();
 }
