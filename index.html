@@ -813,7 +813,8 @@
                   In WSJT-X Settings &gt; Reporting set UDP Server to this Pi's IP
                   and this port. QSOs are re-sent with PROP_MODE=SAT, SAT_NAME and
                   tracker UL/DL frequencies through the Logging output above
-                  (only while the selected sat is up; otherwise unchanged).
+                  (only while the selected sat is up; otherwise unchanged). The listener
+                  only runs while both Radio and Antenna are on.
                 </p>
               </div>
               <p class="form-hint wsjtx-status" id="cfg-wsjtx-status">Listener off</p>
@@ -931,6 +932,7 @@
             </button>
           </form>
           <div id="qso-log-status" class="qso-log-status" aria-live="polite"></div>
+          <div id="qso-wsjtx-state" class="qso-wsjtx-state" hidden></div>
         </section>
         <section class="panel-section">
           <h3>Frequencies</h3>

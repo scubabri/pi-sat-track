@@ -90,3 +90,22 @@
 #config-panel .wsjtx-warning {
   color: var(--yellow);
 }
+#config-panel .wsjtx-status.warn {
+  color: var(--yellow);
+}
+
+/* Sidebar: persistent WSJT-X listener state */
+.qso-wsjtx-state {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim, #8b93a7);
+}
+.qso-wsjtx-state.ok {
+  color: var(--green);
+}
+.qso-wsjtx-state.warn {
+  color: var(--yellow);
+}
+.qso-wsjtx-state.err {
+  color: var(--red);
+}

@@ -128,7 +128,42 @@ function broadcastWsjtxStatus() {
   broadcast(wsjtxStatusPayload());
 }
 
+/** Gate: the listener only runs while Radio AND Antenna are both on. */
+function wsjtxGateState() {
+  let radioOn = false;
+  let antennaOn = false;
+  try {
+    const rs = radios.active().getRadioState();
+    radioOn = !!(rs && rs.radioOn);
+  } catch (_) {}
+  try {
+    const r = rotor.getRotorState();
+    antennaOn = !!(r && r.antennaOn);
+  } catch (_) {}
+  return { radioOn, antennaOn };
+}
+
+function syncWsjtxGate() {
+  const g = wsjtxGateState();
+  const missing = [];
+  if (!g.radioOn) missing.push("Radio");
+  if (!g.antennaOn) missing.push("Antenna");
+  const reason =
+    (missing.length === 2 ? "Radio and Antenna" : missing[0] || "Radio and Antenna") +
+    " must be on";
+  if (wsjtx.setGate(g.radioOn && g.antennaOn, reason)) {
+    console.log(
+      "WSJT-X listener gate " +
+        (g.radioOn && g.antennaOn ? "open" : "closed (" + reason + ")"),
+    );
+  }
+}
+// Radio/antenna state can also change inside drivers (errors, endpoint
+// changes), so poll cheaply in addition to the explicit hooks below.
+setInterval(syncWsjtxGate, 500).unref();
+
 function applyWsjtxListener() {
+  syncWsjtxGate();
   wsjtx.configure({
     enabled: config.WSJTX_LISTEN,
     port: config.WSJTX_LISTEN_PORT,
@@ -374,6 +409,7 @@ wss.on("connection", (ws) => {
 
       if (msg.type === "radio") {
         radios.setRadio(!!msg.on);
+        syncWsjtxGate();
       }
 
       if (msg.type === "lock") {
@@ -387,6 +423,7 @@ wss.on("connection", (ws) => {
 
       if (msg.type === "antenna") {
         rotor.setAntenna(!!msg.on);
+        syncWsjtxGate();
       }
 
       if (msg.type === "park") {

@@ -150,6 +150,26 @@
   /** Surface WSJT-X listener errors (e.g. port in use) once in the sidebar. */
   function applyListenerState(msg) {
     const stt = msg && msg.state;
+    const el = document.getElementById("qso-wsjtx-state");
+    if (el) {
+      let text = "";
+      let cls = "";
+      if (stt === "listening") {
+        text = "WSJT-X: Listening on " + (msg.bind || "0.0.0.0") + ":" + msg.port;
+        cls = "ok";
+      } else if (stt === "paused") {
+        text = "WSJT-X: " + (msg.message || "Paused \u2014 Radio and Antenna must be on");
+        cls = "warn";
+      } else if (stt === "error") {
+        text = "WSJT-X: " + (msg.error || "error");
+        cls = "err";
+      } else if (stt === "starting") {
+        text = "WSJT-X: starting\u2026";
+      }
+      el.textContent = text;
+      el.className = "qso-wsjtx-state" + (cls ? " " + cls : "");
+      el.hidden = !text;
+    }
     if (stt === "error" && lastListenerState !== "error") {
       setStatus("WSJT-X listener: " + (msg.error || "error"), "err", 10000);
     }

@@ -609,6 +609,9 @@ function applyWsjtxListenerStatus(msg) {
     } else if (msg.state === "error") {
       text = msg.error || "Listener error";
       cls = "err";
+    } else if (msg.state === "paused") {
+      text = msg.message || "Paused \u2014 Radio and Antenna must be on";
+      cls = "warn";
     } else if (msg.state === "starting") {
       text = "Starting\u2026";
     } else {
