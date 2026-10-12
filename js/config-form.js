@@ -608,7 +608,7 @@ function populateLogIfaceSelect(preferred) {
   HOST_IPV4_INTERFACES.forEach((x) => {
     if (seen[x.address]) return;
     seen[x.address] = true;
-    add(x.address, x.name + " \u2014 " + x.address + (x.internal ? " (loopback)" : ""));
+    add(x.address, x.address + " (" + x.name + ")");
   });
   if (want && !seen[want]) add(want, want + " (not present)");
   el.value = want;
