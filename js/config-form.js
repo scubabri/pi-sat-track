@@ -257,6 +257,9 @@ function refreshHostSerialDevices() {
   return fetch("/api/host", { cache: "no-store" })
     .then((r) => (r.ok ? r.json() : null))
     .then((data) => {
+      if (data && Array.isArray(data.ipv4Interfaces)) {
+        setHostIPv4Interfaces(data.ipv4Interfaces);
+      }
       if (data && Array.isArray(data.serialDevices)) {
         setHostSerialDevices(
           data.serialDevices,
@@ -561,7 +564,54 @@ function readFormConfig() {
       return p > 0 && p < 65536 ? p : 2237;
     })(),
     logUdpFormat: val("cfg-log-udp-format") || "wsjtx",
+    logUdpTtl: (function () {
+      const t = parseInt(val("cfg-log-udp-ttl"), 10);
+      return Number.isFinite(t) && t >= 0 && t <= 255 ? t : 1;
+    })(),
+    logUdpIface: val("cfg-log-udp-iface") || "",
   };
+}
+
+/** IPv4 multicast 224.0.0.0 - 239.255.255.255 */
+function isMulticastIPv4(host) {
+  const m = String(host || "")
+    .trim()
+    .match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return false;
+  const a = parseInt(m[1], 10);
+  return a >= 224 && a <= 239;
+}
+
+/** Local IPv4 interfaces from server hostInfo().ipv4Interfaces */
+let HOST_IPV4_INTERFACES = [];
+
+function setHostIPv4Interfaces(list) {
+  if (!Array.isArray(list)) return;
+  HOST_IPV4_INTERFACES = list.filter((x) => x && x.address);
+  populateLogIfaceSelect();
+}
+
+/** Fill the multicast "Outgoing interface" select; keeps a saved address even if absent. */
+function populateLogIfaceSelect(preferred) {
+  const el = document.getElementById("cfg-log-udp-iface");
+  if (!el) return;
+  const want = preferred != null ? String(preferred) : el.value || "";
+  el.innerHTML = "";
+  const add = (value, label) => {
+    const o = document.createElement("option");
+    o.value = value;
+    o.textContent = label;
+    el.appendChild(o);
+  };
+  add("", "Auto (OS chooses)");
+  const seen = {};
+  HOST_IPV4_INTERFACES.forEach((x) => {
+    if (seen[x.address]) return;
+    seen[x.address] = true;
+    add(x.address, x.name + " \u2014 " + x.address + (x.internal ? " (loopback)" : ""));
+  });
+  if (want && !seen[want]) add(want, want + " (not present)");
+  el.value = want;
 }
 
 /** Show ADIF path or UDP fields depending on the logging method. */
@@ -569,8 +619,10 @@ function updateLogFormVisibility() {
   const m = val("cfg-log-method") || "off";
   const adif = document.getElementById("cfg-log-adif-block");
   const udp = document.getElementById("cfg-log-udp-block");
+  const mc = document.getElementById("cfg-log-mcast-block");
   if (adif) adif.hidden = m !== "adif";
   if (udp) udp.hidden = m !== "udp";
+  if (mc) mc.hidden = m !== "udp" || !isMulticastIPv4(val("cfg-log-udp-host"));
 }
 
 function fillForm(cfg) {
@@ -631,5 +683,7 @@ function fillForm(cfg) {
   setVal("cfg-log-udp-host", d.logUdpHost || "127.0.0.1");
   setVal("cfg-log-udp-port", d.logUdpPort != null ? d.logUdpPort : 2237);
   setVal("cfg-log-udp-format", d.logUdpFormat || "wsjtx");
+  setVal("cfg-log-udp-ttl", d.logUdpTtl != null ? d.logUdpTtl : 1);
+  populateLogIfaceSelect(d.logUdpIface || "");
   updateLogFormVisibility();
 }

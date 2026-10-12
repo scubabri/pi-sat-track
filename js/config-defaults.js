@@ -183,6 +183,9 @@ function defaultsEndpoints() {
     logUdpHost: "127.0.0.1",
     logUdpPort: 2237,
     logUdpFormat: "wsjtx",
+    // multicast only (224.0.0.0-239.255.255.255)
+    logUdpTtl: 1,
+    logUdpIface: "", // "" = Auto (OS chooses)
   };
 }
 

@@ -102,6 +102,8 @@ function sendEndpointsToServer(cfg) {
       logUdpHost: cfg.logUdpHost || "127.0.0.1",
       logUdpPort: cfg.logUdpPort != null ? cfg.logUdpPort : 2237,
       logUdpFormat: cfg.logUdpFormat || "wsjtx",
+      logUdpTtl: cfg.logUdpTtl != null ? cfg.logUdpTtl : 1,
+      logUdpIface: cfg.logUdpIface || "",
     }),
   );
 }
@@ -307,6 +309,10 @@ function initConfig() {
   const logMethodEl = document.getElementById("cfg-log-method");
   if (logMethodEl && typeof updateLogFormVisibility === "function") {
     logMethodEl.addEventListener("change", updateLogFormVisibility);
+  }
+  const logHostEl = document.getElementById("cfg-log-udp-host");
+  if (logHostEl && typeof updateLogFormVisibility === "function") {
+    logHostEl.addEventListener("input", updateLogFormVisibility);
   }
 
   const rotorTypeEl = document.getElementById("cfg-rotor-type");

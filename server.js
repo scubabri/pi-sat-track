@@ -379,6 +379,8 @@ wss.on("connection", (ws) => {
           logUdpHost: msg.logUdpHost,
           logUdpPort: msg.logUdpPort,
           logUdpFormat: msg.logUdpFormat,
+          logUdpTtl: msg.logUdpTtl,
+          logUdpIface: msg.logUdpIface,
         };
         const flags = config.applyEndpoints(ep);
         console.log("Endpoints updated", config.getEndpoints());
@@ -421,6 +423,8 @@ wss.on("connection", (ws) => {
               udpHost: config.LOG_UDP_HOST,
               udpPort: config.LOG_UDP_PORT,
               udpFormat: config.LOG_UDP_FORMAT,
+              udpTtl: config.LOG_UDP_TTL,
+              udpIface: config.LOG_UDP_IFACE,
             },
           })
           .then((r) => {

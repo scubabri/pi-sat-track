@@ -484,6 +484,11 @@ function connectTracker() {
       }
 
       if (msg.type === "host" || msg.type === "endpoints") {
+        const ifs =
+          msg.ipv4Interfaces || (msg.host && msg.host.ipv4Interfaces) || null;
+        if (Array.isArray(ifs) && typeof setHostIPv4Interfaces === "function") {
+          setHostIPv4Interfaces(ifs);
+        }
         if (
           Array.isArray(msg.tleSources) &&
           typeof applyTleSourceChecks === "function"
