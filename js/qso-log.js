@@ -155,16 +155,16 @@
       let text = "";
       let cls = "";
       if (stt === "listening") {
-        text = "WSJT-X: Listening on " + (msg.bind || "0.0.0.0") + ":" + msg.port;
+        text = "WSJT-X Logging: Listening on " + (msg.bind || "0.0.0.0") + ":" + msg.port;
         cls = "ok";
       } else if (stt === "paused") {
-        text = "WSJT-X: " + (msg.message || "Paused \u2014 Radio and Antenna must be on");
+        text = "WSJT-X Logging: " + (msg.message || "Paused \u2014 Radio and Antenna must be on");
         cls = "warn";
       } else if (stt === "error") {
-        text = "WSJT-X: " + (msg.error || "error");
+        text = "WSJT-X Logging: " + (msg.error || "error");
         cls = "err";
       } else if (stt === "starting") {
-        text = "WSJT-X: starting\u2026";
+        text = "WSJT-X Logging: starting\u2026";
       }
       el.textContent = text;
       el.className = "qso-wsjtx-state" + (cls ? " " + cls : "");
