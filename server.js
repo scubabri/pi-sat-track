@@ -2,6 +2,50 @@ const http = require("http");
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
+
+/** Build label: VERSION file (SFX stamp) → ~/.rpitrack/version → package.json + git sha. */
+function appVersion() {
+  const tryRead = (f) => {
+    try {
+      const v = fs.readFileSync(f, "utf8").trim();
+      return v || null;
+    } catch (_) {
+      return null;
+    }
+  };
+  let v =
+    tryRead(path.join(__dirname, "VERSION")) ||
+    tryRead(path.join(require("os").homedir(), ".rpitrack", "version"));
+  if (v) return v;
+  let pkg = "?";
+  try {
+    pkg = require("./package.json").version;
+  } catch (_) {}
+  try {
+    const sha = require("child_process")
+      .execSync("git rev-parse --short HEAD", { cwd: __dirname, stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
+    if (sha) return pkg + "+" + sha;
+  } catch (_) {}
+  return pkg;
+}
+const APP_VERSION = appVersion();
+console.log("Sat Tracker starting version " + APP_VERSION);
+
+let shuttingDown = false;
+function logShutdown(reason) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log("Sat Tracker shutting down (" + reason + ") version " + APP_VERSION);
+}
+for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) {
+  process.on(sig, () => {
+    logShutdown(sig);
+    setTimeout(() => process.exit(0), 200); // let log stream flush
+  });
+}
+process.on("exit", (code) => logShutdown("exit " + code));
 const { WebSocketServer } = require("ws");
 
 // Capture console as early as possible (before radio/rotor registration logs)
@@ -862,6 +906,7 @@ setInterval(() => {
   server.listen(PORT, "0.0.0.0", () => {
     const host = platform.hostInfo();
     console.log("Sat Tracker  http://127.0.0.1:" + PORT);
+    console.log("Version     " + APP_VERSION);
     console.log(
       "Host OS     " +
         host.platform +
