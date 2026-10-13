@@ -1,7 +1,7 @@
 /**
  * Open server log popup (log-viewer.html).
  * Wire from index.html: <script src="js/log-viewer.js"></script>
- * Button: <button class="btn" id="btn-log" title="Server log">Log</button>
+ * Button: <button class="btn" id="btn-log" title="Server log">Server Log</button>
  */
 (function () {
   let logWin = null;
