@@ -165,22 +165,21 @@
   background: rgba(6, 95, 70, 0.95);
 }
 
-/* Offset controls beside each frequency */
+/* Offset controls beside each frequency: grid so −/+ align with the
+   frequency and the offset aligns with the Doppler line. */
 .freq-block-split {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content max-content;
+  column-gap: 14px;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: start;
 }
-.freq-block-split .freq-main { min-width: 0; }
-.fine-row.freq-fine {
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-  margin: 0;
-  flex-shrink: 0;
-}
-.freq-fine .freq-fine-btns { display: flex; gap: 6px; }
-.freq-fine .fine-offset { min-width: 0; text-align: right; }
+.freq-block-split .freq-main,
+.freq-block-split .fine-row.freq-fine { display: contents; }
+.freq-block-split .freq-label { grid-column: 1 / -1; grid-row: 1; }
+.freq-block-split .freq-value { grid-column: 1; grid-row: 2; }
+.freq-block-split .freq-doppler { grid-column: 1; grid-row: 3; }
+.freq-block-split .freq-fine-btns { grid-column: 2; grid-row: 2; display: flex; gap: 6px; }
+.freq-block-split .fine-offset { grid-column: 2; grid-row: 3; min-width: 0; text-align: left; }
 .fine-tune-block { margin-top: 4px; }
 .fine-row .fine-side-step { width: auto; margin-right: 6px; }

@@ -293,13 +293,13 @@ function applyFreqAndLook(msg) {
 
   if (ulDopEl)
     ulDopEl.textContent =
-      ulDop != null ? "Doppler " + fmtDopplerMHz(ulDop) : "";
+      ulDop != null ? "Doppler " + fmtDopplerKHz(ulDop) : "";
   if (dlDopEl)
     dlDopEl.textContent =
-      dlDop != null ? "Doppler " + fmtDopplerMHz(dlDop) : "";
+      dlDop != null ? "Doppler " + fmtDopplerKHz(dlDop) : "";
 
-  if (ulEl && ulDop != null) ulEl.title = "Doppler " + fmtDopplerMHz(ulDop);
-  if (dlEl && dlDop != null) dlEl.title = "Doppler " + fmtDopplerMHz(dlDop);
+  if (ulEl && ulDop != null) ulEl.title = "Doppler " + fmtDopplerKHz(ulDop);
+  if (dlEl && dlDop != null) dlEl.title = "Doppler " + fmtDopplerKHz(dlDop);
 
   if (pbUl) pbUl.textContent = msg.passbandUl || "-";
   if (pbDl) pbDl.textContent = msg.passbandDl || "-";
@@ -839,3 +839,9 @@ if (document.readyState === "loading") {
 } else {
   initTrackerUi();
 }
+
+function fmtDopplerKHz(hz) {
+  const k = Number(hz) / 1000;
+  return (k >= 0 ? "+" : "") + k.toFixed(3) + " kHz";
+}
+
