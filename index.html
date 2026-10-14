@@ -20,6 +20,7 @@
     <link rel="stylesheet" href="css/lock.css" />
     <link rel="stylesheet" href="css/fine-ctcss.css" />
     <link rel="stylesheet" href="css/connection-test.css" />
+    <link rel="stylesheet" href="css/config-modal.css" />
   </head>
   <body>
     <header id="topbar">
@@ -75,9 +76,25 @@
             &#9881;
           </button>
 
-          <div id="config-panel">
-            <h3>Station Configuration</h3>
+        </div>
+      </div>
+    </header>
 
+    <div id="config-backdrop" hidden></div>
+    <div id="config-panel" role="dialog" aria-modal="true" aria-labelledby="config-title">
+      <div class="cfg-modal-head">
+        <h3 id="config-title">Station Configuration</h3>
+        <button type="button" class="btn btn-icon" id="btn-config-close" title="Close (Esc)" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="cfg-modal-body">
+          <nav class="cfg-tabs" role="tablist">
+            <button type="button" class="cfg-tab active" data-tab="station" role="tab">Station<span class="cfg-tab-dot" aria-hidden="true"></span></button>
+            <button type="button" class="cfg-tab" data-tab="radio" role="tab">Radio<span class="cfg-tab-dot" aria-hidden="true"></span></button>
+            <button type="button" class="cfg-tab" data-tab="rotor" role="tab">Rotor<span class="cfg-tab-dot" aria-hidden="true"></span></button>
+            <button type="button" class="cfg-tab" data-tab="logging" role="tab">Logging &amp; WSJT-X<span class="cfg-tab-dot" aria-hidden="true"></span></button>
+          </nav>
+          <div class="cfg-tab-content">
+            <section class="cfg-tab-pane" data-tab="station" role="tabpanel">
             <div class="form-row profile-row">
               <label for="cfg-profile">Profile</label>
               <div class="profile-controls">
@@ -142,11 +159,9 @@
               <input type="number" id="cfg-elev" placeholder="1324" step="1" />
             </div>
 
-            <div class="form-section" id="cfg-ul-section">
-              <div class="form-section-title" id="cfg-ul-title">
-                Radio UL (TX)
-              </div>
-
+            </section>
+            <section class="cfg-tab-pane" data-tab="radio" role="tabpanel" hidden>
+            <div class="cfg-radio-opts">
               <div class="form-row">
                 <label class="cfg-check-label" for="cfg-single-radio">
                   <input type="checkbox" id="cfg-single-radio" />
@@ -157,6 +172,13 @@
                   TX radio split (VFO B = uplink)
                 </label>
               </div>
+            </div>
+            <div class="cfg-radio-cols">
+            <div class="form-section" id="cfg-ul-section">
+              <div class="form-section-title" id="cfg-ul-title">
+                Radio UL (TX)
+              </div>
+
 
               <div class="form-row">
                 <label for="cfg-ul-transport">Connection</label>
@@ -323,12 +345,12 @@
                   />
                 </div>
               </div>
-            </div>
 
-            <div class="form-row">
-              <button type="button" class="btn-test" id="btn-test-radio-ul">
-                Test UL
-              </button>
+              <div class="form-row">
+                <button type="button" class="btn-test" id="btn-test-radio-ul">
+                  Test UL
+                </button>
+              </div>
             </div>
 
             <div class="form-section" id="cfg-dl-section">
@@ -507,8 +529,89 @@
               </div>
             </div>
 
-            <div class="form-section">
-              <div class="form-section-title">Rotor</div>
+            </div>
+            </section>
+            <section class="cfg-tab-pane" data-tab="rotor" role="tabpanel" hidden>
+            <div class="form-section cfg-group" id="cfg-rotor-limits-group">
+              <div class="form-section-title">Limits &amp; stops</div>
+              <div class="form-row-3">
+                <div>
+                  <label for="cfg-rotor-min-el">Min elevation °</label>
+                  <input
+                    type="number"
+                    id="cfg-rotor-min-el"
+                    placeholder="0"
+                    min="0"
+                    max="90"
+                    step="0.5"
+                  />
+                </div>
+                <div>
+                  <label for="cfg-rotor-park-az">Park AZ °</label>
+                  <input
+                    type="number"
+                    id="cfg-rotor-park-az"
+                    placeholder="0"
+                    min="0"
+                    max="360"
+                    step="0.1"
+                  />
+                </div>
+                <div id="cfg-rotor-park-el-wrap">
+                  <label for="cfg-rotor-park-el">Park EL °</label>
+                  <input
+                    type="number"
+                    id="cfg-rotor-park-el"
+                    placeholder="0"
+                    min="0"
+                    max="180"
+                    step="0.1"
+                  />
+                </div>
+              </div>
+              <div class="form-row">
+                <div id="cfg-rotor-el-180-wrap">
+                  <label class="cfg-check-label" for="cfg-rotor-el-180">
+                    <input type="checkbox" id="cfg-rotor-el-180" checked />
+                    180° elevation
+                  </label>
+                </div>
+              </div>
+              <div class="form-row" id="cfg-rotor-az-stop-wrap">
+                <label>AZ mechanical stop</label>
+                <div class="cfg-radio-row">
+                  <label class="cfg-check-label" for="cfg-rotor-az-stop-n">
+                    <input
+                      type="radio"
+                      name="cfg-rotor-az-stop"
+                      id="cfg-rotor-az-stop-n"
+                      value="north"
+                      checked
+                    />
+                    North (0°)
+                  </label>
+                  <label class="cfg-check-label" for="cfg-rotor-az-stop-s">
+                    <input
+                      type="radio"
+                      name="cfg-rotor-az-stop"
+                      id="cfg-rotor-az-stop-s"
+                      value="south"
+                    />
+                    South (180°)
+                  </label>
+                </div>
+                <p class="form-hint">
+                  Never drive across this stop — tracking and rotator test go
+                  the long way instead.
+                </p>
+              </div>
+              <p class="form-hint">
+                Min EL applies to tracking and pass AOS/LOS. After LOS, hold
+                min-EL az; Antenna on → preposition 5 min before next AOS.
+              </p>
+            </div>
+            <div class="form-section cfg-group" id="cfg-rotor-device-group">
+              <div class="form-section-title">Device &amp; test</div>
 
               <div class="form-row">
                 <label for="cfg-rotor-type">Controller</label>
@@ -590,41 +693,6 @@
                     step="1"
                   />
                 </div>
-                <div id="cfg-rotor-el-180-wrap">
-                  <label class="cfg-check-label" for="cfg-rotor-el-180">
-                    <input type="checkbox" id="cfg-rotor-el-180" checked />
-                    180° elevation
-                  </label>
-                </div>
-              </div>
-
-              <div class="form-row" id="cfg-rotor-az-stop-wrap">
-                <label>AZ mechanical stop</label>
-                <div class="cfg-radio-row">
-                  <label class="cfg-check-label" for="cfg-rotor-az-stop-n">
-                    <input
-                      type="radio"
-                      name="cfg-rotor-az-stop"
-                      id="cfg-rotor-az-stop-n"
-                      value="north"
-                      checked
-                    />
-                    North (0°)
-                  </label>
-                  <label class="cfg-check-label" for="cfg-rotor-az-stop-s">
-                    <input
-                      type="radio"
-                      name="cfg-rotor-az-stop"
-                      id="cfg-rotor-az-stop-s"
-                      value="south"
-                    />
-                    South (180°)
-                  </label>
-                </div>
-                <p class="form-hint">
-                  Never drive across this stop — tracking and rotator test go
-                  the long way instead.
-                </p>
               </div>
 
               <div class="form-row">
@@ -632,49 +700,11 @@
                   Test rotator
                 </button>
               </div>
-
-              <div class="form-row-3">
-                <div>
-                  <label for="cfg-rotor-min-el">Min elevation °</label>
-                  <input
-                    type="number"
-                    id="cfg-rotor-min-el"
-                    placeholder="0"
-                    min="0"
-                    max="90"
-                    step="0.5"
-                  />
-                </div>
-                <div>
-                  <label for="cfg-rotor-park-az">Park AZ °</label>
-                  <input
-                    type="number"
-                    id="cfg-rotor-park-az"
-                    placeholder="0"
-                    min="0"
-                    max="360"
-                    step="0.1"
-                  />
-                </div>
-                <div id="cfg-rotor-park-el-wrap">
-                  <label for="cfg-rotor-park-el">Park EL °</label>
-                  <input
-                    type="number"
-                    id="cfg-rotor-park-el"
-                    placeholder="0"
-                    min="0"
-                    max="180"
-                    step="0.1"
-                  />
-                </div>
-              </div>
-              <p class="form-hint">
-                Min EL applies to tracking and pass AOS/LOS. After LOS, hold
-                min-EL az; Antenna on → preposition 5 min before next AOS.
-              </p>
               <p class="form-hint" id="cfg-rotor-hint"></p>
             </div>
 
+            </section>
+            <section class="cfg-tab-pane" data-tab="logging" role="tabpanel" hidden>
             <div class="form-section" id="cfg-log-section">
               <div class="form-section-title">Logging</div>
 
@@ -821,13 +851,14 @@
               <p class="form-hint wsjtx-warning" id="cfg-wsjtx-warning" hidden></p>
             </div>
 
-            <div id="config-actions">
-              <button class="btn active" id="btn-save-config">Save</button>
-            </div>
+            </section>
           </div>
-        </div>
       </div>
-    </header>
+      <div id="config-actions">
+        <button class="btn" id="btn-cancel-config">Cancel</button>
+        <button class="btn active" id="btn-save-config">Save</button>
+      </div>
+    </div>
 
     <div id="fav-panel">
       <button
@@ -915,6 +946,19 @@
       </div>
 
       <aside id="sidebar">
+        <section class="panel-section cfg-summary" id="cfg-summary">
+          <div class="cfg-summary-head">
+            <h3>Station</h3>
+            <button type="button" class="btn btn-small" id="btn-config-open" title="Open station configuration">&#9881; Configure</button>
+          </div>
+          <dl class="cfg-summary-list">
+            <dt>Profile</dt><dd id="cfg-sum-profile">-</dd>
+            <dt>Grid</dt><dd id="cfg-sum-grid">-</dd>
+            <dt>Radio</dt><dd id="cfg-sum-radio">-</dd>
+            <dt>Rotor</dt><dd id="cfg-sum-rotor">-</dd>
+            <dt>Logging</dt><dd id="cfg-sum-log">-</dd>
+          </dl>
+        </section>
         <section class="panel-section qso-log-section">
           <form id="qso-log-form" class="qso-log-row" autocomplete="off">
             <input
@@ -1174,6 +1218,7 @@
     <script src="js/config-form.js"></script>
     <script src="js/config-test-ui.js"></script>
     <script src="js/config.js"></script>
+    <script src="js/config-modal.js"></script>
     <script src="js/freq-utils.js"></script>
     <script src="js/sat-menu.js"></script>
     <script src="js/fav-panel.js"></script>
