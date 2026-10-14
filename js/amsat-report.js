@@ -1,4 +1,4 @@
-// Inline AMSAT live-report buttons (Logging section). One click submits;
+// Inline AMSAT live-report buttons (own AMSAT Report sidebar section). One click submits;
 // satellite, callsign/grid and UTC time are filled in server-side.
 (function () {
   const $ = (id) => document.getElementById(id);
