@@ -554,6 +554,7 @@ function connectTracker() {
       }
 
       if (msg.type === "tick") {
+        if (pendingSatKey && msg.sat && msg.sat !== pendingSatKey && Date.now() - pendingSatAt < 15000) return;
         applyFreqAndLook(msg);
         if (typeof updateFavPanelFromState === "function") {
           updateFavPanelFromState(
@@ -565,12 +566,22 @@ function connectTracker() {
 
       if (msg.type !== "state") return;
 
+      // After a local switch, drop in-flight state for any other sat (it would
+      // draw the old sat's position under the new name). Expires after 15 s
+      // so a switch made from another client still wins.
+      if (pendingSatKey && msg.sat) {
+        if (msg.sat === pendingSatKey) pendingSatKey = null;
+        else if (Date.now() - pendingSatAt < 15000) return;
+        else pendingSatKey = null;
+      }
+
       if (msg.sat) {
         if (msg.sat !== lastStateSat) {
           lastStateSat = msg.sat;
           lastModesKey = "";
           if (typeof clearProfileLock === "function") clearProfileLock();
           if (typeof clearMapTracking === "function") clearMapTracking();
+          if (typeof clearRadar === "function") clearRadar();
         }
         currentSatKey = msg.sat;
         try {

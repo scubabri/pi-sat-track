@@ -185,6 +185,11 @@ function updateRadar(az, el, skyPath) {
   }
 }
 
+/** Blank plot (grid only) — used on sat switch so the old pass/arrow never lingers. */
+function clearRadar() {
+  if (radarCtx) drawRadarBackground();
+}
+
 function updateRadarSat(az, el) {
   updateRadar(az, el, null);
 }

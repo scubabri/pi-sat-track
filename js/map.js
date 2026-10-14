@@ -176,6 +176,10 @@ function centerOnGrid(grid, keepZoom) {
 
 function updateMapTracking(state) {
   if (!map || !state) return;
+  // Layers belong to one sat: a state for a different sat starts fresh.
+  if (state.sat && satMarker && satMarker.__sat && satMarker.__sat !== state.sat) {
+    clearMapTracking();
+  }
 
   if (state.position) {
     const lat = state.position.lat;
@@ -189,6 +193,7 @@ function updateMapTracking(state) {
           fillColor: "#58a6ff",
           fillOpacity: 1,
         }).addTo(map);
+        satMarker.__sat = state.sat || null;
       } else {
         satMarker.setLatLng([lat, lon]);
         if (!map.hasLayer(satMarker)) satMarker.addTo(map);

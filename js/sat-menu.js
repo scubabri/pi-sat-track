@@ -6,6 +6,7 @@ let currentSatLabel = null;
 let lastSatList = null;
 let currentEl = null;
 let pendingSatKey = null;
+let pendingSatAt = 0;
 
 function setSatButtonLabel(label) {
   currentSatLabel = label;
@@ -410,6 +411,7 @@ function refreshCurrentSatChip() {
 
 function selectSatellite(key, label) {
   pendingSatKey = key;
+  pendingSatAt = Date.now();
   currentSatKey = key;
   setSatButtonLabel(label || key);
   localStorage.setItem("satTrackerSat", key);
@@ -423,6 +425,7 @@ function selectSatellite(key, label) {
 
   if (typeof clearProfileLock === "function") clearProfileLock();
   if (typeof clearMapTracking === "function") clearMapTracking();
+  if (typeof clearRadar === "function") clearRadar();
 
   const menu = document.getElementById("sat-menu");
   if (menu) menu.hidden = true;
