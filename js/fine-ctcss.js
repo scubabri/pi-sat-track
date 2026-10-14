@@ -154,6 +154,45 @@
     bind("btn-fine-dl-plus", "dl", +1);
 
     const stepEl = document.getElementById("fine-step");
+    // ▲/▼ spinner + wheel: walk the preset list, then reuse the "change" path
+    // below so persistence / server sync stay identical to typing a value.
+    const STEP_PRESETS = [1, 10, 50, 100, 500, 1000, 5000, 10000];
+    const nextPreset = (cur, dir) => {
+      if (!Number.isFinite(cur) || cur <= 0) cur = fineStep;
+      if (dir > 0) {
+        const n = STEP_PRESETS.find((p) => p > cur);
+        return n != null ? n : STEP_PRESETS[STEP_PRESETS.length - 1];
+      }
+      const lower = STEP_PRESETS.filter((p) => p < cur);
+      return lower.length ? lower[lower.length - 1] : STEP_PRESETS[0];
+    };
+    const bumpStep = (dir) => {
+      if (!stepEl) return;
+      const v = nextPreset(parseInt(stepEl.value, 10), dir);
+      if (String(v) === stepEl.value) return;
+      stepEl.value = String(v);
+      stepEl.dispatchEvent(new Event("change"));
+    };
+    const upBtn = document.getElementById("btn-step-up");
+    const downBtn = document.getElementById("btn-step-down");
+    if (upBtn) upBtn.addEventListener("click", () => bumpStep(+1));
+    if (downBtn) downBtn.addEventListener("click", () => bumpStep(-1));
+    if (stepEl) {
+      stepEl.addEventListener(
+        "wheel",
+        (e) => {
+          e.preventDefault();
+          bumpStep(e.deltaY < 0 ? +1 : -1);
+        },
+        { passive: false },
+      );
+      stepEl.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+          e.preventDefault();
+          bumpStep(e.key === "ArrowUp" ? +1 : -1);
+        }
+      });
+    }
     if (stepEl) {
       stepEl.addEventListener("change", () => {
         const step = parseInt(stepEl.value, 10);

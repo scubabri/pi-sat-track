@@ -1025,14 +1025,20 @@
           <div class="fine-tune-block">
             <div class="fine-row">
               <span class="fine-side fine-side-step">Step</span>
-              <input
-                type="number"
-                id="fine-step"
-                value="100"
-                min="1"
-                step="1"
-                title="Fine step (Hz). Double-click to center."
-              />
+              <span class="step-spin">
+                <input
+                  type="number"
+                  id="fine-step"
+                  value="100"
+                  min="1"
+                  step="1"
+                  title="Fine step (Hz). Type any value, or use ▲/▼ / mouse wheel for presets. Double-click to center."
+                />
+                <span class="step-spin-arrows">
+                  <button type="button" id="btn-step-up" tabindex="-1" title="Next larger step preset" aria-label="Larger step">▲</button>
+                  <button type="button" id="btn-step-down" tabindex="-1" title="Next smaller step preset" aria-label="Smaller step">▼</button>
+                </span>
+              </span>
               <span class="unit">Hz</span>
               <button
                 type="button"

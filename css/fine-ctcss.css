@@ -183,3 +183,47 @@
 .freq-block-split .fine-offset { grid-column: 2; grid-row: 3; min-width: 0; text-align: left; }
 .fine-tune-block { margin-top: 4px; }
 .fine-row .fine-side-step { width: auto; margin-right: 6px; }
+
+/* Step spinner: stacked ▲/▼ inside the right edge of the step box */
+.fine-row .step-spin {
+  display: inline-flex;
+  align-items: stretch;
+  height: 28px;
+  border: 1px solid var(--border, #30363d);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg, #0d1117);
+}
+.fine-row .step-spin:focus-within { border-color: var(--accent, #58a6ff); }
+.fine-row .step-spin #fine-step {
+  border: none;
+  border-radius: 0;
+  height: 26px;
+  width: 56px;
+  background: transparent;
+  outline: none;
+}
+.fine-row .step-spin-arrows {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border, #30363d);
+}
+.fine-row .step-spin-arrows button {
+  flex: 1;
+  width: 26px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: rgba(55, 65, 81, 0.55);
+  color: #c9d1d9;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s;
+}
+.fine-row .step-spin-arrows button + button { border-top: 1px solid var(--border, #30363d); }
+.fine-row .step-spin-arrows button:hover { background: rgba(75, 85, 99, 0.9); color: #fff; }
+.fine-row .step-spin-arrows button:active { background: rgba(31, 111, 235, 0.45); }
