@@ -7,8 +7,9 @@
 const net = require("net");
 
 function makeSim(port) {
-  const sim = { freq: 145900000, mode: "3", override: [], port };
+  const sim = { freq: 145900000, mode: "3", override: [], port, conns: 0, faDelayMs: 0 };
   sim.server = net.createServer((sock) => {
+    sim.conns++;
     let buf = "";
     sock.on("data", (d) => {
       buf += d.toString();
@@ -17,7 +18,9 @@ function makeSim(port) {
         const c = buf.slice(0, i); buf = buf.slice(i + 1);
         if (c === "FA") {
           const f = sim.override.length ? sim.override.shift() : sim.freq;
-          sock.write("FA" + String(f).padStart(11, "0") + ";");
+          const out = "FA" + String(f).padStart(11, "0") + ";";
+          if (sim.faDelayMs) setTimeout(() => { try { sock.write(out); } catch (_) {} }, sim.faDelayMs);
+          else sock.write(out);
         } else if (c.startsWith("FA")) sim.freq = parseInt(c.slice(2), 10);
         else if (c === "MD") sock.write("MD" + sim.mode + ";");
         else if (c.startsWith("MD")) sim.mode = c.slice(2);
@@ -137,6 +140,19 @@ async function runTests() {
   await sleep(1000);
   check("(d) radio tracks tracked+manual after replay", Math.abs(dlS.freq - (dopplerDl() + st().manualDlOffset + st().dlFineOffset)) < 150 && offOk(),
     "radio=" + dlS.freq);
+  // (f) Radio off while a push is mid dial-read: nothing may reopen sockets
+  {
+    dlS.faDelayMs = 300; // keep FA reads in flight
+    await sleep(600);
+    const c0 = ul.conns + dlS.conns;
+    flex.setRadio(false, "sim user click");
+    for (let i = 0; i < 16; i++) { await tick().catch(() => {}); await sleep(250); } // state ticks keep coming
+    const c1 = ul.conns + dlS.conns;
+    const r = flex.getRadioState();
+    check("(f) no Flex reconnect after Radio off", c1 === c0 && !r.dlConnected && !r.ulConnected && !r.connecting,
+      "new conns=" + (c1 - c0) + " dl=" + r.dlConnected + " ul=" + r.ulConnected);
+    dlS.faDelayMs = 0;
+  }
   clearInterval(ticker);
   flex.setRadio(false); ul.server.close(); dlS.server.close();
   const fails = results.filter((r) => !r[1]).length;
