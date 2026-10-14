@@ -637,7 +637,7 @@ wss.on("connection", (ws) => {
           "Test rotor step",
           msg.action,
           msg.axis,
-          msg.rotorAzDevice || msg.rotorElDevice,
+          connectionTest.rotorTestDevice(msg),
         );
         connectionTest
           .testRotorStep(msg, {
