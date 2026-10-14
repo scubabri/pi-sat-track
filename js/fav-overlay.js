@@ -68,6 +68,10 @@
     if (!ensureLayer()) return;
     const keep = new Set(tracks.map((t) => t.key));
     for (const k of [...items.keys()]) if (!keep.has(k) || k === currentKey) drop(k);
+    // Redraw replaces the hovered polylines; Leaflet never fires mouseout for a
+    // removed layer, so the old hover would stick. Drop it; the next mouseover
+    // re-establishes it.
+    clearHover();
     if (!on) return;
     for (const t of tracks) {
       if (t.key === currentKey) continue;
@@ -125,6 +129,12 @@
     return obj;
   }
 
+  function clearHover() {
+    if (hoverKey == null) return;
+    hoverKey = null;
+    applyHighlight();
+  }
+
   function applyHighlight() {
     const hk = hoverKey || pinKey;
     for (const [key, it] of items) {
@@ -164,6 +174,17 @@
     if (!m || m.__favHiClear) return;
     m.__favHiClear = true;
     m.on("click", () => { if (pinKey) { pinKey = null; applyHighlight(); } });
+    // Single source of truth for hover: any pointer movement over bare map
+    // (fav layers don't bubble), or leaving the map, clears a stale hover
+    // (fast moves / missed mouseout).
+    m.on("mousemove", (e) => {
+      const t = e && e.originalEvent && e.originalEvent.target;
+      if (t && t.closest && t.closest(".fav-label")) return; // over a fav name label
+      if (!isTouch()) clearHover();
+    });
+    m.on("mouseout", () => { if (!isTouch()) clearHover(); });
+    const c = m.getContainer && m.getContainer();
+    if (c) c.addEventListener("mouseleave", () => { if (!isTouch()) clearHover(); });
   }
 
   function request() { const s = sock(); if (s) s.send(JSON.stringify({ type: "fav-tracks-get" })); }
