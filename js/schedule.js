@@ -25,11 +25,9 @@
   const p2 = (n) => String(n).padStart(2, "0");
   const hmL = (d) => p2(d.getHours()) + ":" + p2(d.getMinutes());
   const hmU = (d) => p2(d.getUTCHours()) + ":" + p2(d.getUTCMinutes());
+  /** Actual local date, e.g. "Wed Oct 14 ". */
   function dayTag(d) {
-    const t = new Date(); t.setHours(0, 0, 0, 0);
-    const dd = new Date(d); dd.setHours(0, 0, 0, 0);
-    const n = Math.round((dd - t) / 864e5);
-    return n === 0 ? "" : n === 1 ? "Tomorrow " : d.toLocaleDateString(undefined, { weekday: "short" }) + " ";
+    return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }).replace(/,/g, "") + " ";
   }
   function dur(s) { const m = Math.floor(s / 60); return m + "m " + p2(s % 60) + "s"; }
 
