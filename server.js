@@ -76,6 +76,7 @@ const logbook = require("./lib/logbook");
 const wsjtxListener = require("./lib/wsjtx-listener");
 const wsjtxDecodes = require("./lib/wsjtx-decodes");
 const schedule = require("./lib/schedule");
+const amsatReport = require("./lib/amsat-report");
 
 /** WebSocket server; set after createServer. broadcast() is safe before that. */
 let wss = null;
@@ -331,6 +332,62 @@ const server = http.createServer((req, res) => {
         rotorBaud: config.ROTOR_BAUD,
       }),
     );
+  }
+
+  if (urlPath === "/api/amsat-report/suggest" && req.method === "GET") {
+    const json = (code, o) => {
+      res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify(o));
+    };
+    const ctx = state.getLogContext();
+    return amsatReport
+      .getSatNames()
+      .then((list) => {
+        const matches = amsatReport.matchSatNames(list.names, ctx);
+        json(200, {
+          names: list.names,
+          source: list.source,
+          sat: ctx ? { key: ctx.satKey, name: ctx.satName, mode: ctx.mode } : null,
+          suggestions: matches.map((m) => m.value),
+          best: matches.length ? matches[0].value : null,
+          reports: amsatReport.REPORTS.map((v) => ({ value: v, label: amsatReport.REPORT_LABELS[v] })),
+          utc: amsatReport.utcParts(new Date()),
+        });
+      })
+      .catch((e) => json(502, { error: e.message }));
+  }
+
+  if (urlPath === "/api/amsat-report/submit") {
+    const json = (code, o) => {
+      res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify(o));
+    };
+    if (req.method !== "POST") return json(405, { error: "POST required" });
+    let body = "";
+    req.on("data", (c) => {
+      body += c;
+      if (body.length > 10000) req.destroy();
+    });
+    req.on("end", () => {
+      let r;
+      try {
+        r = JSON.parse(body || "{}");
+      } catch (_) {
+        return json(400, { error: "invalid JSON" });
+      }
+      console.log("AMSAT report: user submit " + r.satName + " " + r.report + " " + r.callsign);
+      amsatReport
+        .submitReport(r)
+        .then((out) => {
+          console.log("AMSAT report: " + out.message);
+          json(200, out);
+        })
+        .catch((e) => {
+          console.log("AMSAT report failed: " + e.message);
+          json(e.status || 500, { error: e.message });
+        });
+    });
+    return;
   }
 
   if (urlPath === "/api/satnogs") {
