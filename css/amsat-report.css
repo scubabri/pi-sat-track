@@ -1,16 +1,6 @@
-.btn-amsat-report { margin-top: 8px; width: 100%; }
-.amsat-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 3000; display: flex; align-items: center; justify-content: center; }
-.amsat-backdrop[hidden] { display: none; }
-.amsat-dialog { background: var(--panel, #1b1f27); color: var(--text, #ddd); border: 1px solid var(--border, #333); border-radius: 10px; padding: 16px 18px; width: 380px; max-width: 94vw; display: flex; flex-direction: column; gap: 10px; font-size: .85rem; }
-.amsat-dialog h3 { margin: 0 0 4px; }
-.amsat-dialog label { display: flex; flex-direction: column; gap: 3px; color: var(--text-dim, #999); flex: 1; }
-.amsat-dialog input, .amsat-dialog select { background: var(--bg, #111); color: var(--text, #ddd); border: 1px solid var(--border, #333); border-radius: 6px; padding: 5px 7px; font-family: var(--mono, monospace); min-width: 0; width: 100%; box-sizing: border-box; }
-.amsat-row { display: flex; gap: 8px; }
-.amsat-reports { display: flex; gap: 6px; }
-.amsat-reports button { flex: 1; padding: 7px 4px; border-radius: 6px; border: 1px solid var(--border, #333); background: var(--bg, #111); color: var(--text, #ddd); cursor: pointer; font-size: .8rem; }
-.amsat-reports button.sel[data-v="Heard"] { background: #2e7d32; border-color: #2e7d32; color: #fff; }
-.amsat-reports button.sel[data-v="Telemetry Only"] { background: #1565c0; border-color: #1565c0; color: #fff; }
-.amsat-reports button.sel[data-v="Not Heard"] { background: #c62828; border-color: #c62828; color: #fff; }
-.amsat-status { min-height: 1.2em; }
+.amsat-inline { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.amsat-inline-label { font-size: .75rem; color: var(--text-dim, #999); white-space: nowrap; }
+.amsat-inline .amsat-rep { flex: 1; padding-left: 4px; padding-right: 4px; white-space: nowrap; }
+.amsat-inline .amsat-rep:disabled { opacity: .45; cursor: not-allowed; }
+.amsat-status { min-height: 1.1em; font-size: .75rem; margin-top: 4px; color: var(--text-dim, #999); }
 .amsat-status.ok { color: #66bb6a; } .amsat-status.err { color: #ef5350; }
-.amsat-actions { display: flex; justify-content: flex-end; gap: 8px; }

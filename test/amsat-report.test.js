@@ -62,3 +62,18 @@ assert.strictEqual(p.toString(), "SatSubmit=yes&Confirm=yes&SatName=AO-7_%5BU%2F
   const l2 = await a.getSatNames({ force: true }); assert.ok(l2.source.startsWith("cache")); assert.strictEqual(l2.names.length, 2);
   console.log("amsat-report tests: OK");
 })().catch((e) => { console.error(e); process.exit(1); });
+
+// fillReport: minimal {report} filled server-side; overrides win
+{
+  const now = new Date("2026-10-14T23:47:10Z");
+  const ctx = { satKey: "RS-44", satName: "RS-44", mode: "SSB/CW" };
+  const f = a.fillReport({ report: "Heard" }, { names: NAMES, ctx, station: { callsign: "N0CALL", grid: "DM79" }, now });
+  assert.deepStrictEqual(f, { report: "Heard", satName: "RS-44_[V/u]", callsign: "N0CALL", grid: "DM79", year: 2026, month: 10, day: 14, hour: 23, period: 3 });
+  const o = a.fillReport({ report: "Not Heard", satName: "AO-91_[FM]", callsign: "K1ABC", hour: 5 }, { names: NAMES, ctx, station: { callsign: "N0CALL" }, now });
+  assert.strictEqual(o.satName, "AO-91_[FM]"); assert.strictEqual(o.callsign, "K1ABC"); assert.strictEqual(o.hour, 5);
+  assert.throws(() => a.fillReport({ report: "Heard" }, { names: NAMES, ctx: { satKey: "XX-1" }, station: { callsign: "N0CALL" }, now }), /match/);
+  assert.throws(() => a.fillReport({ report: "Heard" }, { names: NAMES, ctx, station: {}, now }), /Callsign/);
+  assert.throws(() => a.fillReport({ report: "Heard" }, { names: NAMES, ctx: null, station: { callsign: "N0CALL" }, now }), /match/);
+  a.buildParams(f);
+  console.log("fillReport ok");
+}

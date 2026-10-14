@@ -352,6 +352,7 @@ const server = http.createServer((req, res) => {
           best: matches.length ? matches[0].value : null,
           reports: amsatReport.REPORTS.map((v) => ({ value: v, label: amsatReport.REPORT_LABELS[v] })),
           utc: amsatReport.utcParts(new Date()),
+          station: stationFromProfile(),
         });
       })
       .catch((e) => json(502, { error: e.message }));
@@ -375,9 +376,21 @@ const server = http.createServer((req, res) => {
       } catch (_) {
         return json(400, { error: "invalid JSON" });
       }
-      console.log("AMSAT report: user submit " + r.satName + " " + r.report + " " + r.callsign);
       amsatReport
-        .submitReport(r)
+        .getSatNames()
+        .then((list) =>
+          amsatReport.fillReport(r, {
+            names: list.names,
+            ctx: state.getLogContext(),
+            station: stationFromProfile({ callsign: r.fallbackCallsign, grid: r.fallbackGrid }),
+          }),
+        )
+        .then((full) => {
+          delete full.fallbackCallsign;
+          delete full.fallbackGrid;
+          console.log("AMSAT report: user submit " + full.satName + " " + full.report + " " + full.callsign);
+          return amsatReport.submitReport(full).then((out) => Object.assign(out, { satName: full.satName, report: full.report }));
+        })
         .then((out) => {
           console.log("AMSAT report: " + out.message);
           json(200, out);
