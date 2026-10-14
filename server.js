@@ -491,6 +491,10 @@ wss.on("connection", (ws) => {
           });
       }
 
+      if (msg.type === "fav-tracks-get") {
+        ws.send(JSON.stringify(state.computeFavoriteTracks()));
+        return;
+      }
       if (msg.type === "schedule-lookup") {
         const q = String(msg.query || "").trim();
         const reply = (o) => ws.send(JSON.stringify(Object.assign({ type: "schedule-lookup", reqId: msg.reqId, query: q }, o)));
@@ -960,6 +964,20 @@ setInterval(() => {
 }, STATE_MS);
 
 setInterval(broadcastSats, SATS_BROADCAST_MS);
+
+// Favorites orbit overlay: tracks refreshed every 60 s (positions ride on "state").
+let lastFavTrackSig = "";
+function broadcastFavTracks(force) {
+  if (!wss || !wss.clients.size) return;
+  const sig = state.favoritesSig();
+  if (!force && sig === lastFavTrackSig && Date.now() - (broadcastFavTracks.at || 0) < 60000) return;
+  const ft = state.computeFavoriteTracks();
+  lastFavTrackSig = sig;
+  broadcastFavTracks.at = Date.now();
+  broadcast(ft);
+}
+// Cheap 5 s check catches favorites / selected-sat changes; full refresh every 60 s.
+setInterval(() => broadcastFavTracks(false), 5000);
 
 setInterval(() => {
   catalog.refreshCatalog().catch(() => {});
