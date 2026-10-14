@@ -29,6 +29,8 @@ function makeSim(port) {
 }
 
 async function runTests() {
+  // Isolate sat-offsets.json from the real ~/.rpitrack
+  process.env.HOME = require("fs").mkdtempSync(require("path").join(require("os").tmpdir(), "flexsim-"));
   const config = require("../lib/config");
   const ul = await makeSim(46001), dlS = await makeSim(46002);
   const fake = Object.create(config);
@@ -57,30 +59,60 @@ async function runTests() {
   const origLog = console.log;
   console.log = (...a) => { if (String(a[0]).startsWith("Flex dial absorb DL")) absorbs.push({ step: knobStep, vs: a[1] }); origLog(...a); };
   const tick = () => {
-    const m = flex.getRadioState().manualDlOffset;
-    return flex.pushFrequencies(ulBase, dopplerDl() + m);
+    // Mirror state.js: DL = doppler + manual + dlFine; UL gets ulFine
+    const r = flex.getRadioState();
+    return flex.pushFrequencies(ulBase + (r.ulFineOffset || 0),
+      dopplerDl() + r.manualDlOffset + (r.dlFineOffset || 0));
   };
   // State tick at 250 ms like state.js (driver poll runs its own 400 ms timer)
   const ticker = setInterval(() => tick().catch(() => {}), 250);
   const knob = (hz) => { knobStep++; dlS.freq += hz; };
+  // Restored per-sat calibration (as state.applySavedOffsetsForSat does on
+  // sat load, BEFORE the user engages the radio).
+  const RESTORED = { ulFineOffset: 0, dlFineOffset: -1500, manualDlOffset: -1515 };
+  flex.setOffsets(RESTORED);
   flex.setRadio(true);
   for (let i = 0; i < 60 && flex.getRadioState().syncNeeded; i++) await sleep(250);
   const st = () => flex.getRadioState();
   const results = [];
   const check = (name, ok, info) => { results.push([name, ok]); console.log((ok ? "PASS " : "FAIL ") + name, info || ""); };
-  const trueOff = () => dlS.freq - dopplerDl() - st().dlFineOffset;
+  const trueOff = () => dlS.freq - dopplerDl() - st().dlFineOffset; // = manualDl expected
   const offOk = () => Math.abs(st().manualDlOffset - trueOff()) < 150;
   const noDouble = (from) => {
     const seen = {}; for (const a of absorbs.slice(from)) { if (seen[a.step]) return false; seen[a.step] = 1; } return true;
   };
   console.log("synced:", !st().syncNeeded);
   await sleep(1500);
+  check("(e) restored fine/manual survive engage",
+    st().dlFineOffset === -1500 && st().ulFineOffset === 0 && st().manualDlOffset === -1515 && offOk(),
+    "UL " + st().ulFineOffset + " DL " + st().dlFineOffset + " manual " + st().manualDlOffset +
+    " radio-doppler=" + (dlS.freq - dopplerDl()));
+  {
+    const n = absorbs.length;
+    for (const hz of [1000, -2500, 700, 3000, -1200]) { knob(hz); await sleep(1200); }
+    const expectManual = -1515 + 1000 - 2500 + 700 + 3000 - 1200;
+    check("(e) 5 absorbs: DL fine kept, manual continues from restored", st().dlFineOffset === -1500 &&
+      st().ulFineOffset === 0 && Math.abs(st().manualDlOffset - expectManual) < 150 && offOk() &&
+      absorbs.length - n === 5 && noDouble(n),
+      "DL " + st().dlFineOffset + " manual " + Math.round(st().manualDlOffset) + " expect " + expectManual);
+    // Save through the real sat-offsets store (HOME redirected to a tmp dir)
+    const satOffsets = require("../lib/sat-offsets");
+    const s0 = flex.getRadioState();
+    satOffsets.set("JO-97", { ulFineOffset: s0.ulFineOffset, dlFineOffset: s0.dlFineOffset, manualDlOffset: s0.manualDlOffset });
+    if (satOffsets.flush) satOffsets.flush();
+    await sleep(1500);
+    const saved = JSON.parse(require("fs").readFileSync(require("path").join(process.env.HOME, ".rpitrack", "sat-offsets.json"), "utf8"))["JO-97"] || {};
+    check("(e) saved file keeps DL fine -1500 + manual", saved.dlFineOffset === -1500 && Math.abs(saved.manualDlOffset - expectManual) < 150,
+      JSON.stringify(saved));
+  }
+  // Remaining scenarios run relative to the restored calibration
+  const M0 = st().manualDlOffset;
 
   // (c) small step absorbed
   let n0 = absorbs.length; knob(2000); await sleep(1500);
-  check("(c) small 2 kHz step absorbed", offOk() && Math.abs(st().manualDlOffset - 2000) < 150 && noDouble(n0), "manualDl=" + Math.round(st().manualDlOffset));
+  check("(c) small 2 kHz step absorbed", offOk() && Math.abs(st().manualDlOffset - M0 - 2000) < 150 && noDouble(n0), "manualDl=" + Math.round(st().manualDlOffset));
   n0 = absorbs.length; knob(9000); await sleep(2000);
-  check("(c2) 9 kHz spin confirmed once", offOk() && Math.abs(st().manualDlOffset - 11000) < 150 && noDouble(n0), "manualDl=" + Math.round(st().manualDlOffset) + " absorbs=" + (absorbs.length - n0));
+  check("(c2) 9 kHz spin confirmed once", offOk() && Math.abs(st().manualDlOffset - M0 - 11000) < 150 && noDouble(n0), "manualDl=" + Math.round(st().manualDlOffset) + " absorbs=" + (absorbs.length - n0));
 
   // (b) single spurious 45 kHz report that reverts
   let before = st().manualDlOffset; n0 = absorbs.length;
@@ -103,7 +135,7 @@ async function runTests() {
   check("(d) field replay: no double absorb", noDouble(n0), "absorbs=" + absorbs.length + " steps=" + seq.length);
   // Settled: radio follows Doppler at the new offset (no snap-back)
   await sleep(1000);
-  check("(d) radio tracks tracked+manual after replay", Math.abs(dlS.freq - (dopplerDl() + st().manualDlOffset)) < 150 && offOk(),
+  check("(d) radio tracks tracked+manual after replay", Math.abs(dlS.freq - (dopplerDl() + st().manualDlOffset + st().dlFineOffset)) < 150 && offOk(),
     "radio=" + dlS.freq);
   clearInterval(ticker);
   flex.setRadio(false); ul.server.close(); dlS.server.close();
