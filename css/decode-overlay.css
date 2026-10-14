@@ -46,3 +46,5 @@
 .leaflet-tooltip.fav-label { pointer-events: auto; cursor: pointer; transition: opacity .12s; }
 .leaflet-tooltip.fav-label.fav-hi { background: rgba(10, 18, 28, 0.92); color: #fff; font-size: 12px; }
 .leaflet-tooltip.fav-label.fav-dim { opacity: 0.35 !important; }
+/* Selected sat name label (map.js) */
+.leaflet-tooltip.decode-label.sel-sat-label { color: #58a6ff; font-weight: 800; font-size: 12px; background: rgba(10, 18, 28, 0.8); border-left: 2px solid #58a6ff; z-index: 1100; }

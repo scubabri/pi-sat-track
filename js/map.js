@@ -12,6 +12,11 @@ function initMap() {
   map = L.map("map", {
     worldCopyJump: true,
     minZoom: 2,
+    // finer zoom steps (+/- and wheel)
+    zoomSnap: 0.25,
+    zoomDelta: 0.5,
+    wheelPxPerZoomLevel: 120,
+    wheelDebounceTime: 40,
     maxZoom: 8,
     zoomControl: false,
   }).setView([20, 0], 2);
@@ -101,27 +106,42 @@ function centerOnStation() {
   }
 }
 
+/**
+ * Ground-track paths come with longitudes wrapped to [-180, 180]. Splitting at
+ * the jump left a gap at the dateline and only drew lines in the central
+ * world copy, so with worldCopyJump / wide world views the parts of the
+ * track (and future orbits) in neighbouring copies were missing. Instead:
+ * unwrap to a continuous longitude, then return copies shifted by k*360 so
+ * the whole span appears in every visible world copy (-540..540).
+ */
 function splitAtDateLine(latlngs) {
-  if (!latlngs || latlngs.length < 2) return [latlngs || []];
-
-  const segments = [];
-  let current = [latlngs[0]];
-
-  for (let i = 1; i < latlngs.length; i++) {
-    const prev = latlngs[i - 1];
-    const curr = latlngs[i];
-    const prevLon = prev[1];
-    const currLon = curr[1];
-
-    if (Math.abs(currLon - prevLon) > 180) {
-      segments.push(current);
-      current = [curr];
-    } else {
-      current.push(curr);
+  if (!latlngs || latlngs.length < 2) return [];
+  const un = [];
+  let off = 0;
+  let prev = latlngs[0][1];
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < latlngs.length; i++) {
+    const lat = latlngs[i][0];
+    const lon = latlngs[i][1];
+    if (i > 0) {
+      const d = lon - prev;
+      if (d > 180) off -= 360;
+      else if (d < -180) off += 360;
     }
+    prev = lon;
+    const ul = lon + off;
+    if (ul < min) min = ul;
+    if (ul > max) max = ul;
+    un.push([lat, ul]);
   }
-  if (current.length) segments.push(current);
-  return segments.filter((s) => s && s.length >= 2);
+  const out = [];
+  const kLo = Math.ceil((-540 - max) / 360);
+  const kHi = Math.floor((540 - min) / 360);
+  for (let k = kLo; k <= kHi; k++) {
+    out.push(k === 0 ? un : un.map((p) => [p[0], p[1] + k * 360]));
+  }
+  return out;
 }
 
 function clearPolylineArray(arr) {
@@ -193,6 +213,17 @@ function updateMapTracking(state) {
         satMarker.setLatLng([lat, lon]);
         if (!map.hasLayer(satMarker)) satMarker.addTo(map);
       }
+      const label = state.display || state.sat || "";
+      if (label && satMarker.__label !== label) {
+        satMarker.unbindTooltip();
+        satMarker.bindTooltip(label, {
+          permanent: true,
+          direction: "right",
+          offset: [9, 0],
+          className: "decode-label sel-sat-label",
+        });
+        satMarker.__label = label;
+      }
 
       const hKm = state.position.heightKm;
       const rM = footprintRadiusM(hKm);
@@ -235,8 +266,8 @@ function updateMapTracking(state) {
       state.forward,
       {
         color: "#58a6ff",
-        weight: 1.5,
-        opacity: 0.45,
+        weight: 1.8,
+        opacity: 0.7,
         dashArray: "6 8",
       },
       forwardPolylines,
