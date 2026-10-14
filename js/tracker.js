@@ -430,10 +430,9 @@ function connectTracker() {
     sendObserver();
     if (typeof pushSavedEndpoints === "function") pushSavedEndpoints();
     updateStationStatus();
-    if (typeof currentSatKey !== "undefined" && currentSatKey) {
-      if (typeof pendingSatKey !== "undefined") pendingSatKey = currentSatKey;
-      ws.send(JSON.stringify({ type: "sat", key: currentSatKey }));
-    }
+    // Do NOT push our localStorage sat on (re)connect: the server is the
+    // source of truth and sends "state" right after connect. Pushing here let
+    // a second tab / reconnecting client switch the live sat (and rotor).
   };
 
   ws.onmessage = (ev) => {
@@ -574,6 +573,9 @@ function connectTracker() {
           if (typeof clearMapTracking === "function") clearMapTracking();
         }
         currentSatKey = msg.sat;
+        try {
+          localStorage.setItem("satTrackerSat", msg.sat);
+        } catch (_) {}
         if (typeof setSatButtonLabel === "function") {
           setSatButtonLabel(msg.display || msg.sat);
         }

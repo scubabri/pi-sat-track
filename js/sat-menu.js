@@ -428,7 +428,7 @@ function selectSatellite(key, label) {
   if (menu) menu.hidden = true;
 
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "sat", key: key }));
+    ws.send(JSON.stringify({ type: "sat", key: key, user: true }));
   }
 }
 

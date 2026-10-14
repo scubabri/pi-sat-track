@@ -435,6 +435,23 @@ wss.on("connection", (ws) => {
         if (st) broadcast(st);
       }
 
+      if (msg.type === "sat" && msg.key && msg.user !== true) {
+        // Old/stale clients push their remembered sat on connect. Once the
+        // server has a sat, only explicit user selections may change it.
+        const cur = state.getCurrentKey();
+        if (cur) {
+          console.log(
+            "Ignored non-user sat request",
+            msg.key,
+            "(keeping",
+            cur + ")",
+          );
+          const st = state.computeState();
+          if (st) ws.send(JSON.stringify(st));
+          return;
+        }
+      }
+
       if (msg.type === "sat" && msg.key) {
         state
           .loadSatellite(msg.key)
