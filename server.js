@@ -398,6 +398,13 @@ wss.on("connection", (ws) => {
   );
   ws.send(JSON.stringify(profiles.publicPayload()));
   ws.send(JSON.stringify(wsjtxStatusPayload()));
+  // Re-send shortly after: the sidebar logging script hooks the socket
+  // asynchronously and can miss the first message.
+  setTimeout(() => {
+    try {
+      if (ws.readyState === 1) ws.send(JSON.stringify(wsjtxStatusPayload()));
+    } catch (_) {}
+  }, 1500);
   radios.broadcastAllStatus();
   rotor.broadcastStatus();
 
