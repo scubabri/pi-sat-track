@@ -75,6 +75,7 @@ const connectionTest = require("./lib/connection-test");
 const logbook = require("./lib/logbook");
 const wsjtxListener = require("./lib/wsjtx-listener");
 const wsjtxDecodes = require("./lib/wsjtx-decodes");
+const schedule = require("./lib/schedule");
 
 /** WebSocket server; set after createServer. broadcast() is safe before that. */
 let wss = null;
@@ -488,6 +489,35 @@ wss.on("connection", (ws) => {
           .catch((err) => {
             ws.send(JSON.stringify({ type: "error", message: err.message }));
           });
+      }
+
+      if (msg.type === "schedule-lookup") {
+        const q = String(msg.query || "").trim();
+        const reply = (o) => ws.send(JSON.stringify(Object.assign({ type: "schedule-lookup", reqId: msg.reqId, query: q }, o)));
+        if (schedule.isGrid(q)) {
+          reply({ ok: true, grid: q.length >= 6 ? q.slice(0, 4).toUpperCase() + q.slice(4, 6).toLowerCase() : q.toUpperCase(), source: "grid" });
+        } else {
+          schedule.callsignGrid(q).then((r) => reply(Object.assign({ ok: true, callsign: q.toUpperCase() }, r)))
+            .catch((e) => reply({ ok: false, error: e.message }));
+        }
+        return;
+      }
+      if (msg.type === "schedule-find") {
+        const reply = (o) => ws.send(JSON.stringify(Object.assign({ type: "schedule-result", reqId: msg.reqId }, o)));
+        const grid = String(msg.grid || "").trim();
+        const remote = schedule.gridToLatLon(grid);
+        if (!remote) { reply({ ok: false, error: "Enter a valid 4 or 6 character grid (e.g. FN31 or FN31pr)." }); return; }
+        const obs = state.getObserver();
+        const home = { lat: obs.latitude * 180 / Math.PI, lon: obs.longitude * 180 / Math.PI, heightKm: obs.height };
+        const minEl = Number.isFinite(config.ROTOR_MIN_EL) ? config.ROTOR_MIN_EL : 0;
+        const t0 = Date.now();
+        schedule.findSchedule({ home, remote, hours: msg.hours === 48 ? 48 : 24, minEl })
+          .then((r) => {
+            console.log("Schedule " + grid + " " + r.hours + "h: " + r.rows.length + " windows, " + r.satsChecked + " sats, " + (Date.now() - t0) + "ms");
+            reply(Object.assign({ ok: true, grid, remote, home, homeGrid: stationFromProfile().grid || "" }, r));
+          })
+          .catch((e) => reply({ ok: false, error: e.message }));
+        return;
       }
 
       if (msg.type === "clear-decodes") {
