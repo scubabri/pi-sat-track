@@ -946,12 +946,12 @@
       </div>
 
       <aside id="sidebar">
-        <section class="panel-section cfg-summary" id="cfg-summary">
+        <section class="panel-section cfg-summary collapsible" id="cfg-summary" data-collapse-key="station-summary">
           <div class="cfg-summary-head">
-            <h3>Station</h3>
+            <h3 class="collapse-head">Station</h3>
             <button type="button" class="btn btn-small" id="btn-config-open" title="Open station configuration">&#9881; Configure</button>
           </div>
-          <dl class="cfg-summary-list">
+          <dl class="cfg-summary-list collapse-body">
             <dt>Profile</dt><dd id="cfg-sum-profile">-</dd>
             <dt>Grid</dt><dd id="cfg-sum-grid">-</dd>
             <dt>Radio</dt><dd id="cfg-sum-radio">-</dd>
@@ -960,6 +960,7 @@
           </dl>
         </section>
         <section class="panel-section qso-log-section">
+          <h3>Logging</h3>
           <form id="qso-log-form" class="qso-log-row" autocomplete="off">
             <input
               type="text"
