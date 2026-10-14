@@ -75,8 +75,8 @@
       it.lines.forEach((l) => layer.removeLayer(l));
       it.lines = [];
       const split = typeof splitAtDateLine === "function" ? splitAtDateLine : (p) => [p];
-      for (const seg of split(t.trail || [])) it.lines.push(hookHover(L.polyline(seg, { color: it.color, weight: 1.5, opacity: 0.55, interactive: true, bubblingMouseEvents: false }), t.key, "trail").addTo(layer));
-      for (const seg of split(t.forward || [])) it.lines.push(hookHover(L.polyline(seg, { color: it.color, weight: 1, opacity: 0.35, dashArray: "4 7", interactive: true, bubblingMouseEvents: false }), t.key, "fwd").addTo(layer));
+      for (const seg of split(t.trail || [])) it.lines.push(hookHover(L.polyline(seg, { color: it.color, weight: 0.75, opacity: 0.6, smoothFactor: 0.5, lineJoin: "round", lineCap: "round", interactive: true, bubblingMouseEvents: false }), t.key, "trail").addTo(layer));
+      for (const seg of split(t.forward || [])) it.lines.push(hookHover(L.polyline(seg, { color: it.color, weight: 0.5, opacity: 0.45, dashArray: "4 7", smoothFactor: 0.5, lineJoin: "round", lineCap: "round", interactive: true, bubblingMouseEvents: false }), t.key, "fwd").addTo(layer));
     }
     applyHighlight();
   }
@@ -133,8 +133,8 @@
       it.lines.forEach((l) => {
         const fwd = !!(l.options && l.options.dashArray);
         l.setStyle({
-          weight: hi ? 3 : fwd ? 1 : 1.5,
-          opacity: hi ? (fwd ? 0.8 : 1) : dim ? 0.12 : fwd ? 0.35 : 0.55,
+          weight: hi ? 1.5 : fwd ? 0.5 : 0.75,
+          opacity: hi ? (fwd ? 0.85 : 1) : dim ? 0.12 : fwd ? 0.45 : 0.6,
         });
       });
       if (it.circle) it.circle.setStyle({ opacity: hi ? 0.9 : dim ? 0.12 : 0.4, weight: hi ? 2 : 1, fillOpacity: hi ? 0.1 : dim ? 0.01 : 0.03 });
