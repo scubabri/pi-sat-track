@@ -164,3 +164,23 @@
 .btn-ctcss.active:hover {
   background: rgba(6, 95, 70, 0.95);
 }
+
+/* Offset controls beside each frequency */
+.freq-block-split {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.freq-block-split .freq-main { min-width: 0; }
+.fine-row.freq-fine {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  margin: 0;
+  flex-shrink: 0;
+}
+.freq-fine .freq-fine-btns { display: flex; gap: 6px; }
+.freq-fine .fine-offset { min-width: 0; text-align: right; }
+.fine-tune-block { margin-top: 4px; }
+.fine-row .fine-side-step { width: auto; margin-right: 6px; }
