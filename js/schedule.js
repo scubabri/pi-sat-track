@@ -3,7 +3,7 @@
  * Button sits in the FT / ✕ decode control bar.
  */
 (function () {
-  let panel, backdrop, qEl, gridEl, resEl, barEl, tbody, theadRow, findBtn, sortEl, footEl;
+  let panel, backdrop, qEl, resEl, barEl, tbody, theadRow, findBtn, sortEl, footEl;
   let hours = 24;
   let sortBy = "best";
   let rows = [];
@@ -41,7 +41,6 @@
       '<div class="sc-head"><h3>Sked Finder</h3><button class="sc-x" title="Close" aria-label="Close">\u2715</button></div>' +
       '<div class="sc-body"><div class="sc-row">' +
       '<div><label for="sched-q">Callsign or grid</label><input type="text" id="sched-q" placeholder="FN31 or W1AW" autocomplete="off" spellcheck="false"></div>' +
-      '<div><label for="sched-grid">Grid</label><input type="text" id="sched-grid" class="sc-grid" placeholder="—" maxlength="6" autocomplete="off" spellcheck="false"></div>' +
       '<div><label>Window</label><div class="sc-seg"><button data-h="24" class="on">24h</button><button data-h="48">48h</button></div></div>' +
       '<button class="sc-btn sc-primary" id="sched-find">Find</button></div>' +
       '<div class="sc-resolved" id="sched-res"></div>' +
@@ -51,7 +50,6 @@
     document.body.appendChild(backdrop);
     document.body.appendChild(panel);
     qEl = panel.querySelector("#sched-q");
-    gridEl = panel.querySelector("#sched-grid");
     resEl = panel.querySelector("#sched-res");
     barEl = panel.querySelector("#sched-summary");
     tbody = panel.querySelector("tbody");
@@ -70,10 +68,8 @@
     panel.querySelectorAll("[data-sort]").forEach((a) => a.addEventListener("click", () => { sortBy = a.dataset.sort; render(); }));
     findBtn.addEventListener("click", onFind);
     qEl.addEventListener("keydown", (e) => { if (e.key === "Enter") onFind(); });
-    gridEl.addEventListener("keydown", (e) => { if (e.key === "Enter") onFind(); });
     // Typing a new query invalidates the resolved grid
-    qEl.addEventListener("input", () => { gridEl.value = ""; lookupLabel = ""; setRes(""); });
-    gridEl.addEventListener("input", () => { lookupLabel = "edited"; });
+    qEl.addEventListener("input", () => { lookupLabel = ""; setRes(""); });
   }
 
   function setRes(html, err) { resEl.innerHTML = html; resEl.classList.toggle("err", !!err); }
@@ -92,14 +88,12 @@
   function onFind() {
     clearMap();
     const q = qEl.value.trim();
-    const g = gridEl.value.trim();
-    if (g && GRID_RE.test(g) && (lookupLabel || GRID_RE.test(q))) return runFind(g);
     if (!q) { setRes("Enter a callsign or grid (e.g. FN31).", true); return; }
     if (GRID_RE.test(q)) {
-      gridEl.value = q.length >= 6 ? q.slice(0, 4).toUpperCase() + q.slice(4).toLowerCase() : q.toUpperCase();
+      const g = q.length >= 6 ? q.slice(0, 4).toUpperCase() + q.slice(4).toLowerCase() : q.toUpperCase();
       lookupLabel = "grid";
-      setRes("Grid <b>" + esc(gridEl.value) + "</b>");
-      return runFind(gridEl.value);
+      setRes("Grid <b>" + esc(g) + "</b>");
+      return runFind(g);
     }
     pendingLookup = ++reqSeq;
     setRes("Looking up " + esc(q.toUpperCase()) + "…");
@@ -120,21 +114,21 @@
     if (msg.reqId !== pendingLookup) return;
     findBtn.disabled = false;
     if (!msg.ok) {
-      gridEl.value = "";
-      setRes(esc(msg.error || "Lookup failed.") + " Type a grid in the Grid box (e.g. FN31) and press Find.", true);
-      gridEl.focus();
+      setRes(esc(msg.error || "Lookup failed.") + " Enter a grid instead (e.g. FN31) and press Find.", true);
+      qEl.focus(); qEl.select();
       return;
     }
-    gridEl.value = msg.grid;
     lookupLabel = "lookup";
     let via = "";
     if (msg.source === "g7vrd") {
       via = " via g7vrd";
       if (msg.ts) { const d = new Date(msg.ts); if (!isNaN(d)) via += " (last seen " + d.toISOString().slice(0, 10) + ")"; }
     }
-    setRes("Grid <b>" + esc(msg.grid) + "</b>" + esc(via) + " · editable");
+    setRes(esc((msg.callsign || q0(msg)).toUpperCase()) + " \u2192 grid <b>" + esc(msg.grid) + "</b>" + esc(via));
     runFind(msg.grid);
   }
+
+  function q0(msg) { return String(msg.query || qEl.value || "").trim(); }
 
   function onResult(msg) {
     if (msg.reqId !== pendingFind) return;
