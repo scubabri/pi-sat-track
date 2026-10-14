@@ -22,3 +22,20 @@
   color: #777;
 }
 .decode-toggle-control .decode-toggle-btn.active { color: #c48a00; }
+
+/* Match zoom / center controls */
+.decode-toggle-control {
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+.decode-toggle-control a {
+  background: #161b22 !important;
+  color: #e6edf3 !important;
+  border: 1px solid #30363d !important;
+}
+.decode-toggle-control a:hover {
+  background: #21262d !important;
+  color: #58a6ff !important;
+}
+.decode-toggle-control .decode-toggle-btn { color: #8b949e !important; }
+.decode-toggle-control .decode-toggle-btn.active { color: #c48a00 !important; }
