@@ -111,7 +111,7 @@ function stationFromProfile(fallback) {
   const pcfg = prof.config || {};
   const fb = fallback || {};
   return {
-    callsign: pcfg.callsign || fb.callsign || "",
+    callsign: String(pcfg.callsign || fb.callsign || "").trim().toUpperCase(),
     grid: pcfg.grid || fb.grid || "",
   };
 }
@@ -722,8 +722,7 @@ wss.on("connection", (ws, req) => {
         applyWsjtxListener();
 
         const cfgPatch = Object.assign({}, ep);
-        if (typeof msg.callsign === "string") cfgPatch.callsign = msg.callsign;
-        if (typeof msg.grid === "string") cfgPatch.grid = msg.grid;
+        Object.assign(cfgPatch, logbook.normalizeStationFields(msg));
         if (typeof msg.elevation === "number")
           cfgPatch.elevation = msg.elevation;
         profiles.updateActive({ config: cfgPatch });
