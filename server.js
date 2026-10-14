@@ -490,6 +490,11 @@ wss.on("connection", (ws) => {
           });
       }
 
+      if (msg.type === "clear-decodes") {
+        decodeStore.clear();
+        console.log("WSJT-X spots cleared");
+        return;
+      }
       if (msg.type === "radio") {
         radios.setRadio(!!msg.on);
         syncWsjtxGate();

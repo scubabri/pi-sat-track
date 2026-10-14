@@ -47,6 +47,21 @@
           localStorage.setItem(LS_KEY, on ? "1" : "0");
           render();
         });
+        const clr = L.DomUtil.create("a", "decode-clear-btn", c);
+        clr.href = "#";
+        clr.setAttribute("role", "button");
+        clr.title = "Clear WSJT-X spots";
+        clr.setAttribute("aria-label", "Clear WSJT-X spots");
+        clr.textContent = "\u2715";
+        L.DomEvent.on(clr, "click", (e) => {
+          L.DomEvent.preventDefault(e);
+          if (layer) layer.clearLayers();
+          markers.clear();
+          try {
+            if (typeof ws !== "undefined" && ws && ws.readyState === 1)
+              ws.send(JSON.stringify({ type: "clear-decodes" }));
+          } catch (_) {}
+        });
         syncBtn();
         return c;
       },
