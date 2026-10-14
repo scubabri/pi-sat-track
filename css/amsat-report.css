@@ -4,7 +4,7 @@
 .amsat-dialog { background: var(--panel, #1b1f27); color: var(--text, #ddd); border: 1px solid var(--border, #333); border-radius: 10px; padding: 16px 18px; width: 380px; max-width: 94vw; display: flex; flex-direction: column; gap: 10px; font-size: .85rem; }
 .amsat-dialog h3 { margin: 0 0 4px; }
 .amsat-dialog label { display: flex; flex-direction: column; gap: 3px; color: var(--text-dim, #999); flex: 1; }
-.amsat-dialog input, .amsat-dialog select { background: var(--bg, #111); color: var(--text, #ddd); border: 1px solid var(--border, #333); border-radius: 6px; padding: 5px 7px; font-family: var(--mono, monospace); min-width: 0; }
+.amsat-dialog input, .amsat-dialog select { background: var(--bg, #111); color: var(--text, #ddd); border: 1px solid var(--border, #333); border-radius: 6px; padding: 5px 7px; font-family: var(--mono, monospace); min-width: 0; width: 100%; box-sizing: border-box; }
 .amsat-row { display: flex; gap: 8px; }
 .amsat-reports { display: flex; gap: 6px; }
 .amsat-reports button { flex: 1; padding: 7px 4px; border-radius: 6px; border: 1px solid var(--border, #333); background: var(--bg, #111); color: var(--text, #ddd); cursor: pointer; font-size: .8rem; }
