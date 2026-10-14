@@ -1126,37 +1126,9 @@
           </div>
         </section>
 
-        <section class="panel-section">
-          <h3>Station Status</h3>
-          <div class="status-item">
-            <span class="label">Callsign</span><span id="station-call">-</span>
-          </div>
-          <div class="status-item">
-            <span class="label">Grid</span><span id="station-grid">-</span>
-          </div>
-          <div class="status-item">
-            <span class="label">Latitude</span><span id="station-lat">-</span>
-          </div>
-          <div class="status-item">
-            <span class="label">Longitude</span><span id="station-lon">-</span>
-          </div>
-          <div class="status-item">
-            <span class="label">Elevation</span><span id="station-elev">-</span>
-          </div>
-          <div class="status-item">
-            <span class="label">Radio</span
-            ><span id="status-tci">Disconnected</span>
-          </div>
-          <div class="status-item">
-            <span class="label">Rotor AZ</span><span id="rotor-az">-</span>
-          </div>
-          <div class="status-item">
-            <span class="label">Rotor EL</span><span id="rotor-el">-</span>
-          </div>
-        </section>
-
-        <section class="panel-section">
-          <h3>Satellite Status</h3>
+        <section class="panel-section collapsible" data-collapse-key="sat-status">
+          <h3 class="collapse-head">Satellite Status</h3>
+          <div class="collapse-body">
           <div class="status-item">
             <span class="label">Name</span><span id="sat-common">-</span>
           </div>
@@ -1199,6 +1171,38 @@
               SatNOGS
             </label>
           </div>
+          </div>
+        </section>
+
+        <section class="panel-section collapsible" data-collapse-key="station-status">
+          <h3 class="collapse-head">Station Status</h3>
+          <div class="collapse-body">
+          <div class="status-item">
+            <span class="label">Callsign</span><span id="station-call">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Grid</span><span id="station-grid">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Latitude</span><span id="station-lat">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Longitude</span><span id="station-lon">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Elevation</span><span id="station-elev">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Radio</span
+            ><span id="status-tci">Disconnected</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Rotor AZ</span><span id="rotor-az">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Rotor EL</span><span id="rotor-el">-</span>
+          </div>
+          </div>
         </section>
       </aside>
     </div>
@@ -1231,5 +1235,6 @@
     <script src="js/qso-log.js"></script>
     <script src="js/log-viewer.js"></script>
     <script src="js/app.js"></script>
+      <script src="js/collapsible.js"></script>
   </body>
 </html>

@@ -178,3 +178,11 @@
   white-space: nowrap;
   text-align: right;
 }
+
+/* Collapsible sidebar sections */
+.panel-section.collapsible .collapse-head { cursor: pointer; user-select: none; }
+.panel-section.collapsible .collapse-head::before {
+  content: "\25BE"; display: inline-block; width: 1em; transition: transform 0.15s;
+}
+.panel-section.collapsible.collapsed .collapse-head::before { transform: rotate(-90deg); }
+.panel-section.collapsible.collapsed .collapse-body { display: none; }
