@@ -39,44 +39,73 @@ async function runTests() {
   const flex = require("../lib/radios/flex");
   flex.init({ broadcast() {}, getContext: () => ({}) });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  let dlBase = 145900000, ulBase = 435000000;
+  // Sat data: real SGP4 Doppler (ISS TLE), sim time runs 30x so the tracked
+  // DL moves ~tens of Hz per tick like a mid-pass LEO.
+  const satellite = require("satellite.js");
+  const { rangeRateKmS } = require("../lib/orbit");
+  const satrec = satellite.twoline2satrec(
+    "1 25544U 98067A   24001.50000000  .00016717  00000-0  10270-3 0  9005",
+    "2 25544  51.6416 247.4627 0006703 130.5360 325.0288 15.49815315432597");
+  const observer = { latitude: 39.74 * Math.PI / 180, longitude: -104.99 * Math.PI / 180, height: 1.6 };
+  const t0 = Date.now(), simT0 = new Date(Date.UTC(2024, 0, 1, 12, 5)).getTime();
+  const F0 = 145800000, ulBase = 435000000;
+  const dopplerDl = () => {
+    const rr = rangeRateKmS(satrec, observer, new Date(simT0 + (Date.now() - t0) * 30));
+    return Math.round(F0 * (1 - rr / 299792.458));
+  };
+  let knobStep = 0; const absorbs = [];
+  const origLog = console.log;
+  console.log = (...a) => { if (String(a[0]).startsWith("Flex dial absorb DL")) absorbs.push({ step: knobStep, vs: a[1] }); origLog(...a); };
   const tick = () => {
     const m = flex.getRadioState().manualDlOffset;
-    return flex.pushFrequencies(ulBase, dlBase + m);
+    return flex.pushFrequencies(ulBase, dopplerDl() + m);
   };
+  // State tick at 250 ms like state.js (driver poll runs its own 400 ms timer)
+  const ticker = setInterval(() => tick().catch(() => {}), 250);
+  const knob = (hz) => { knobStep++; dlS.freq += hz; };
   flex.setRadio(true);
-  for (let i = 0; i < 40 && flex.getRadioState().syncNeeded; i++) { await tick(); await sleep(250); }
+  for (let i = 0; i < 60 && flex.getRadioState().syncNeeded; i++) await sleep(250);
   const st = () => flex.getRadioState();
   const results = [];
   const check = (name, ok, info) => { results.push([name, ok]); console.log((ok ? "PASS " : "FAIL ") + name, info || ""); };
-  console.log("synced:", !st().syncNeeded, "dl sim", dlS.freq);
-  // Settle (lets poll confirm lastFreqHz)
-  for (let i = 0; i < 4; i++) { await tick(); await sleep(250); }
+  const trueOff = () => dlS.freq - dopplerDl() - st().dlFineOffset;
+  const offOk = () => Math.abs(st().manualDlOffset - trueOff()) < 150;
+  const noDouble = (from) => {
+    const seen = {}; for (const a of absorbs.slice(from)) { if (seen[a.step]) return false; seen[a.step] = 1; } return true;
+  };
+  console.log("synced:", !st().syncNeeded);
+  await sleep(1500);
 
   // (c) small step absorbed
-  dlS.freq += 2000;
-  for (let i = 0; i < 4; i++) { await tick(); await sleep(250); }
-  check("(c) small 2 kHz step absorbed", Math.abs(st().manualDlOffset - 2000) < 100, "manualDl=" + st().manualDlOffset);
-  dlS.freq += 9000; // 9 kHz legit spin → pending then confirmed
-  for (let i = 0; i < 6; i++) { await tick(); await sleep(250); }
-  check("(c2) 9 kHz spin confirmed", Math.abs(st().manualDlOffset - 11000) < 100, "manualDl=" + st().manualDlOffset);
+  let n0 = absorbs.length; knob(2000); await sleep(1500);
+  check("(c) small 2 kHz step absorbed", offOk() && Math.abs(st().manualDlOffset - 2000) < 150 && noDouble(n0), "manualDl=" + Math.round(st().manualDlOffset));
+  n0 = absorbs.length; knob(9000); await sleep(2000);
+  check("(c2) 9 kHz spin confirmed once", offOk() && Math.abs(st().manualDlOffset - 11000) < 150 && noDouble(n0), "manualDl=" + Math.round(st().manualDlOffset) + " absorbs=" + (absorbs.length - n0));
 
   // (b) single spurious 45 kHz report that reverts
-  const before = st().manualDlOffset; const freqBefore = dlS.freq;
-  dlS.override.push(dlS.freq + 45000);
-  for (let i = 0; i < 8; i++) { await tick(); await sleep(250); }
-  check("(b) spurious 45 kHz discarded", Math.abs(st().manualDlOffset - before) < 1 && Math.abs(dlS.freq - freqBefore) < 5,
-    "manualDl=" + st().manualDlOffset + " radio=" + dlS.freq);
+  let before = st().manualDlOffset; n0 = absorbs.length;
+  dlS.override.push(dlS.freq + 45000); await sleep(2000);
+  check("(b) spurious 45 kHz discarded", Math.abs(st().manualDlOffset - before) < 150 && absorbs.length === n0 && offOk(),
+    "manualDl=" + Math.round(st().manualDlOffset));
 
   // (a) fast spin 36 kHz that persists (with continued tuning)
-  const b2 = st().manualDlOffset;
-  dlS.freq += 36338;
-  await tick(); await sleep(200);
-  dlS.freq += 373; // keeps turning
-  for (let i = 0; i < 6; i++) { await tick(); await sleep(250); }
-  check("(a) 36 kHz persistent spin accepted", Math.abs(st().manualDlOffset - (b2 + 36711)) < 100 && Math.abs(dlS.freq - (dlBase + st().manualDlOffset)) < 100,
-    "manualDl=" + st().manualDlOffset + " radio=" + dlS.freq);
+  n0 = absorbs.length; knob(36338); await sleep(200); knob(373); await sleep(2500);
+  check("(a) 36 kHz persistent spin accepted", offOk() && noDouble(n0), "manualDl=" + Math.round(st().manualDlOffset) + " true=" + Math.round(trueOff()));
 
+  // (d) replay of field log: rapid multi-step spins, push+poll interleaved, Doppler moving
+  n0 = absorbs.length;
+  const seq = [[8369, 150], [800, 1200], [-16896 - 9169 + 9169 - 8369 - 800 + 9169, 300], [-9300, 150], [-13300, 1500],
+    [7203, 200], [12700, 1500], [9300, 120], [2000, 300], [2500, 400], [700, 1500], [9804, 100], [500, 2000]];
+  for (const [hz, wait] of seq) { knob(hz); await sleep(wait); }
+  await sleep(1500);
+  check("(d) field replay: final manualDl == true dial offset", offOk(),
+    "manualDl=" + Math.round(st().manualDlOffset) + " true=" + Math.round(trueOff()));
+  check("(d) field replay: no double absorb", noDouble(n0), "absorbs=" + absorbs.length + " steps=" + seq.length);
+  // Settled: radio follows Doppler at the new offset (no snap-back)
+  await sleep(1000);
+  check("(d) radio tracks tracked+manual after replay", Math.abs(dlS.freq - (dopplerDl() + st().manualDlOffset)) < 150 && offOk(),
+    "radio=" + dlS.freq);
+  clearInterval(ticker);
   flex.setRadio(false); ul.server.close(); dlS.server.close();
   const fails = results.filter((r) => !r[1]).length;
   console.log(fails ? fails + " FAILED" : "ALL PASS");
