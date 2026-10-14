@@ -38,7 +38,7 @@
     panel.id = "sched-panel"; panel.hidden = true;
     panel.setAttribute("role", "dialog");
     panel.innerHTML =
-      '<div class="sc-head"><h3>Schedule Contact</h3><button class="sc-x" title="Close" aria-label="Close">\u2715</button></div>' +
+      '<div class="sc-head"><h3>Sked Finder</h3><button class="sc-x" title="Close" aria-label="Close">\u2715</button></div>' +
       '<div class="sc-body"><div class="sc-row">' +
       '<div><label for="sched-q">Callsign or grid</label><input type="text" id="sched-q" placeholder="FN31 or W1AW" autocomplete="off" spellcheck="false"></div>' +
       '<div><label for="sched-grid">Grid</label><input type="text" id="sched-grid" class="sc-grid" placeholder="—" maxlength="6" autocomplete="off" spellcheck="false"></div>' +
@@ -234,8 +234,8 @@
     schedBtn.href = "#";
     schedBtn.className = "sched-open-btn";
     schedBtn.setAttribute("role", "button");
-    schedBtn.title = "Schedule Contact: find mutual passes with another station";
-    schedBtn.textContent = "Schedule";
+    schedBtn.title = "Sked Finder: find mutual passes with another station";
+    schedBtn.textContent = "Sked Finder";
     schedBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); toggle(); });
     bar.insertBefore(schedBtn, bar.firstChild);
     return true;

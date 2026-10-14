@@ -39,7 +39,7 @@
         btn = L.DomUtil.create("a", "decode-toggle-btn", c);
         btn.href = "#";
         btn.setAttribute("role", "button");
-        btn.textContent = "FT";
+        btn.textContent = "WSJT Heard";
         L.DomEvent.disableClickPropagation(c);
         L.DomEvent.on(btn, "click", (e) => {
           L.DomEvent.preventDefault(e);

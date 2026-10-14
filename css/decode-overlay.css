@@ -39,3 +39,6 @@
 }
 .decode-toggle-control .decode-toggle-btn { color: #8b949e !important; }
 .decode-toggle-control .decode-toggle-btn.active { color: #c48a00 !important; }
+/* Text-label buttons ("WSJT Heard", "Sked Finder") are wider than the 30px icon buttons */
+.decode-toggle-control .decode-toggle-btn { width: auto !important; min-width: 30px; padding: 0 8px; white-space: nowrap; }
+.decode-toggle-control .decode-clear-btn { width: 100% !important; }
