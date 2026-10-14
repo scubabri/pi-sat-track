@@ -317,6 +317,11 @@
   text-decoration: none !important;
 }
 
+.map-center-btn.active {
+  background: #1f2a37 !important;
+  box-shadow: inset 0 0 0 1px #58a6ff55;
+}
+
 .map-center-btn:hover {
   background: #21262d !important;
   color: #58a6ff !important;

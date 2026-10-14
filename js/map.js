@@ -8,6 +8,31 @@ let passPolylines = [];
 
 const EARTH_RADIUS_KM = 6371;
 
+const MAP_CENTER_KEY = "mapCenterChoice";
+const MID_ATLANTIC_VIEW = { lat: 25, lon: -35, zoom: 2.5 };
+
+function getCenterChoice() {
+  try {
+    return localStorage.getItem(MAP_CENTER_KEY) === "atlantic" ? "atlantic" : "station";
+  } catch (e) {
+    return "station";
+  }
+}
+
+function setCenterChoice(choice) {
+  try {
+    localStorage.setItem(MAP_CENTER_KEY, choice);
+  } catch (e) {}
+  document.querySelectorAll(".map-center-btn").forEach(function (b) {
+    b.classList.toggle("active", b.dataset.center === choice);
+  });
+}
+
+function centerMidAtlantic() {
+  if (!map) return;
+  map.setView([MID_ATLANTIC_VIEW.lat, MID_ATLANTIC_VIEW.lon], MID_ATLANTIC_VIEW.zoom);
+}
+
 function initMap() {
   map = L.map("map", {
     worldCopyJump: true,
@@ -19,7 +44,12 @@ function initMap() {
     wheelDebounceTime: 40,
     maxZoom: 8,
     zoomControl: false,
-  }).setView([20, 0], 2);
+  }).setView(
+    getCenterChoice() === "atlantic"
+      ? [MID_ATLANTIC_VIEW.lat, MID_ATLANTIC_VIEW.lon]
+      : [20, 0],
+    getCenterChoice() === "atlantic" ? MID_ATLANTIC_VIEW.zoom : 2,
+  );
 
   L.control.zoom({ position: "topright" }).addTo(map);
 
@@ -30,18 +60,24 @@ function initMap() {
         "div",
         "leaflet-bar leaflet-control map-center-control",
       );
-      const btn = L.DomUtil.create("a", "map-center-btn", container);
-      btn.href = "#";
-      btn.title = "Center on station (keep zoom)";
-      btn.setAttribute("role", "button");
-      btn.setAttribute("aria-label", "Center on station");
-      btn.innerHTML = "&#8982;";
-
+      const mkBtn = function (choice, title, label, glyph, fn) {
+        const btn = L.DomUtil.create("a", "map-center-btn", container);
+        btn.href = "#";
+        btn.title = title;
+        btn.dataset.center = choice;
+        btn.setAttribute("role", "button");
+        btn.setAttribute("aria-label", label);
+        btn.innerHTML = glyph;
+        if (getCenterChoice() === choice) btn.classList.add("active");
+        L.DomEvent.on(btn, "click", function (e) {
+          L.DomEvent.preventDefault(e);
+          setCenterChoice(choice);
+          fn();
+        });
+      };
       L.DomEvent.disableClickPropagation(container);
-      L.DomEvent.on(btn, "click", function (e) {
-        L.DomEvent.preventDefault(e);
-        centerOnStation();
-      });
+      mkBtn("station", "Center on station (keep zoom)", "Center on station", "&#8982;", centerOnStation);
+      mkBtn("atlantic", "Center mid-Atlantic", "Center mid-Atlantic", "&#127760;&#xFE0E;", centerMidAtlantic);
 
       return container;
     },
@@ -218,6 +254,9 @@ function centerOnGrid(grid, keepZoom) {
     observerMarker.setLatLng([pos.lat, pos.lon]);
     if (!map.hasLayer(observerMarker)) observerMarker.addTo(map);
   }
+
+  // Load/config-driven recenter: respect a stored mid-Atlantic choice
+  if (!keepZoom && getCenterChoice() === "atlantic") return;
 
   if (keepZoom) {
     map.panTo([pos.lat, pos.lon]);
