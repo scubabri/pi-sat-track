@@ -380,8 +380,12 @@ function pushNow() {
   if (tk) broadcast(tk);
 }
 
-wss.on("connection", (ws) => {
-  console.log("Client connected");
+let wsClientSeq = 0;
+wss.on("connection", (ws, req) => {
+  ws._clientTag =
+    "client #" + ++wsClientSeq +
+    " " + ((req && req.socket && req.socket.remoteAddress) || "?");
+  console.log("Client connected", ws._clientTag);
   logHub.sendHistory(ws);
   ws.send(JSON.stringify({ type: "sats", ...state.satsPayload("trackable") }));
   ws.send(
@@ -469,7 +473,7 @@ wss.on("connection", (ws) => {
       }
 
       if (msg.type === "radio") {
-        radios.setRadio(!!msg.on);
+        radios.setRadio(!!msg.on, ws._clientTag || "client");
         syncWsjtxGate();
       }
 
