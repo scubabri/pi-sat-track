@@ -42,3 +42,7 @@
 /* Text-label buttons ("WSJT Heard", "Sked Finder") are wider than the 30px icon buttons */
 .decode-toggle-control .decode-toggle-btn { width: auto !important; min-width: 30px; padding: 0 8px; white-space: nowrap; }
 .decode-toggle-control .decode-clear-btn { width: 100% !important; }
+/* Favorites overlay labels (hover highlight) */
+.leaflet-tooltip.fav-label { pointer-events: auto; cursor: pointer; transition: opacity .12s; }
+.leaflet-tooltip.fav-label.fav-hi { background: rgba(10, 18, 28, 0.92); color: #fff; font-size: 12px; }
+.leaflet-tooltip.fav-label.fav-dim { opacity: 0.35 !important; }

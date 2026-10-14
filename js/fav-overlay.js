@@ -52,8 +52,11 @@
       it.lines.forEach((l) => layer.removeLayer(l));
       if (it.dot) layer.removeLayer(it.dot);
       if (it.circle) layer.removeLayer(it.circle);
+      if (it.hit) layer.removeLayer(it.hit);
     }
     items.delete(key);
+    if (hoverKey === key) hoverKey = null;
+    if (pinKey === key) pinKey = null;
   }
   function item(key) {
     let it = items.get(key);
@@ -72,10 +75,10 @@
       it.lines.forEach((l) => layer.removeLayer(l));
       it.lines = [];
       const split = typeof splitAtDateLine === "function" ? splitAtDateLine : (p) => [p];
-      for (const seg of split(t.trail || [])) it.lines.push(L.polyline(seg, { color: it.color, weight: 1.5, opacity: 0.55, interactive: false }).addTo(layer));
-      for (const seg of split(t.forward || [])) it.lines.push(L.polyline(seg, { color: it.color, weight: 1, opacity: 0.35, dashArray: "4 7", interactive: false }).addTo(layer));
+      for (const seg of split(t.trail || [])) it.lines.push(hookHover(L.polyline(seg, { color: it.color, weight: 1.5, opacity: 0.55, interactive: true, bubblingMouseEvents: false }), t.key, "trail").addTo(layer));
+      for (const seg of split(t.forward || [])) it.lines.push(hookHover(L.polyline(seg, { color: it.color, weight: 1, opacity: 0.35, dashArray: "4 7", interactive: true, bubblingMouseEvents: false }), t.key, "fwd").addTo(layer));
     }
-    bringSelectedToFront();
+    applyHighlight();
   }
 
   function updatePositions(st) {
@@ -89,16 +92,78 @@
       const it = item(f.key);
       const ll = [p.lat, p.lon];
       if (!it.dot) {
-        it.dot = L.circleMarker(ll, { radius: 4, color: "#0d1117", weight: 1, fillColor: it.color, fillOpacity: 1, interactive: false })
-          .bindTooltip(f.display || f.key, { permanent: true, direction: "right", offset: [6, 0], className: "decode-label fav-label" })
+        it.dot = L.circleMarker(ll, { radius: 4, color: "#0d1117", weight: 1, fillColor: it.color, fillOpacity: 1, interactive: false }).addTo(layer);
+        // Larger invisible hit target; carries the (interactive) name label.
+        it.hit = hookHover(L.circleMarker(ll, { radius: 11, stroke: false, fillColor: "#000", fillOpacity: 0, interactive: true, bubblingMouseEvents: false }), f.key, "hit")
+          .bindTooltip(f.display || f.key, { permanent: true, interactive: true, direction: "right", offset: [6, 0], className: "decode-label fav-label" })
           .addTo(layer);
-      } else it.dot.setLatLng(ll);
+        const tt = it.hit.getTooltip();
+        if (tt) { hookHover(tt, f.key, "label"); }
+        applyHighlight();
+      } else { it.dot.setLatLng(ll); if (it.hit) it.hit.setLatLng(ll); }
       const rM = typeof footprintRadiusM === "function" ? footprintRadiusM(p.heightKm) : 0;
       if (rM > 0) {
-        if (!it.circle) it.circle = L.circle(ll, { radius: rM, color: it.color, weight: 1, opacity: 0.4, fillColor: it.color, fillOpacity: 0.03, interactive: false }).addTo(layer);
+        if (!it.circle) { it.circle = L.circle(ll, { radius: rM, color: it.color, weight: 1, opacity: 0.4, fillColor: it.color, fillOpacity: 0.03, interactive: false }).addTo(layer); applyHighlight(); }
         else { it.circle.setLatLng(ll); it.circle.setRadius(rM); }
       }
     }
+  }
+
+  /* ---------- hover / tap highlight ---------- */
+  let hoverKey = null; // mouse hover
+  let pinKey = null; // touch tap toggle
+  const isTouch = () => window.matchMedia && window.matchMedia("(hover: none)").matches;
+
+  function hookHover(obj, key, kind) {
+    const on = (ev, fn) => (obj.on ? obj.on(ev, fn) : null);
+    on("mouseover", () => { if (!isTouch()) { hoverKey = key; applyHighlight(); } });
+    on("mouseout", () => { if (!isTouch() && hoverKey === key) { hoverKey = null; applyHighlight(); } });
+    on("click", (e) => {
+      if (e && e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
+      if (isTouch()) { pinKey = pinKey === key ? null : key; applyHighlight(); }
+    });
+    return obj;
+  }
+
+  function applyHighlight() {
+    const hk = hoverKey || pinKey;
+    for (const [key, it] of items) {
+      const hi = hk === key;
+      const dim = hk && !hi;
+      it.lines.forEach((l) => {
+        const fwd = !!(l.options && l.options.dashArray);
+        l.setStyle({
+          weight: hi ? 3 : fwd ? 1 : 1.5,
+          opacity: hi ? (fwd ? 0.8 : 1) : dim ? 0.12 : fwd ? 0.35 : 0.55,
+        });
+      });
+      if (it.circle) it.circle.setStyle({ opacity: hi ? 0.9 : dim ? 0.12 : 0.4, weight: hi ? 2 : 1, fillOpacity: hi ? 0.1 : dim ? 0.01 : 0.03 });
+      if (it.dot) it.dot.setStyle({ radius: hi ? 6 : 4, fillOpacity: dim ? 0.35 : 1, opacity: dim ? 0.35 : 1 });
+      const tt = it.hit && it.hit.getTooltip && it.hit.getTooltip();
+      const el = tt && tt.getElement && tt.getElement();
+      if (el) {
+        el.classList.toggle("fav-hi", hi);
+        el.classList.toggle("fav-dim", !!dim);
+        el.style.borderLeft = hi ? "3px solid " + it.color : "";
+        el.style.zIndex = hi ? 1000 : "";
+      }
+      if (hi) {
+        it.lines.forEach((l) => l.bringToFront());
+        if (it.circle) it.circle.bringToFront();
+        if (it.dot) it.dot.bringToFront();
+        if (it.hit) it.hit.bringToFront();
+      }
+    }
+    // Selected sat always stays on top and unchanged.
+    bringSelectedToFront();
+  }
+
+  // Tap on empty map clears a touch highlight.
+  function hookMapClear() {
+    const m = getMap();
+    if (!m || m.__favHiClear) return;
+    m.__favHiClear = true;
+    m.on("click", () => { if (pinKey) { pinKey = null; applyHighlight(); } });
   }
 
   function request() { const s = sock(); if (s) s.send(JSON.stringify({ type: "fav-tracks-get" })); }
@@ -156,7 +221,7 @@
 
   function init() {
     setInterval(patchWs, 500);
-    const t = setInterval(() => { if (addButton()) clearInterval(t); }, 300);
+    const t = setInterval(() => { if (addButton()) { hookMapClear(); clearInterval(t); } }, 300);
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
