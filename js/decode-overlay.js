@@ -1,0 +1,148 @@
+/**
+ * Map overlay of stations heard by WSJT-X (server "wsjtx-decodes" message).
+ * Small circle marker at the grid-square centre + compact permanent label.
+ * Opacity fades with age; stations drop out when the server expires them.
+ * Toggle (map control, top-right) persisted in localStorage.
+ */
+(function () {
+  const LS_KEY = "decodeOverlayOn";
+  let on = localStorage.getItem(LS_KEY) !== "0";
+  let layer = null;
+  let stations = [];
+  let expireMs = 15 * 60 * 1000;
+  let skewMs = 0; // server now - client now
+  const markers = new Map();
+  let btn = null;
+
+  function getMap() {
+    return typeof map !== "undefined" && map ? map : null;
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  }
+  function ensureLayer() {
+    const m = getMap();
+    if (!m || typeof L === "undefined") return null;
+    if (!layer) {
+      layer = L.layerGroup();
+      addControl(m);
+    }
+    if (on && !m.hasLayer(layer)) layer.addTo(m);
+    if (!on && m.hasLayer(layer)) m.removeLayer(layer);
+    return layer;
+  }
+  function addControl(m) {
+    const Ctl = L.Control.extend({
+      options: { position: "topright" },
+      onAdd: function () {
+        const c = L.DomUtil.create("div", "leaflet-bar leaflet-control decode-toggle-control");
+        btn = L.DomUtil.create("a", "decode-toggle-btn", c);
+        btn.href = "#";
+        btn.setAttribute("role", "button");
+        btn.textContent = "FT";
+        L.DomEvent.disableClickPropagation(c);
+        L.DomEvent.on(btn, "click", (e) => {
+          L.DomEvent.preventDefault(e);
+          on = !on;
+          localStorage.setItem(LS_KEY, on ? "1" : "0");
+          render();
+        });
+        syncBtn();
+        return c;
+      },
+    });
+    new Ctl().addTo(m);
+  }
+  function syncBtn() {
+    if (!btn) return;
+    btn.classList.toggle("active", on);
+    btn.title = (on ? "Hide" : "Show") + " WSJT-X decoded stations";
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+  }
+  function ageOpacity(ageMs) {
+    const f = Math.min(1, Math.max(0, ageMs / expireMs));
+    return 1 - 0.75 * f; // 1.0 fresh -> 0.25 just before expiry
+  }
+  function render() {
+    const lg = ensureLayer();
+    syncBtn();
+    if (!lg) return;
+    const now = Date.now() + skewMs;
+    const seen = new Set();
+    for (const s of stations) {
+      const age = now - s.lastHeard;
+      if (age > expireMs) continue;
+      seen.add(s.call);
+      const op = ageOpacity(age);
+      let mk = markers.get(s.call);
+      const html =
+        '<span class="dc-call">' + esc(s.call) + '</span><span class="dc-grid">' + esc(s.grid) + "</span>";
+      const tip =
+        s.call + " " + s.grid + (s.mode ? " " + s.mode : "") +
+        (Number.isFinite(s.snr) ? " " + (s.snr > 0 ? "+" : "") + s.snr + " dB" : "") +
+        " · " + Math.max(0, Math.round(age / 60000)) + " min ago";
+      if (!mk) {
+        mk = L.circleMarker([s.lat, s.lon], {
+          radius: 3,
+          weight: 1,
+          color: "#0b1e2d",
+          fillColor: "#ffd34d",
+          fillOpacity: op,
+          opacity: op,
+          className: "decode-dot",
+        });
+        mk.bindTooltip(html, {
+          permanent: true,
+          direction: "right",
+          offset: [4, 0],
+          className: "decode-label",
+          opacity: op,
+        });
+        mk.addTo(lg);
+        markers.set(s.call, mk);
+      } else {
+        mk.setLatLng([s.lat, s.lon]);
+        mk.setStyle({ fillOpacity: op, opacity: op });
+        mk.setTooltipContent(html);
+        const t = mk.getTooltip();
+        if (t) t.setOpacity(op);
+      }
+      const el = mk.getElement && mk.getElement();
+      if (el) el.setAttribute("aria-label", tip);
+      mk.options.title = tip;
+    }
+    for (const [call, mk] of markers) {
+      if (!seen.has(call)) {
+        lg.removeLayer(mk);
+        markers.delete(call);
+      }
+    }
+  }
+  function apply(msg) {
+    stations = Array.isArray(msg.stations) ? msg.stations : [];
+    if (msg.expireMs > 0) expireMs = msg.expireMs;
+    if (msg.now > 0) skewMs = msg.now - Date.now();
+    render();
+  }
+  window.applyDecodeOverlay = apply;
+
+  function patchWs() {
+    if (typeof ws === "undefined" || !ws || ws.__decodeOverlayPatched) return;
+    ws.addEventListener("message", (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === "wsjtx-decodes") apply(msg);
+      } catch (_) {}
+    });
+    ws.__decodeOverlayPatched = true;
+  }
+  function init() {
+    setInterval(patchWs, 500);
+    setInterval(render, 20000); // refresh fading / expiry between updates
+    const t = setInterval(() => {
+      if (ensureLayer()) clearInterval(t);
+    }, 300);
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();

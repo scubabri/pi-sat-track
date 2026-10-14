@@ -74,6 +74,7 @@ const profiles = require("./lib/profiles");
 const connectionTest = require("./lib/connection-test");
 const logbook = require("./lib/logbook");
 const wsjtxListener = require("./lib/wsjtx-listener");
+const wsjtxDecodes = require("./lib/wsjtx-decodes");
 
 /** WebSocket server; set after createServer. broadcast() is safe before that. */
 let wss = null;
@@ -112,6 +113,15 @@ function stationFromProfile(fallback) {
     grid: pcfg.grid || fb.grid || "",
   };
 }
+
+/**
+ * Heard stations from WSJT-X Decode (type 2) for the map overlay. Decodes
+ * only arrive while the listener gate is open; when it closes the list is
+ * kept (not cleared) and simply ages out after DECODE_EXPIRE_MS.
+ */
+const decodeStore = wsjtxDecodes.createStore({
+  onChange: () => broadcast(decodeStore.payload()),
+});
 
 /** WSJT-X listener: enrich with sat info and re-send via the logging output. */
 const wsjtx = wsjtxListener.createListener({
@@ -155,6 +165,7 @@ const wsjtx = wsjtxListener.createListener({
       .catch((err) => console.warn("WSJT-X forward:", err.message));
   },
   onStatus: () => broadcastWsjtxStatus(),
+  onDecode: (d) => decodeStore.add(d),
 });
 
 function wsjtxStatusPayload() {
@@ -398,11 +409,15 @@ wss.on("connection", (ws) => {
   );
   ws.send(JSON.stringify(profiles.publicPayload()));
   ws.send(JSON.stringify(wsjtxStatusPayload()));
+  ws.send(JSON.stringify(decodeStore.payload()));
   // Re-send shortly after: the sidebar logging script hooks the socket
   // asynchronously and can miss the first message.
   setTimeout(() => {
     try {
-      if (ws.readyState === 1) ws.send(JSON.stringify(wsjtxStatusPayload()));
+      if (ws.readyState === 1) {
+        ws.send(JSON.stringify(wsjtxStatusPayload()));
+        ws.send(JSON.stringify(decodeStore.payload()));
+      }
     } catch (_) {}
   }, 1500);
   radios.broadcastAllStatus();
