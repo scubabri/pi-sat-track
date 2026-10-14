@@ -1,6 +1,6 @@
 /**
  * Schedule Contact: mutual pass finder (server "schedule-lookup" / "schedule-find").
- * Button sits in the FT / ✕ decode control bar.
+ * Button sits in the WSJT Heard / Clear Spots decode control bar.
  */
 (function () {
   let panel, backdrop, qEl, resEl, barEl, tbody, theadRow, findBtn, sortEl, footEl;

@@ -52,7 +52,7 @@
         clr.setAttribute("role", "button");
         clr.title = "Clear WSJT-X spots";
         clr.setAttribute("aria-label", "Clear WSJT-X spots");
-        clr.textContent = "\u2715";
+        clr.textContent = "Clear Spots";
         L.DomEvent.on(clr, "click", (e) => {
           L.DomEvent.preventDefault(e);
           if (layer) layer.clearLayers();
