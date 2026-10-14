@@ -73,6 +73,15 @@ function favNextLabel(s, multi, key) {
   if (multi && multi.above) return "UP";
   if (s && s.above) return "UP";
 
+  // Server-computed next pass (kept fresh for every favorite, not just the
+  // selected one) — authoritative over the sat-list snapshot.
+  const np = multi && multi.nextPass;
+  if (np && typeof np.aos === "number") {
+    const now = Date.now();
+    if (now >= np.aos && (np.los == null || now <= np.los)) return "UP";
+    if (now < np.aos) return formatAosHms((np.aos - now) / 1000);
+  }
+
   // Live countdown from absolute deadline (ticks every second client-side)
   if (key && favAosDeadline[key] != null) {
     const sec = (favAosDeadline[key] - Date.now()) / 1000;
@@ -112,6 +121,11 @@ function favAosSortKey(row) {
     (el != null && el >= 0) || !!(multi && multi.above) || !!(s && s.above);
 
   if (above) return -1e12;
+
+  const np = multi && multi.nextPass;
+  if (np && typeof np.aos === "number") {
+    return Math.max(0, (np.aos - Date.now()) / 1000);
+  }
 
   if (
     typeof s.secToAos === "number" &&
