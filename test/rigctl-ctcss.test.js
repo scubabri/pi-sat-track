@@ -18,6 +18,11 @@ function startFakeRigctld(opts) {
     txMode: null,
     failSplit: !!(opts && opts.failSplit),
     failSplitFreq: !!(opts && opts.failSplitFreq),
+    vfo: "VFOA",
+    tone: { VFOA: 0, VFOB: 0 }, // tenths
+    toneOn: { VFOA: 0, VFOB: 0 },
+    nakRead: !!(opts && opts.nakRead),
+    ignoreToneOnVfoB: !!(opts && opts.ignoreToneOnVfoB),
   };
   const server = net.createServer((sock) => {
     let buf = "";
@@ -56,8 +61,19 @@ function startFakeRigctld(opts) {
         } else if (/^X\s+(\S+)/.test(line)) {
           state.txMode = RegExp.$1;
           reply = "RPRT 0";
-        } else if (/^V\s+/.test(line)) {
+        } else if (/^V\s+(\S+)/.test(line)) {
+          state.vfo = RegExp.$1;
           reply = "RPRT 0";
+        } else if (/^C\s+(\d+)/.test(line)) {
+          if (!(state.ignoreToneOnVfoB && state.vfo === "VFOB"))
+            state.tone[state.vfo] = parseInt(RegExp.$1, 10);
+        } else if (/^U TONE (\d)/.test(line)) {
+          if (!(state.stickyToneB && state.vfo === "VFOB"))
+            state.toneOn[state.vfo] = parseInt(RegExp.$1, 10);
+        } else if (line === "c") {
+          reply = state.nakRead ? "RPRT -11" : String(state.tone[state.vfo] || 0);
+        } else if (line === "u TONE") {
+          reply = state.nakRead ? "RPRT -11" : String(state.toneOn[state.vfo] || 0);
         }
         // Multi-line U ? still needs a terminating feel; sendCmd takes first line.
         // For U ? send first token line then RPRT so parser gets something.
@@ -135,7 +151,7 @@ function capture() {
   return { logs, restore: () => { console.log = o; console.warn = w; } };
 }
 
-const toneCmds = (cmds) => cmds.filter((c) => /^(C\s|U TONE|U TSQL|V\s)/.test(c));
+const toneCmds = (cmds) => cmds.filter((c) => /^(C\s|U TONE|U TSQL|V\s|c$|u TONE)/.test(c));
 
 test("SO-50 FM split: CTCSS 67.0 on VFOA+VFOB, UI change to 74.4, then linear clears", async () => {
   const fake = await startFakeRigctld();
@@ -151,8 +167,15 @@ test("SO-50 FM split: CTCSS 67.0 on VFOA+VFOB, UI change to 74.4, then linear cl
     await sleep(150);
     for (let i = 0; i < 4; i++) { await rig.pushFrequencies(145850000, 436795000); await sleep(40); }
     assert.deepStrictEqual(toneCmds(fake.state.cmds), [
-      "C 670", "U TONE 1", "U TSQL 0", "V VFOB", "C 670", "U TONE 1", "U TSQL 0", "V VFOA",
+      "C 670", "U TONE 1", "U TSQL 0", "c", "u TONE",
+      "V VFOB", "C 670", "U TONE 1", "U TSQL 0", "c", "u TONE", "V VFOA",
     ], fake.state.cmds.join("|"));
+    assert.ok(
+      cap.logs.some((l) => l === "rigctl dl tone readback VFOA 67.0 Hz TONE=1 | VFOB 67.0 Hz TONE=1"),
+      cap.logs.join("\n"),
+    );
+    assert.strictEqual(rig.getRadioState().toneVerified, true);
+    assert.strictEqual(rig.getRadioState().toneError, null);
     // Tone after split + X/I
     const iS = fake.state.cmds.indexOf("S 1 VFOB"), iC = fake.state.cmds.indexOf("C 670");
     assert.ok(iS >= 0 && iC > iS, "tone after split ON");
@@ -163,18 +186,25 @@ test("SO-50 FM split: CTCSS 67.0 on VFOA+VFOB, UI change to 74.4, then linear cl
     rig.setCtcss("activation");
     for (let i = 0; i < 3; i++) { await rig.pushFrequencies(145850000, 436795000); await sleep(40); }
     assert.deepStrictEqual(toneCmds(fake.state.cmds).filter((c) => c[0] === "C"), ["C 744", "C 744"]);
+    assert.ok(cap.logs.some((l) => /readback VFOA 74\.4 Hz TONE=1 \| VFOB 74\.4 Hz TONE=1$/.test(l)));
     // UI: off
     fake.state.cmds.length = 0;
     rig.setCtcss("off");
     for (let i = 0; i < 2; i++) { await rig.pushFrequencies(145850000, 436795000); await sleep(40); }
-    assert.deepStrictEqual(toneCmds(fake.state.cmds), ["U TONE 0"]);
+    assert.deepStrictEqual(toneCmds(fake.state.cmds), [
+      "U TONE 0", "U TSQL 0", "u TONE", "V VFOB", "U TONE 0", "U TSQL 0", "u TONE", "V VFOA",
+    ]);
+    assert.deepStrictEqual(fake.state.toneOn, { VFOA: 0, VFOB: 0 }, "both VFOs off");
+    assert.ok(cap.logs.some((l) => l === "rigctl dl tone readback VFOA TONE=0 | VFOB TONE=0"), cap.logs.join("\n"));
+    assert.strictEqual(rig.getRadioState().toneError, null);
 
     // Sat change to linear: clear, no V
     fake.state.cmds.length = 0;
     satKey = "RS-44";
     rig.applyDefaultCtcss(null, null);
     for (let i = 0; i < 3; i++) { await rig.pushFrequencies(145965000, 435640000); await sleep(40); }
-    assert.deepStrictEqual(toneCmds(fake.state.cmds), ["U TONE 0"]);
+    // Already off after explicit OFF → linear clear is current VFO only (no V flicker)
+    assert.deepStrictEqual(toneCmds(fake.state.cmds), ["U TONE 0", "U TSQL 0", "u TONE"]);
     assert.ok(cap.logs.some((l) => /tone → OFF/.test(l)));
   } finally {
     cap.restore();
@@ -195,7 +225,82 @@ test("FM with TX_SPLIT off: tone on current VFO only, sent once", async () => {
     rig.setRadio(true);
     await sleep(150);
     for (let i = 0; i < 4; i++) { await rig.pushFrequencies(145850000, 436795000); await sleep(40); }
-    assert.deepStrictEqual(toneCmds(fake.state.cmds), ["C 670", "U TONE 1", "U TSQL 0"]);
+    assert.deepStrictEqual(toneCmds(fake.state.cmds), ["C 670", "U TONE 1", "U TSQL 0", "c", "u TONE"]);
+  } finally {
+    cap.restore();
+    if (rig) try { rig.setRadio(false); } catch (_) {}
+    await new Promise((r) => fake.server.close(r));
+  }
+});
+
+test("readback MISMATCH on VFOB → toneError (red), cleared by off", async () => {
+  const fake = await startFakeRigctld({ ignoreToneOnVfoB: true });
+  const cap = capture();
+  let rig;
+  try {
+    rig = loadRigctl(fake.port, true);
+    rig.init({ getContext: () => ({ currentSatKey: "SO-50", currentModeIndex: 0 }) });
+    rig.applyDefaultCtcss(67.0, 74.4);
+    rig.setLock(true);
+    rig.setRadio(true);
+    await sleep(150);
+    for (let i = 0; i < 4; i++) { await rig.pushFrequencies(145850000, 436795000); await sleep(40); }
+    assert.ok(cap.logs.some((l) => /WARN rigctl dl tone readback VFOA 67\.0 Hz TONE=1 \| VFOB 0\.0 Hz TONE=1 MISMATCH/.test(l)), cap.logs.join("\n"));
+    const st = rig.getRadioState();
+    assert.strictEqual(st.toneVerified, false);
+    assert.match(st.toneError, /VFOB 0\.0 Hz TONE=1 \[MISMATCH\]/);
+    rig.setCtcss("off");
+    for (let i = 0; i < 2; i++) { await rig.pushFrequencies(145850000, 436795000); await sleep(40); }
+    assert.strictEqual(rig.getRadioState().toneError, null);
+  } finally {
+    cap.restore();
+    if (rig) try { rig.setRadio(false); } catch (_) {}
+    await new Promise((r) => fake.server.close(r));
+  }
+});
+
+test("readback NAK: logged once, toneError set, set still applied", async () => {
+  const fake = await startFakeRigctld({ nakRead: true });
+  const cap = capture();
+  let rig;
+  try {
+    rig = loadRigctl(fake.port, false);
+    rig.init({ getContext: () => ({ currentSatKey: "SO-50", currentModeIndex: 0 }) });
+    rig.applyDefaultCtcss(67.0, 74.4);
+    rig.setLock(true);
+    rig.setRadio(true);
+    await sleep(150);
+    for (let i = 0; i < 3; i++) { await rig.pushFrequencies(145850000, 436795000); await sleep(40); }
+    rig.setCtcss("activation");
+    for (let i = 0; i < 3; i++) { await rig.pushFrequencies(145850000, 436795000); await sleep(40); }
+    const once = cap.logs.filter((l) => /tone readback "c" unsupported/.test(l));
+    assert.strictEqual(once.length, 1, cap.logs.join("\n"));
+    assert.strictEqual(fake.state.tone.VFOA, 744);
+    assert.match(rig.getRadioState().toneError, /read failed/);
+  } finally {
+    cap.restore();
+    if (rig) try { rig.setRadio(false); } catch (_) {}
+    await new Promise((r) => fake.server.close(r));
+  }
+});
+
+test("OFF readback still ON on VFOB → red", async () => {
+  const fake = await startFakeRigctld();
+  const cap = capture();
+  let rig;
+  try {
+    rig = loadRigctl(fake.port, true);
+    rig.init({ getContext: () => ({ currentSatKey: "SO-50", currentModeIndex: 0 }) });
+    rig.applyDefaultCtcss(67.0, 74.4);
+    rig.setLock(true);
+    rig.setRadio(true);
+    await sleep(150);
+    for (let i = 0; i < 3; i++) { await rig.pushFrequencies(145850000, 436795000); await sleep(40); }
+    fake.state.stickyToneB = true; // radio ignores U TONE 0 on VFOB
+    rig.setCtcss("off");
+    for (let i = 0; i < 2; i++) { await rig.pushFrequencies(145850000, 436795000); await sleep(40); }
+    assert.ok(cap.logs.some((l) => /VFOB TONE=1 MISMATCH/.test(l)), cap.logs.join("\n"));
+    assert.match(rig.getRadioState().toneError, /OFF not confirmed/);
   } finally {
     cap.restore();
     if (rig) try { rig.setRadio(false); } catch (_) {}

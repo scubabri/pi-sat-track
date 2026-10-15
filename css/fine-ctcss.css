@@ -227,3 +227,11 @@
 .fine-row .step-spin-arrows button + button { border-top: 1px solid var(--border, #30363d); }
 .fine-row .step-spin-arrows button:hover { background: rgba(75, 85, 99, 0.9); color: #fff; }
 .fine-row .step-spin-arrows button:active { background: rgba(31, 111, 235, 0.45); }
+
+/* Radio readback did not confirm the tone */
+.btn-ctcss.tone-error,
+.btn-ctcss.active.tone-error {
+  background: rgba(127, 29, 29, 0.85);
+  border-color: rgba(239, 68, 68, 0.9);
+  color: #fef2f2;
+}
