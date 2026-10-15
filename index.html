@@ -251,6 +251,28 @@
                     Hamlib/rigctl TCP — SDR++, remote rigctld, any net rigctl
                     server.
                   </p>
+                  <details class="rigctld-help" id="cfg-ul-rigctld-help">
+                    <summary>How to start rigctld on the radio computer</summary>
+                    <p><b>Mac</b> (<code>brew install hamlib</code>; find port with <code>ls /dev/cu.usbmodem*</code>)</p>
+                    <pre><code>rigctld -m 3085 -r /dev/cu.usbmodemXXXX -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span></code></pre>
+                    <p><b>Linux / Pi</b> (<code>sudo apt install libhamlib-utils</code>)</p>
+                    <pre><code>rigctld -m 3085 -r /dev/ttyACM0 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span></code></pre>
+                    <p><b>Windows</b></p>
+                    <pre><code>rigctld.exe -m 3085 -r COM5 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span></code></pre>
+                    <ul>
+                      <li><code>-m</code> rig model: 3085 = IC-705, 3081 = IC-9700. Find others with <code>rigctl -l | grep 9700</code></li>
+                      <li><code>-r</code> serial port of the radio's USB CI-V</li>
+                      <li><code>-s</code> baud — must match the radio's CI-V USB baud setting</li>
+                      <li><code>-T 0.0.0.0</code> listen on the network (not just localhost)</li>
+                      <li><code>-t</code> TCP port — must match the endpoint port above (<span class="rigctld-port">4532</span>)</li>
+                      <li>Add <code>-vvvv</code> for verbose logging</li>
+                    </ul>
+                    <p><b>Run in background</b> (rigctld has no daemon flag)</p>
+                    <pre><code>nohup rigctld -m 3085 -r /dev/ttyACM0 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span> &gt; ~/rigctld.log 2&gt;&amp;1 &amp;</code></pre>
+                    <pre><code>start /min rigctld.exe -m 3085 -r COM5 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span></code></pre>
+                    <pre><code>Start-Process rigctld.exe -ArgumentList '-m 3085 -r COM5 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span>' -WindowStyle Hidden</code></pre>
+                    <p class="form-hint">First: Mac/Linux (adjust <code>-r</code>). Then Windows cmd, PowerShell. Start at boot: a systemd service (Linux/Pi) or launchd agent (Mac) running the same command.</p>
+                  </details>
                 </div>
 
                 <div id="cfg-ul-sdrconnect-block" hidden>
@@ -427,6 +449,28 @@
                     Hamlib/rigctl TCP — SDR++, remote rigctld, any net rigctl
                     server.
                   </p>
+                  <details class="rigctld-help" id="cfg-dl-rigctld-help">
+                    <summary>How to start rigctld on the radio computer</summary>
+                    <p><b>Mac</b> (<code>brew install hamlib</code>; find port with <code>ls /dev/cu.usbmodem*</code>)</p>
+                    <pre><code>rigctld -m 3085 -r /dev/cu.usbmodemXXXX -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span></code></pre>
+                    <p><b>Linux / Pi</b> (<code>sudo apt install libhamlib-utils</code>)</p>
+                    <pre><code>rigctld -m 3085 -r /dev/ttyACM0 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span></code></pre>
+                    <p><b>Windows</b></p>
+                    <pre><code>rigctld.exe -m 3085 -r COM5 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span></code></pre>
+                    <ul>
+                      <li><code>-m</code> rig model: 3085 = IC-705, 3081 = IC-9700. Find others with <code>rigctl -l | grep 9700</code></li>
+                      <li><code>-r</code> serial port of the radio's USB CI-V</li>
+                      <li><code>-s</code> baud — must match the radio's CI-V USB baud setting</li>
+                      <li><code>-T 0.0.0.0</code> listen on the network (not just localhost)</li>
+                      <li><code>-t</code> TCP port — must match the endpoint port above (<span class="rigctld-port">4532</span>)</li>
+                      <li>Add <code>-vvvv</code> for verbose logging</li>
+                    </ul>
+                    <p><b>Run in background</b> (rigctld has no daemon flag)</p>
+                    <pre><code>nohup rigctld -m 3085 -r /dev/ttyACM0 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span> &gt; ~/rigctld.log 2&gt;&amp;1 &amp;</code></pre>
+                    <pre><code>start /min rigctld.exe -m 3085 -r COM5 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span></code></pre>
+                    <pre><code>Start-Process rigctld.exe -ArgumentList '-m 3085 -r COM5 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span>' -WindowStyle Hidden</code></pre>
+                    <p class="form-hint">First: Mac/Linux (adjust <code>-r</code>). Then Windows cmd, PowerShell. Start at boot: a systemd service (Linux/Pi) or launchd agent (Mac) running the same command.</p>
+                  </details>
                 </div>
 
                 <div id="cfg-dl-sdrconnect-block" hidden>

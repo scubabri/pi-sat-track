@@ -186,3 +186,26 @@
 }
 .panel-section.collapsible.collapsed .collapse-head::before { transform: rotate(-90deg); }
 .panel-section.collapsible.collapsed .collapse-body { display: none; }
+
+/* rigctld start-command help (TCP + rigctl) */
+.rigctld-help {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: #cbd5e1;
+  background: rgba(31, 41, 55, 0.55);
+  border: 1px solid rgba(75, 85, 99, 0.5);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+.rigctld-help summary { cursor: pointer; color: #93c5fd; }
+.rigctld-help p { margin: 6px 0 2px; }
+.rigctld-help pre {
+  margin: 0 0 4px;
+  padding: 4px 6px;
+  background: #0b1220;
+  border-radius: 3px;
+  overflow-x: auto;
+  user-select: all;
+}
+.rigctld-help code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.72rem; }
+.rigctld-help ul { margin: 4px 0 2px; padding-left: 18px; }

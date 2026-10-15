@@ -431,6 +431,7 @@ function updateSideVisibility(side) {
   if (protocolRow) protocolRow.hidden = isRigctl || isSdrconnect;
   if (tciBlock) tciBlock.hidden = !isTci;
   if (rigctlBlock) rigctlBlock.hidden = !isRigctl;
+  if (isRigctl) updateRigctldHelpPort(p);
   if (sdrconnectBlock) sdrconnectBlock.hidden = !isSdrconnect;
   if (catBlock) catBlock.hidden = !isCat;
   if (apiBlock) apiBlock.hidden = !needsApi;
@@ -747,4 +748,18 @@ function fillForm(cfg) {
   setVal("cfg-wsjtx-listen-port", d.wsjtxListenPort != null ? d.wsjtxListenPort : 2237);
   setVal("cfg-wsjtx-listen-bind", d.wsjtxListenBind || "0.0.0.0");
   updateLogFormVisibility();
+}
+
+/** Show the configured rigctl endpoint port in the rigctld help commands. */
+function updateRigctldHelpPort(p) {
+  const ep = document.getElementById(p + "-rigctl-endpoint");
+  const help = document.getElementById(p + "-rigctld-help");
+  if (!ep || !help) return;
+  const m = String(ep.value || ep.placeholder || "").match(/:(\d{1,5})\s*$/);
+  const port = m ? m[1] : "4532";
+  help.querySelectorAll(".rigctld-port").forEach((el) => (el.textContent = port));
+  if (!ep.__rigctldHelpBound) {
+    ep.__rigctldHelpBound = true;
+    ep.addEventListener("input", () => updateRigctldHelpPort(p));
+  }
 }
