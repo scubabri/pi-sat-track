@@ -371,3 +371,59 @@ test("dial absorb: stale RPRT 0 from F/I skipped, absorb fires, UL follows", asy
     await new Promise((r) => fake.server.close(r));
   }
 });
+
+test("continuous dial spin: no F snaps back, offset held after settle", async () => {
+  const fake = await startFakeRigctld({ delayAcks: 5 });
+  const logs = [];
+  const origLog = console.log;
+  console.log = (...a) => logs.push(a.join(" "));
+  let rig;
+  try {
+    rig = loadRigctl(fake.port, true);
+    rig.init({
+      getContext: () => ({ currentSatKey: "RS-44", currentModeIndex: 0, ulFixed: false }),
+    });
+    rig.setLock(false);
+    rig.setRadio(true);
+    await sleep(150);
+    let ulD = 145965000; // Doppler-only UL
+    let dlD = 435640000; // Doppler-only DL
+    // state.js: freq = doppler + rState.manualDlOffset (UL inverted).
+    // Simulate the race: the tick's dlHz is computed BEFORE the push runs,
+    // i.e. from the offset as it was at the end of the previous tick.
+    const tick = async () => {
+      const m = rig.getRadioState().manualDlOffset || 0;
+      ulD += 150; dlD -= 60;
+      await rig.pushFrequencies(ulD - m, dlD + m);
+      await sleep(40);
+    };
+    for (let i = 0; i < 6; i++) await tick();
+    const preSpin = fake.state.rxHz;
+    const fIdx = fake.state.cmds.length;
+    // Continuous spin: user turns +1500 Hz before each of 5 ticks.
+    for (let i = 0; i < 5; i++) {
+      fake.state.rxHz += 1500;
+      await tick();
+    }
+    const dialAtStop = fake.state.rxHz;
+    // Settle: dial stops, several more ticks.
+    for (let i = 0; i < 5; i++) await tick();
+    const fs = fake.state.cmds.slice(fIdx).filter((c) => /^F\s/.test(c))
+      .map((c) => parseInt(c.split(/\s+/)[1], 10));
+    for (const f of fs) {
+      assert.ok(
+        f > dialAtStop - 1000,
+        "F snapped back toward pre-spin " + preSpin + ": " + fs.join(","),
+      );
+    }
+    assert.ok(fs.length >= 1, "DL written after settle");
+    const m = rig.getRadioState().manualDlOffset;
+    assert.ok(Math.abs(m - 7500) <= 1000, "offset ~ +7500 after spin: " + m);
+    assert.strictEqual(fake.state.rxHz, dlD + m, "DL holds new offset");
+    assert.ok(logs.some((l) => /dl write after absorb/.test(l)), "first post-absorb DL write logged");
+  } finally {
+    console.log = origLog;
+    if (rig) try { rig.setRadio(false); } catch (_) {}
+    await new Promise((r) => fake.server.close(r));
+  }
+});
