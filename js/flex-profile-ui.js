@@ -48,16 +48,19 @@
     if (!sel) return;
     const show = !!supported;
     sel.hidden = !show;
-    // Greyed/disabled when not connected or no list yet (still visible for Flex)
+    // Enabled once API is connected (list populates from status); greyed otherwise
+    const hasList = Array.isArray(profiles) && profiles.length > 0;
     const disable = !show || !apiConnected;
     sel.disabled = disable;
     sel.title = !show
       ? "SmartSDR profiles (Flex only)"
       : !apiConnected
-        ? "Connect radio API (LAN IP:4992) to load profiles"
-        : selected
-          ? 'SmartSDR global profile: "' + selected + '" — blank = no change'
-          : "SmartSDR global profile for this satellite (blank = no change)";
+        ? "Waiting for Flex radio API (LAN IP:4992)…"
+        : !hasList
+          ? "Connected — waiting for profile list…"
+          : selected
+            ? 'SmartSDR global profile: "' + selected + '" — blank = no change'
+            : "SmartSDR global profile for this satellite (blank = no change)";
     rebuildOptions();
   }
 

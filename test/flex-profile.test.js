@@ -9,6 +9,34 @@ const path = require("path");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+
+const { parseProfilePayload } = require("../lib/radios/flex-api");
+
+test("parseProfilePayload: realistic SmartSDR list with spaces + caret", () => {
+  const body =
+    "profile global list=KD0RC - 6 CW^KD0RC - 6 SSB^KD0RC - 10 CW^SO2RDefault^";
+  const p = parseProfilePayload(body);
+  assert.deepStrictEqual(p.list, [
+    "KD0RC - 6 CW",
+    "KD0RC - 6 SSB",
+    "KD0RC - 10 CW",
+    "SO2RDefault",
+  ]);
+});
+
+test("parseProfilePayload: list + current= with spaces; R-body without profile prefix", () => {
+  const a = parseProfilePayload(
+    "profile global list=Sat VU^Sat UV^ current=Sat VU",
+  );
+  assert.deepStrictEqual(a.list, ["Sat VU", "Sat UV"]);
+  assert.strictEqual(a.current, "Sat VU");
+  const b = parseProfilePayload('list=Alpha^Bravo^Charlie^');
+  assert.deepStrictEqual(b.list, ["Alpha", "Bravo", "Charlie"]);
+  const c = parseProfilePayload('current="My Profile"');
+  assert.strictEqual(c.current, "My Profile");
+});
+
+
 function fakeCat() {
   const st = { cmds: [], hz: 0, md: "2", zz: "01" };
   const server = net.createServer((sock) => {
@@ -292,3 +320,95 @@ test("sat-offsets persists flexProfile per sat (like Data/CW)", () => {
   assert.strictEqual(so.getFlexProfile("ISS"), "APRS 2m");
   assert.strictEqual(so.getDataMode("ISS"), false);
 });
+
+test("Flex API connects for profile list with radio DISABLED", async () => {
+  const a = await fakeApi(["KD0RC - 6 CW", "Sat VU"]);
+  const flex = loadFlex({
+    FLEX_UL_HOST: "127.0.0.1",
+    FLEX_UL_PORT: 1,
+    FLEX_DL_HOST: "127.0.0.1",
+    FLEX_DL_PORT: 1,
+    FLEX_API_HOST: "127.0.0.1",
+    FLEX_API_PORT: a.port,
+    RADIO_TRANSPORT: "tcp",
+    C_MS: 299792458,
+  });
+  const logs = [];
+  const oL = console.log;
+  const oW = console.warn;
+  console.log = (...args) => logs.push(args.join(" "));
+  console.warn = (...args) => logs.push("WARN " + args.join(" "));
+  try {
+    flex.init({
+      getContext: () => ({ currentSatKey: "SO-50", currentModeIndex: 0 }),
+    });
+    // Do NOT enable radio — list should still arrive
+    assert.strictEqual(flex.getRadioState().radioOn, false);
+    for (let i = 0; i < 40 && !flex.getRadioState().apiConnected; i++)
+      await sleep(50);
+    assert.ok(
+      logs.some((l) => /Flex API: connecting 127\.0\.0\.1:/.test(l)),
+      "connecting log: " + logs.filter((l) => /Flex API/.test(l)).join(" || "),
+    );
+    assert.ok(flex.getRadioState().apiConnected, "apiConnected with radio off");
+    for (let i = 0; i < 40 && flex.getRadioState().flexProfiles.length === 0; i++)
+      await sleep(50);
+    assert.ok(
+      flex.getRadioState().flexProfiles.includes("KD0RC - 6 CW"),
+      "profiles: " + JSON.stringify(flex.getRadioState().flexProfiles),
+    );
+    assert.ok(
+      logs.some((l) => /Flex API: \d+ global profiles/.test(l)),
+      "N global profiles log",
+    );
+    // Selecting a profile while radio off saves but does not load
+    a.st.cmds.length = 0;
+    flex.setFlexProfile("Sat VU");
+    await sleep(200);
+    assert.strictEqual(
+      a.st.cmds.filter((c) => /profile\s+global\s+load/.test(c)).length,
+      0,
+      "no load while radio off",
+    );
+    assert.strictEqual(flex.getRadioState().flexProfile, "Sat VU");
+  } finally {
+    console.log = oL;
+    console.warn = oW;
+    try {
+      flex.close();
+    } catch (_) {}
+    a.server.close();
+  }
+});
+
+test("Flex API: skip log when host unset", async () => {
+  const flex = loadFlex({
+    FLEX_UL_HOST: "127.0.0.1",
+    FLEX_UL_PORT: 1,
+    FLEX_DL_HOST: "127.0.0.1",
+    FLEX_DL_PORT: 1,
+    FLEX_API_HOST: "",
+    FLEX_API_PORT: 4992,
+    RADIO_TRANSPORT: "tcp",
+    C_MS: 299792458,
+  });
+  const logs = [];
+  const oL = console.log;
+  console.log = (...args) => logs.push(args.join(" "));
+  try {
+    flex.init({
+      getContext: () => ({ currentSatKey: null, currentModeIndex: 0 }),
+    });
+    await sleep(50);
+    assert.ok(
+      logs.some((l) => /Flex API: skip — no API host configured/.test(l)),
+      logs.join(" || "),
+    );
+  } finally {
+    console.log = oL;
+    try {
+      flex.close();
+    } catch (_) {}
+  }
+});
+
