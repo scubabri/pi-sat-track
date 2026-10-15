@@ -120,9 +120,19 @@
   color: #ecfdf5;
 }
 
-.btn-data-mode {
-  display: block;
+/* Data + CW toggles: one row, side by side (either may be hidden) */
+.mode-toggle-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
   margin-top: 5px;
+}
+.mode-toggle-row:not(:has(> button:not([hidden]))) {
+  display: none;
+}
+.btn-data-mode {
+  display: inline-block;
+  margin-top: 0;
 }
 .btn-data-mode[hidden] {
   display: none;
