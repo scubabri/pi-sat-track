@@ -99,7 +99,7 @@ function fakeApi(profileNames) {
         const cmd = m[2];
         st.cmds.push(cmd);
         sock.write("R" + seq + "|0|\n");
-        if (/^sub\s+profile/i.test(cmd) || /^profile\s+global\s+info/i.test(cmd)) {
+        if (/^profile\s+global\s+info/i.test(cmd)) {
           emitList();
         }
         if (/^profile\s+global\s+load/i.test(cmd)) {
@@ -166,8 +166,8 @@ test("flex-api parses profile global list status and load command", async () => 
   assert.ok(ok);
   await sleep(300);
   assert.ok(
-    a.st.cmds.some((c) => /^sub\s+profile\s+all$/i.test(c)),
-    "sub profile all: " + a.st.cmds.join(" | "),
+    !a.st.cmds.some((c) => /^sub\s+profile/i.test(c)),
+    "must not send invalid sub profile *: " + a.st.cmds.join(" | "),
   );
   assert.ok(
     a.st.cmds.some((c) => /^profile\s+global\s+info$/i.test(c)),
@@ -409,6 +409,66 @@ test("Flex API: skip log when host unset", async () => {
     try {
       flex.close();
     } catch (_) {}
+  }
+});
+
+test("applyDefaultCtcss / radio-off must not close Flex API", async () => {
+  const a = await fakeApi(["PiTrack-144up", "Sat VU"]);
+  // Emit current= on list
+  const flex = loadFlex({
+    FLEX_UL_HOST: "127.0.0.1",
+    FLEX_UL_PORT: 1,
+    FLEX_DL_HOST: "127.0.0.1",
+    FLEX_DL_PORT: 1,
+    FLEX_API_HOST: "127.0.0.1",
+    FLEX_API_PORT: a.port,
+    RADIO_TRANSPORT: "tcp",
+    C_MS: 299792458,
+  });
+  const logs = [];
+  const oL = console.log;
+  const oW = console.warn;
+  console.log = (...args) => logs.push(args.join(" "));
+  console.warn = (...args) => logs.push("WARN " + args.join(" "));
+  try {
+    flex.init({
+      getContext: () => ({ currentSatKey: "SO-50", currentModeIndex: 0 }),
+    });
+    for (let i = 0; i < 40 && !flex.getRadioState().apiConnected; i++)
+      await sleep(50);
+    assert.ok(flex.getRadioState().apiConnected, "API up before CTCSS default");
+    for (let i = 0; i < 40 && flex.getRadioState().flexProfiles.length === 0; i++)
+      await sleep(50);
+    assert.ok(
+      flex.getRadioState().flexProfiles.length >= 1,
+      "list arrived before CTCSS default",
+    );
+    assert.ok(flex.getRadioState().radioOn === false);
+
+    // Simulate sat select while radio still off (Brian's failure path)
+    flex.applyDefaultCtcss(null, null);
+    await sleep(100);
+
+    assert.ok(
+      flex.getRadioState().apiConnected,
+      "API must stay up after CTCSS default with radio off",
+    );
+    assert.ok(
+      !logs.some((l) => /Flex API closed:\s*radio off/.test(l)),
+      "must not log closed: radio off — " +
+        logs.filter((l) => /Flex API closed/.test(l)).join(" || "),
+    );
+    assert.ok(
+      flex.getRadioState().flexProfiles.length >= 1,
+      "profiles still available after CTCSS default",
+    );
+  } finally {
+    console.log = oL;
+    console.warn = oW;
+    try {
+      flex.close();
+    } catch (_) {}
+    a.server.close();
   }
 });
 

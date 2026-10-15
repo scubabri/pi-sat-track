@@ -256,7 +256,7 @@
   color: #fef2f2;
 }
 
-/* Flex SmartSDR profile dropdown (between Data and CW) */
+/* Flex SmartSDR profile dropdown (after Data and CW) */
 .flex-profile-select {
   flex: 1 1 auto;
   min-width: 0;
