@@ -10,6 +10,14 @@
     try { c = (typeof loadConfig === "function" && loadConfig()) || {}; } catch (_) {}
     return { callsign: String(c.callsign || "").trim().toUpperCase(), grid: String(c.grid || "").trim() };
   }
+  function reportLabel(v) {
+    const row = info && info.reports && info.reports.find((r) => r.value === v);
+    return (row && row.label) || v;
+  }
+  function amsatLabel(v) {
+    // AO-91_[FM] → "AO-91 [FM]"; ISS_[VHF_Digi] → "ISS [VHF Digi]"
+    return String(v || "").replace(/_/g, " ");
+  }
   function render() {
     const local = cfgStation();
     const call = (info && info.station && info.station.callsign) || local.callsign;
@@ -20,7 +28,13 @@
     else if (!call) why = "Set your callsign in config to report to AMSAT";
     btns().forEach((b) => {
       b.disabled = busy || !!why;
-      b.title = why || "Report " + info.best.replace(/_/g, " ") + " as " + b.dataset.v + " (" + call + ")";
+      if (why) {
+        b.title = why;
+        return;
+      }
+      // Match AMSAT row (includes mode tag) + report type; mention tracker mode when present
+      const satMode = info.sat && info.sat.mode ? "; tracker mode " + info.sat.mode : "";
+      b.title = "Report " + amsatLabel(info.best) + " as " + reportLabel(b.dataset.v) + " (" + call + ")" + satMode;
     });
   }
   async function refresh() {

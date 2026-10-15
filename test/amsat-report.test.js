@@ -3,7 +3,7 @@ const assert = require("assert");
 const os = require("os"), path = require("path"), fs = require("fs");
 const a = require("../lib/amsat-report");
 a._setCacheFile(path.join(os.tmpdir(), "amsat-test-" + process.pid + ".json"));
-const NAMES = ["AO-7_[U/v]", "AO-7_[V/a]", "AO-91_[FM]", "ISS_[Crew]", "ISS_[FM]", "ISS_[VHF_Digi]", "SO-50_[FM]", "RS-44_[V/u]", "QO-100_[NB]"];
+const NAMES = ["AO-7_[U/v]", "AO-7_[V/a]", "AO-91_[FM]", "ISS_[Crew]", "ISS_[FM]", "ISS_[UHF_Digi]", "ISS_[VHF_Digi]", "SO-50_[FM]", "RS-44_[V/u]", "QO-100_[NB]"];
 // period
 assert.strictEqual(a.satPeriod(0), 0); assert.strictEqual(a.satPeriod(14), 0);
 assert.strictEqual(a.satPeriod(15), 1); assert.strictEqual(a.satPeriod(30), 2);
@@ -23,10 +23,18 @@ assert.strictEqual(best({ satKey: "AO-7", satName: "AO-7", mode: "U/v Linear" })
 assert.strictEqual(best({ satKey: "AO-7", satName: "AO-7", mode: "V/a" }), "AO-7_[V/a]");
 assert.strictEqual(best({ satKey: "ISS", satName: "ISS (ZARYA)", mode: "FM Voice" }), "ISS_[FM]");
 assert.strictEqual(best({ satKey: "ISS", satName: "ISS", mode: "APRS" }), "ISS_[VHF_Digi]");
+// Selected transmitter band must pick VHF vs UHF Digi (ISS 1200bd AFSK APRS)
+assert.strictEqual(best({ satKey: "ISS", satName: "ISS", mode: "1k2 AFSK", uplink: "145.825", downlink: "145.825" }), "ISS_[VHF_Digi]");
+assert.strictEqual(best({ satKey: "ISS", satName: "ISS", mode: "1k2 AFSK APRS", uplink: "437.825", downlink: "437.825" }), "ISS_[UHF_Digi]");
+assert.strictEqual(best({ satKey: "ISS", satName: "ISS", mode: "1k2 AFSK APRS", ulHz: 437825000, dlHz: 437825000 }), "ISS_[UHF_Digi]");
+assert.strictEqual(best({ satKey: "ISS", satName: "ISS", mode: "1k2 AFSK", ulHz: 145825000, dlHz: 145825000 }), "ISS_[VHF_Digi]");
+assert.strictEqual(best({ satKey: "ISS", satName: "ISS", mode: "Voice(Reg 1)", uplink: "145.200", downlink: "145.800" }), "ISS_[FM]");
+assert.strictEqual(best({ satKey: "AO-7", satName: "AO-7", mode: "A", uplink: "145.850-145.950", downlink: "29.400- 29.500" }), "AO-7_[V/a]");
+assert.strictEqual(best({ satKey: "AO-7", satName: "AO-7", mode: "B C", uplink: "432.125-432.175", downlink: "145.975-145.925" }), "AO-7_[U/v]");
 assert.strictEqual(best({ satKey: "RS-44", satName: "RS-44", mode: "SSB/CW" }), "RS-44_[V/u]");
 assert.strictEqual(a.matchSatNames(NAMES, { satKey: "AO-91", mode: "FM" }).length, 1);
 assert.strictEqual(best({ satKey: "XX-1", mode: "FM" }), undefined);
-assert.strictEqual(a.matchSatNames(NAMES, { satKey: "ISS", mode: "" }).length, 3);
+assert.strictEqual(a.matchSatNames(NAMES, { satKey: "ISS", mode: "" }).length, 4);
 // encoding + validation
 const req = { satName: "AO-7_[U/v]", report: "Telemetry Only", callsign: "n0call", grid: "DM79lqXX", year: 2026, month: 3, day: 5, hour: 7, period: 2 };
 assert.throws(() => a.buildParams({ ...req, report: "Active" }), /report/);
