@@ -202,3 +202,47 @@ test("SO-50 FM: 0x26 frames data=0 on VFO A and B (no FM-D)", async () => {
     ic.close();
   }
 });
+
+test("Data ON: 0x26 data=1 on both VFOs (USB-D/LSB-D, FM-D), resent once; OFF restores", async () => {
+  const logs = [];
+  const origLog = console.log, origWarn = console.warn;
+  console.log = (...a) => logs.push(a.join(" ")); console.warn = () => {};
+  let sat = "RS-44";
+  try {
+    ic.close();
+    ic.setDataMode(false);
+    radio.cmds.length = 0;
+    ic.init({ getContext: () => ({ currentSatKey: sat, currentModeIndex: 0 }) });
+    ic.applyDefaultCtcss(null, null);
+    ic.setLock(true);
+    ic.setRadio(true);
+    const run = async (n) => { for (let i = 0; i < n; i++) { await ic.pushFrequencies(145967000, 435633000); await sleep(30); } };
+    for (let i = 0; i < 40 && ic.getRadioState().syncNeeded; i++) await run(1);
+    assert.strictEqual(ic.getRadioState().dataMode, false, "default OFF");
+    assert.strictEqual(ic.getRadioState().supportsDataMode, true);
+    radio.cmds.length = 0;
+    ic.setDataMode(true);
+    await run(5);
+    assert.deepStrictEqual(radio.cmds.filter((c) => c.startsWith("26,")), ["26,0,1,1,1", "26,1,0,1,1"]);
+    assert.ok(logs.includes("IC705 data ON (-D)"));
+    assert.ok(logs.includes("Icom DL VFO A mode → USB-D attempt 1"));
+    radio.cmds.length = 0;
+    ic.setDataMode(false);
+    await run(3);
+    assert.deepStrictEqual(radio.cmds.filter((c) => c.startsWith("26,")), ["26,0,1,0,1", "26,1,0,0,1"]);
+    assert.ok(logs.includes("IC705 data OFF"));
+    // FM-D
+    ic.close();
+    sat = "SO-50";
+    ic.setDataMode(true);
+    radio.cmds.length = 0;
+    ic.setRadio(true);
+    for (let i = 0; i < 40 && ic.getRadioState().syncNeeded; i++) await run(1);
+    await run(3);
+    assert.deepStrictEqual(radio.cmds.filter((c) => c.startsWith("26,")), ["26,0,5,1,1", "26,1,5,1,1"]);
+  } finally {
+    console.log = origLog; console.warn = origWarn;
+    ic.setDataMode(false);
+    ic.close();
+  }
+});

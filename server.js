@@ -621,6 +621,11 @@ wss.on("connection", (ws, req) => {
         radios.setLock(!!msg.on);
       }
 
+      if (msg.type === "dataMode") {
+        // USB-D/LSB-D on linear sats; no-op on radios without the capability
+        if (state.setDataMode(!!msg.on)) pushNow();
+      }
+
       if (msg.type === "ulFixed") {
         state.setUlFixed(!!msg.on);
         pushNow();

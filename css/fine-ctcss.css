@@ -120,6 +120,14 @@
   color: #ecfdf5;
 }
 
+.btn-data-mode {
+  display: block;
+  margin-top: 5px;
+}
+.btn-data-mode[hidden] {
+  display: none;
+}
+
 .ctcss-row {
   display: flex;
   flex-wrap: wrap;
