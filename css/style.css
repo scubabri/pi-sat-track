@@ -10,6 +10,12 @@
   --red: #f85149;
   --orange: #f0883e;
   --yellow: #d4a72c;
+  /* AMSAT status page legend */
+  --amsat-heard: #648fff; /* Sat/Mode Active (Heard) */
+  --amsat-tlm: #ffb000; /* TLM/Beacon only */
+  /* AOS countdown — distinct from AMSAT blue/TLM and red/green status */
+  --aos-5min: #a371f7; /* purple */
+  --aos-15min: #39c5cf; /* cyan */
   --uplink: #58a6ff;
   --downlink: #3fb950;
   --topbar-h: 52px;
@@ -184,24 +190,38 @@ body {
   background: var(--bg-elevated);
 }
 
-/* Horizon colors — match top-bar status-dot */
+/* Horizon / AOS colors — match top-bar status-dot (5/15 distinct from AMSAT) */
 #sat-menu .sat-option.sat-up {
   color: var(--green);
   border-color: rgba(63, 185, 80, 0.35);
 }
 
 #sat-menu .sat-option.sat-soon {
-  color: var(--yellow);
-  border-color: rgba(212, 167, 44, 0.4);
+  color: var(--aos-15min);
+  border-color: rgba(57, 197, 207, 0.45);
 }
 
 #sat-menu .sat-option.sat-imminent {
-  color: var(--red);
-  border-color: rgba(248, 81, 73, 0.4);
+  color: var(--aos-5min);
+  border-color: rgba(163, 113, 247, 0.45);
 }
 
 #sat-menu .sat-option.sat-down {
-  color: var(--accent);
+  color: var(--text-dim);
+}
+
+/* Heard-on-AMSAT indicator: AMSAT legend blue / TLM amber (left bar + sat-down text) */
+#sat-menu .sat-option.heard-kind-heard {
+  box-shadow: inset 3px 0 0 var(--amsat-heard);
+}
+#sat-menu .sat-option.heard-kind-tlm {
+  box-shadow: inset 3px 0 0 var(--amsat-tlm);
+}
+#sat-menu .sat-option.sat-down.heard-kind-heard {
+  color: var(--amsat-heard);
+}
+#sat-menu .sat-option.sat-down.heard-kind-tlm {
+  color: var(--amsat-tlm);
 }
 
 #sat-menu .sat-option.active {
@@ -296,6 +316,12 @@ body {
 }
 .status-dot.red {
   background: var(--red);
+}
+.status-dot.aos5 {
+  background: var(--aos-5min);
+}
+.status-dot.aos15 {
+  background: var(--aos-15min);
 }
 
 #pass-summary {

@@ -71,8 +71,11 @@
         background: #21262d;
       }
       #sat-table tr.heard td.name-cell {
-        color: var(--green);
+        color: var(--amsat-heard, #648fff);
         font-weight: 600;
+      }
+      #sat-table tr.heard-tlm td.name-cell {
+        color: var(--amsat-tlm, #ffb000);
       }
       .badge {
         display: inline-block;
@@ -83,8 +86,12 @@
         color: var(--text-dim);
       }
       .badge.heard {
-        background: rgba(63, 185, 80, 0.2);
-        color: var(--green);
+        background: rgba(100, 143, 255, 0.2);
+        color: var(--amsat-heard, #648fff);
+      }
+      .badge.heard-tlm {
+        background: rgba(255, 176, 0, 0.2);
+        color: var(--amsat-tlm, #ffb000);
       }
       .badge.active {
         background: rgba(88, 166, 255, 0.15);
@@ -229,7 +236,10 @@
 
         for (const s of rows) {
           const tr = document.createElement("tr");
-          if (s.heard) tr.classList.add("heard");
+          if (s.heard) {
+            tr.classList.add("heard");
+            if (s.heardKind === "tlm") tr.classList.add("heard-tlm");
+          }
 
           const favTd = document.createElement("td");
           favTd.className = "fav-col";
@@ -249,7 +259,11 @@
           nameTd.className = "name-cell";
           nameTd.innerHTML =
             escapeHtml(s.name) +
-            (s.heard ? ' <span class="badge heard">heard</span>' : "") +
+            (s.heard
+              ? s.heardKind === "tlm"
+                ? ' <span class="badge heard-tlm">TLM only</span>'
+                : ' <span class="badge heard">heard</span>'
+              : "") +
             (s.status === "active"
               ? ' <span class="badge active">active</span>'
               : "");

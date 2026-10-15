@@ -72,8 +72,8 @@ function tickCountdown() {
       if (labelEl) labelEl.textContent = "Next AOS in";
       countdownEl.textContent = formatCountdown(secToAos);
       if (dot) {
-        if (secToAos <= 5 * 60) dot.className = "status-dot red";
-        else if (secToAos <= 15 * 60) dot.className = "status-dot yellow";
+        if (secToAos <= 5 * 60) dot.className = "status-dot aos5";
+        else if (secToAos <= 15 * 60) dot.className = "status-dot aos15";
         else dot.className = "status-dot";
       }
       return;

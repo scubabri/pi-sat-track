@@ -177,3 +177,13 @@
   color: var(--text-dim);
   font-size: 0.82rem;
 }
+
+/* AOS countdown urgency — same palette as sat-menu / status-dot */
+.fav-next.aos5 {
+  color: var(--aos-5min);
+  font-weight: 600;
+}
+.fav-next.aos15 {
+  color: var(--aos-15min);
+  font-weight: 600;
+}

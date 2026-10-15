@@ -161,6 +161,15 @@ function applyLiveHorizon(sats) {
   });
 }
 
+
+function applyHeardKindClass(el, s) {
+  el.classList.remove("heard-kind-heard", "heard-kind-tlm");
+  el.classList.toggle("heard", !!(s && s.heard));
+  if (!s || !s.heard) return;
+  if (s.heardKind === "tlm") el.classList.add("heard-kind-tlm");
+  else el.classList.add("heard-kind-heard");
+}
+
 function satHorizonClass(s) {
   if (s.above) return "sat-up";
   if (
@@ -234,7 +243,7 @@ function renderSatMenu(payload) {
       el.classList.remove("sat-up", "sat-soon", "sat-imminent", "sat-down");
       el.classList.add(satHorizonClass(s));
       el.classList.toggle("active", s.key === currentSatKey);
-      el.classList.toggle("heard", !!s.heard);
+      applyHeardKindClass(el, s);
       if (s.name && el.textContent !== s.name) el.textContent = s.name;
     });
     menu.querySelectorAll(".sat-fav[data-sat]").forEach((star) => {
@@ -340,7 +349,7 @@ function renderSatMenu(payload) {
     btn.className = "sat-option";
     if (s.key === currentSatKey) btn.classList.add("active");
     btn.classList.add(satHorizonClass(s));
-    if (s.heard) btn.classList.add("heard");
+    applyHeardKindClass(btn, s);
     btn.dataset.sat = s.key;
     btn.textContent = s.name;
 
