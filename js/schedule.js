@@ -45,7 +45,7 @@
       '<button class="sc-btn sc-primary" id="sched-find">Find</button></div>' +
       '<div class="sc-resolved" id="sched-res"></div>' +
       '<div class="sc-bar"><span id="sched-summary"></span><span class="sc-sort">Sort: <a data-sort="best">Best</a> · <a data-sort="start">Start time</a></span></div>' +
-      '<table><thead><tr><th>Sat</th><th>Mode</th><th class="sortable" data-sort="start">Start – End</th><th class="sortable" data-sort="best">Duration</th><th>Max El me / them</th><th>Az @ mid me / them</th></tr></thead><tbody></tbody></table></div>' +
+      '<table><thead><tr><th>Sat</th><th>Mode</th><th class="sortable" data-sort="start">Start – End</th><th class="sortable" data-sort="best">Mutual</th><th>Max El me / them</th><th>Az @ mid me / them</th></tr></thead><tbody></tbody></table></div>' +
       '<div class="sc-foot"><span id="sched-foot"></span><span id="sched-tz"></span></div>';
     document.body.appendChild(backdrop);
     document.body.appendChild(panel);
@@ -158,14 +158,14 @@
     theadRow.querySelectorAll("th.sortable").forEach((th) => {
       const on = th.dataset.sort === sortBy;
       th.classList.toggle("s", on);
-      const base = th.dataset.sort === "start" ? "Start – End" : "Duration";
+      const base = th.dataset.sort === "start" ? "Start – End" : "Mutual";
       th.textContent = base + (on ? (sortBy === "best" ? " \u25BE" : " \u25B4") : "");
     });
     if (!meta) return;
     const q = qEl.value.trim().toUpperCase();
     const them = q && !GRID_RE.test(q) ? q + " " + meta.grid : meta.grid;
     barEl.textContent = rows.length + " mutual window" + (rows.length === 1 ? "" : "s") + " · me " + (meta.homeGrid || "home") + " \u2194 " + them;
-    footEl.textContent = "Min El " + meta.minEl + "° at both ends · " + meta.satsChecked + " FM/linear sats checked" + (meta.satsNoTle ? " (" + meta.satsNoTle + " without TLE)" : "");
+    footEl.textContent = "Mutual = both ≥ " + meta.minEl + "° · " + meta.satsChecked + " FM/linear sats checked" + (meta.satsNoTle ? " (" + meta.satsNoTle + " without TLE)" : "");
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="sc-empty">No mutual windows in the next ' + meta.hours + "h.</td></tr>"; return; }
     const list = sorted();
     tbody.innerHTML = list.map((r, i) => {
@@ -175,7 +175,11 @@
         (sel ? '<div class="acts"><button class="sc-btn sc-primary" data-act="map">Show on map</button><button class="sc-btn" data-act="track">Track</button></div>' : "") +
         '</td><td><span class="badge ' + (r.mode === "fm" ? "fm\">FM" : "lin\">Linear") + "</span></td>" +
         "<td>" + dayTag(s) + hmL(s) + " – " + hmL(e) + " " + esc(tzAbbr(s)) + '<div class="sub">' + hmU(s) + " – " + hmU(e) + " UTC</div></td>" +
-        "<td>" + dur(r.durationSec) + "</td><td>" + Math.round(r.maxElMe) + "° / " + Math.round(r.maxElThem) + "°</td>" +
+        "<td>" + dur(r.durationSec) +
+        (r.homeDurSec && r.themDurSec
+          ? '<div class="sub">me ' + dur(r.homeDurSec) + " / them " + dur(r.themDurSec) + "</div>"
+          : "") +
+        "</td><td>" + Math.round(r.maxElMe) + "° / " + Math.round(r.maxElThem) + "°</td>" +
         "<td>" + r.azMidMe + "° / " + r.azMidThem + "°</td></tr>";
     }).join("");
     tbody.querySelectorAll("tr[data-i]").forEach((tr) => tr.addEventListener("click", (ev) => {

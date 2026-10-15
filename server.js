@@ -587,9 +587,11 @@ wss.on("connection", (ws, req) => {
         if (!remote) { reply({ ok: false, error: "Enter a valid 4 or 6 character grid (e.g. FN31 or FN31pr)." }); return; }
         const obs = state.getObserver();
         const home = { lat: obs.latitude * 180 / Math.PI, lon: obs.longitude * 180 / Math.PI, heightKm: obs.height };
-        const minEl = Number.isFinite(config.ROTOR_MIN_EL) ? config.ROTOR_MIN_EL : 0;
+        // Sked minEl: use rotor floor when > 0; else 10° usable default (lib resolveScheduleMinEl).
+        // Rotor min 0 tracks to horizon — that made HEO mutual ≈ full-pass length in the table.
+        const rotorMinEl = Number.isFinite(config.ROTOR_MIN_EL) ? config.ROTOR_MIN_EL : 0;
         const t0 = Date.now();
-        schedule.findSchedule({ home, remote, hours: msg.hours === 48 ? 48 : 24, minEl })
+        schedule.findSchedule({ home, remote, hours: msg.hours === 48 ? 48 : 24, rotorMinEl })
           .then((r) => {
             console.log("Schedule " + grid + " " + r.hours + "h: " + r.rows.length + " windows, " + r.satsChecked + " sats, " + (Date.now() - t0) + "ms");
             reply(Object.assign({ ok: true, grid, remote, home, homeGrid: stationFromProfile().grid || "" }, r));
