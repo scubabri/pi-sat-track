@@ -118,3 +118,48 @@ test("split sync settles: modes once per VFO, no busy, steady writes A each tick
     ic.close();
   }
 });
+
+test("split dial turn on VFO A: absorbed, held while moving, no snap-back", async () => {
+  const logs = [];
+  const origLog = console.log, origWarn = console.warn;
+  console.log = (...a) => logs.push(a.join(" "));
+  console.warn = (...a) => logs.push("WARN " + a.join(" "));
+  try {
+    ic.init({ getContext: () => ({ currentSatKey: "RS-44", currentModeIndex: 0 }) });
+    ic.resetOffsets();
+    ic.setLock(false); // linear default: unlocked
+    ic.setRadio(true);
+    let dlD = 435633000, ulD = 145967000; // Doppler-only
+    // state.js race: freq computed from offset as of end of previous tick.
+    const tick = async () => {
+      const m = ic.getRadioState().manualDlOffset || 0;
+      dlD -= 40; ulD += 120;
+      await ic.pushFrequencies(ulD - m, dlD + m);
+      await sleep(30);
+    };
+    for (let i = 0; i < 40 && ic.getRadioState().syncNeeded; i++) await tick();
+    for (let i = 0; i < 5; i++) await tick();
+    assert.ok(!logs.some((l) => /dial absorb/.test(l)), "no misfire on own writes/VFO B: " + logs.join("\n"));
+    assert.strictEqual(radio.sel, "A", "VFO A selected for 0x03 readback");
+    const preSpin = radio.A.hz;
+    const wIdx = radio.writes.length;
+    for (let i = 0; i < 4; i++) { radio.A.hz += 1500; await tick(); }
+    const dialAtStop = radio.A.hz;
+    for (let i = 0; i < 5; i++) await tick();
+    const aWrites = radio.writes.slice(wIdx).filter((w) => w.vfo === "A").map((w) => w.hz);
+    for (const hz of aWrites) {
+      assert.ok(hz > dialAtStop - 1000, "VFO A snapped back toward " + preSpin + ": " + aWrites.join(","));
+    }
+    assert.ok(aWrites.length >= 1, "DL written after settle");
+    const m = ic.getRadioState().manualDlOffset;
+    assert.ok(Math.abs(m - 6000) <= 500, "offset ~ +6000: " + m);
+    assert.strictEqual(radio.A.hz, dlD + m, "VFO A holds absorbed offset");
+    assert.ok(logs.some((l) => /^IC705 dial absorb DL/.test(l)));
+    assert.ok(logs.some((l) => /^IC705 dial settled DL/.test(l)));
+    assert.ok(logs.some((l) => /^IC705 dl write after absorb/.test(l)));
+    assert.strictEqual(radio.B.hz, ulD - m, "VFO B follows offset (inverted)");
+  } finally {
+    console.log = origLog; console.warn = origWarn;
+    ic.close();
+  }
+});
