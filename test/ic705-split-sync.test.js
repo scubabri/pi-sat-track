@@ -52,7 +52,10 @@ class FakePort {
       const v = vfoOf(d[0]);
       radio[v].hz = unbcd(d.slice(1, 6));
       radio.writes.push({ vfo: v, hz: radio[v].hz });
-    } else if (c === 0x26) radio[vfoOf(d[0])].mode = d[1];
+    } else if (c === 0x26) {
+      radio[vfoOf(d[0])].mode = d[1];
+      radio[vfoOf(d[0])].data = d[2]; // 0x26 sel mode DATA filter
+    }
     else if (c === 0x05) radio[radio.sel].hz = unbcd(d.slice(0, 5));
     else if (c === 0x03) rep = [0x03, ...bcd(radio[radio.sel].hz)];
     const frame = Buffer.from([0xfe, 0xfe, 0xe0, 0xa4, ...rep, 0xfd]);
@@ -65,6 +68,7 @@ require.cache[spPath] = { id: spPath, filename: spPath, loaded: true, exports: {
 
 const catalog = require("../lib/catalog");
 catalog.getCatalog = () => ({
+  "SO-50": { modes: [{ mode: "FM", uplink: "145.850", downlink: "436.795" }] },
   "RS-44": { modes: [{ mode: "SSB", uplink: "145.935-145.995", downlink: "435.610-435.670" }] },
 });
 const ic = require("../lib/radios/ic705");
@@ -94,6 +98,14 @@ test("split sync settles: modes once per VFO, no busy, steady writes A each tick
     assert.strictEqual(radio.A.mode, 0x01); // USB
     assert.strictEqual(radio.B.mode, 0x00); // LSB
     assert.ok(radio.split, "SPLIT ON");
+    // Data OFF on both VFOs: exact 0x26 frames (sel, mode, data=0, FIL1)
+    assert.deepStrictEqual(
+      radio.cmds.filter((c) => c.startsWith("26,")),
+      ["26,0,1,0,1", "26,1,0,0,1"],
+      "USB/LSB with data=0",
+    );
+    assert.strictEqual(radio.A.data, 0);
+    assert.strictEqual(radio.B.data, 0);
 
     // Steady: DL moves each tick, UL changes every 3rd tick
     radio.writes.length = 0;
@@ -158,6 +170,33 @@ test("split dial turn on VFO A: absorbed, held while moving, no snap-back", asyn
     assert.ok(logs.some((l) => /^IC705 dial settled DL/.test(l)));
     assert.ok(logs.some((l) => /^IC705 dl write after absorb/.test(l)));
     assert.strictEqual(radio.B.hz, ulD - m, "VFO B follows offset (inverted)");
+  } finally {
+    console.log = origLog; console.warn = origWarn;
+    ic.close();
+  }
+});
+
+test("SO-50 FM: 0x26 frames data=0 on VFO A and B (no FM-D)", async () => {
+  const origLog = console.log, origWarn = console.warn;
+  console.log = () => {}; console.warn = () => {};
+  try {
+    ic.close();
+    radio.cmds.length = 0;
+    ic.init({ getContext: () => ({ currentSatKey: "SO-50", currentModeIndex: 0 }) });
+    ic.applyDefaultCtcss(67.0, 74.4);
+    ic.setLock(true);
+    ic.setRadio(true);
+    for (let i = 0; i < 40 && ic.getRadioState().syncNeeded; i++) {
+      await ic.pushFrequencies(145850000, 436795000);
+      await sleep(30);
+    }
+    assert.deepStrictEqual(
+      radio.cmds.filter((c) => c.startsWith("26,")),
+      ["26,0,5,0,1", "26,1,5,0,1"],
+    );
+    assert.strictEqual(radio.A.data, 0);
+    assert.strictEqual(radio.B.data, 0);
+    assert.ok(!radio.cmds.some((c) => c.startsWith("1a,6,1")), "no data-mode ON");
   } finally {
     console.log = origLog; console.warn = origWarn;
     ic.close();
