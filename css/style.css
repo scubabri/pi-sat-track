@@ -210,13 +210,7 @@ body {
   color: var(--text-dim);
 }
 
-/* Heard-on-AMSAT indicator: AMSAT legend blue / TLM amber (left bar + sat-down text) */
-#sat-menu .sat-option.heard-kind-heard {
-  box-shadow: inset 3px 0 0 var(--amsat-heard);
-}
-#sat-menu .sat-option.heard-kind-tlm {
-  box-shadow: inset 3px 0 0 var(--amsat-tlm);
-}
+/* Heard-on-AMSAT: AMSAT legend colors on sat-down name text only (no left bar) */
 #sat-menu .sat-option.sat-down.heard-kind-heard {
   color: var(--amsat-heard);
 }

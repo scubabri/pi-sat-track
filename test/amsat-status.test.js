@@ -80,6 +80,11 @@ assert.strictEqual(parsed.kinds.get("ISS"), "heard");
 assert.ok(parsed.tags.get("SO50").has("FM"));
 assert.ok(parsed.tags.get("CO128").has("TLM"));
 
+assert.strictEqual(parsed.latest.get("SO50"), "2026-10-15T16:30:00.000Z");
+assert.strictEqual(parsed.latest.get("CO128"), "2026-10-15T10:30:00.000Z");
+assert.strictEqual(parsed.latest.get("AO123"), "2026-10-15T07:30:00.000Z");
+assert.strictEqual(parsed.latest.get("ISS"), "2026-10-15T17:00:00.000Z");
+
 assert.strictEqual(catalog.AMSAT_COLOR_HEARD, "#648fff");
 assert.strictEqual(catalog.AMSAT_COLOR_TLM, "#ffb000");
 
