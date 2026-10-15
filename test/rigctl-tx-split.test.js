@@ -63,6 +63,9 @@ function startFakeRigctld(opts) {
         // For U ? send first token line then RPRT so parser gets something.
         if (line === "U ?") {
           sock.write("LOCK\n");
+        } else if (opts && opts.delayAcks && /^[FI]\s/.test(line)) {
+          // Late ack: lands in the socket after the next command is sent.
+          setTimeout(() => sock.write(reply + "\n"), opts.delayAcks);
         } else {
           sock.write(reply + "\n");
         }
@@ -314,6 +317,56 @@ test("S failure: fall back to DL-only, no spam", async () => {
     );
     assert.ok(fake.state.cmds.some((c) => /^F\s+/.test(c)), "DL still works");
   } finally {
+    if (rig) try { rig.setRadio(false); } catch (_) {}
+    await new Promise((r) => fake.server.close(r));
+  }
+});
+
+test("dial absorb: stale RPRT 0 from F/I skipped, absorb fires, UL follows", async () => {
+  const fake = await startFakeRigctld({ delayAcks: 5 });
+  const logs = [];
+  const origLog = console.log;
+  console.log = (...a) => logs.push(a.join(" "));
+  let rig;
+  try {
+    rig = loadRigctl(fake.port, true);
+    rig.init({
+      getContext: () => ({ currentSatKey: "RS-44", currentModeIndex: 0, ulFixed: false }),
+    });
+    rig.setLock(false);
+    rig.setRadio(true);
+    await sleep(150);
+    let ul = 145965000;
+    let dl = 435640000;
+    // Steady Doppler ticks with no dial movement: absorb must NOT fire.
+    for (let i = 0; i < 8; i++) {
+      ul += 150; dl -= 60;
+      await rig.pushFrequencies(ul, dl);
+      await sleep(50);
+    }
+    assert.ok(!logs.some((l) => /dial absorb/.test(l)), "no misfire: " + logs.join("\n"));
+    assert.strictEqual(rig.getRadioState().manualDlOffset, 0);
+
+    // User turns VFO A dial +3000 Hz.
+    fake.state.rxHz += 3000;
+    ul += 150; dl -= 60;
+    await rig.pushFrequencies(ul, dl);
+    await sleep(50);
+    const line = logs.find((l) => /rigctl dial absorb DL/.test(l));
+    assert.ok(line, "absorb logged: " + logs.slice(-10).join("\n"));
+    assert.match(line, /absorb DL 3000 Hz → manualDl 3060/);
+    assert.strictEqual(rig.getRadioState().manualDlOffset, 3060);
+    // Radio was not snapped back to the old DL on the absorb tick.
+    assert.strictEqual(fake.state.rxHz, dl + 3060);
+    // Next tick: state.js applies manualDl to DL and mirrors it (inverted) to UL.
+    ul += 150; dl -= 60;
+    await rig.pushFrequencies(ul - 3060, dl + 3060);
+    await sleep(50);
+    assert.strictEqual(fake.state.rxHz, dl + 3060, "DL keeps dialed offset");
+    assert.strictEqual(fake.state.txHz, ul - 3060, "UL split follows offset");
+    assert.strictEqual(logs.filter((l) => /dial absorb/.test(l)).length, 1, "no re-absorb of own write");
+  } finally {
+    console.log = origLog;
     if (rig) try { rig.setRadio(false); } catch (_) {}
     await new Promise((r) => fake.server.close(r));
   }
