@@ -631,6 +631,11 @@ wss.on("connection", (ws, req) => {
         if (state.setCwMode(!!msg.on)) pushNow();
       }
 
+      if (msg.type === "flexProfile") {
+        // SmartSDR global profile per sat ("" = no change); Flex only
+        if (state.setFlexProfile(msg.name != null ? msg.name : "")) pushNow();
+      }
+
       if (msg.type === "ulFixed") {
         state.setUlFixed(!!msg.on);
         pushNow();
@@ -700,9 +705,6 @@ wss.on("connection", (ws, req) => {
           flexDlPort: msg.flexDlPort,
           flexApiHost: msg.flexApiHost,
           flexApiPort: msg.flexApiPort,
-          flexProfileVU: msg.flexProfileVU,
-          flexProfileUV: msg.flexProfileUV,
-          flexProfileVV: msg.flexProfileVV,
           flexHost: msg.flexHost,
           flexPort: msg.flexPort,
           serialDevice: msg.serialDevice,

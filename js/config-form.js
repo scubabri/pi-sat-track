@@ -498,12 +498,6 @@ function readFormConfig() {
     radioTransport: radioDl.transport,
     radioType: radioDl.type,
     radioProtocol: radioDl.protocol,
-    flexProfileVU:
-      val("cfg-ul-flex-profile-vu") || val("cfg-dl-flex-profile-vu") || "",
-    flexProfileUV:
-      val("cfg-ul-flex-profile-uv") || val("cfg-dl-flex-profile-uv") || "",
-    flexProfileVV:
-      val("cfg-ul-flex-profile-vv") || val("cfg-dl-flex-profile-vv") || "",
     rotorHost: prev.rotorHost,
     rotorAzPort: prev.rotorAzPort,
     rotorElPort: prev.rotorElPort,
@@ -700,20 +694,6 @@ function fillForm(cfg) {
   if (txSplitEl) txSplitEl.checked = d.txSplit !== false;
   fillSide("ul", d.radioUl);
   fillSide("dl", d.radioDl);
-  for (const side of ["ul", "dl"]) {
-    setVal(
-      "cfg-" + side + "-flex-profile-vu",
-      d.flexProfileVU || "",
-    );
-    setVal(
-      "cfg-" + side + "-flex-profile-uv",
-      d.flexProfileUV || "",
-    );
-    setVal(
-      "cfg-" + side + "-flex-profile-vv",
-      d.flexProfileVV || "",
-    );
-  }
   updateSingleRadioVisibility();
   populateRotorTypes(d.rotorType || "rt21");
   populateSerialDeviceSelect(
