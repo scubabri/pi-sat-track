@@ -120,22 +120,24 @@
   color: #ecfdf5;
 }
 
-/* Data + CW toggles: one row, side by side (either may be hidden) */
+/* Data + CW toggles: one row, side by side (always shown; disabled when N/A) */
 .mode-toggle-row {
   display: flex;
   flex-wrap: nowrap;
   gap: 4px;
   margin-top: 5px;
 }
-.mode-toggle-row:not(:has(> button:not([hidden]))) {
-  display: none;
-}
 .btn-data-mode {
   display: inline-block;
   margin-top: 0;
 }
-.btn-data-mode[hidden] {
-  display: none;
+.btn-data-mode:disabled,
+.btn-data-mode:disabled:hover {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: rgba(31, 41, 55, 0.55);
+  border-color: rgba(75, 85, 99, 0.5);
+  color: #9ca3af;
 }
 
 .ctcss-row {

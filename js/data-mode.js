@@ -28,23 +28,41 @@
     return /\b(SSB|USB|LSB)\b/i.test(String(m || "")) && !isFm;
   }
 
+  /** Both buttons always shown; disabled (greyed) with a reason when N/A. */
   function updateUi() {
+    const m = selectedModeStr();
     const cwBtn = document.getElementById("btn-cw-mode");
     if (cwBtn) {
-      cwBtn.hidden = !cwSupported || !isLinearMode(selectedModeStr());
-      cwBtn.classList.toggle("active", cwMode);
-      cwBtn.title = cwMode
-        ? "CW ON (UL + DL CW) — click for voice (USB/LSB)"
-        : "CW OFF (voice) — click for CW on UL + DL";
+      const why = !cwSupported
+        ? "CW not supported by this radio driver"
+        : !isLinearMode(m)
+          ? "CW only applies to linear (SSB) sats"
+          : "";
+      cwBtn.hidden = false;
+      cwBtn.disabled = !!why;
+      cwBtn.classList.toggle("active", !why && cwMode); // N/A → effectively off
+      cwBtn.title = why
+        ? why
+        : cwMode
+          ? "CW ON (UL + DL CW) — click for voice (USB/LSB)"
+          : "CW OFF (voice) — click for CW on UL + DL";
     }
     const btn = document.getElementById("btn-data-mode");
-    if (!btn) return;
-    void isFm;
-    btn.hidden = !supported || !isDataCapableMode(selectedModeStr());
-    btn.classList.toggle("active", dataMode);
-    btn.title = dataMode
-      ? "Data mode ON (USB-D/LSB-D/FM-D; Flex DIGU/DIGL/DFM) — click for voice"
-      : "Data mode OFF (voice USB/LSB/FM) — click for data mode";
+    if (btn) {
+      const why = !supported
+        ? "Data mode not supported by this radio driver"
+        : !isDataCapableMode(m)
+          ? "Data mode does not apply to CW sats"
+          : "";
+      btn.hidden = false;
+      btn.disabled = !!why;
+      btn.classList.toggle("active", !why && dataMode);
+      btn.title = why
+        ? why
+        : dataMode
+          ? "Data mode ON (USB-D/LSB-D/FM-D; Flex DIGU/DIGL/DFM) — click for voice"
+          : "Data mode OFF (voice USB/LSB/FM) — click for data mode";
+    }
   }
 
   function sendCw(on) {
