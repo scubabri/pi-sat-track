@@ -209,3 +209,4 @@
 }
 .rigctld-help code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.72rem; }
 .rigctld-help ul { margin: 4px 0 2px; padding-left: 18px; }
+.rigctld-help h4 { margin: 8px 0 2px; font-size: 0.78rem; color: #e5e7eb; border-bottom: 1px solid rgba(75,85,99,.5); }
