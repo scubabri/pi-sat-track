@@ -1,6 +1,6 @@
-// IC-9700 Satellite mode: MAIN=DL every Doppler tick; SUB=UL only on
-// open/resync and when ulFine changes. Dial absorb on MAIN.
-// Run: node --test test/
+// IC-9700 Satellite mode: MAIN=DL and SUB=UL both every Doppler tick
+// (radio TRACK OFF). Dial absorb on MAIN holds both.
+// Run: node --test --test-force-exit test/ic9700-sat-mode.test.js
 const test = require("node:test");
 const assert = require("assert");
 const path = require("path");
@@ -68,11 +68,12 @@ require.cache[spPath] = { id: spPath, filename: spPath, loaded: true, exports: {
 const catalog = require("../lib/catalog");
 catalog.getCatalog = () => ({
   "JO-97": { modes: [{ mode: "SSB" }] },
+  "AO-91": { modes: [{ mode: "FM" }] },
 });
 const ic = require("../lib/radios/ic9700");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-test("SAT ON: MAIN every tick, SUB only on open and ulFine", async () => {
+test("SAT ON: MAIN and SUB every tick", async () => {
   const origWarn = console.warn;
   const warns = [];
   console.warn = (...a) => warns.push(a.join(" "));
@@ -94,15 +95,15 @@ test("SAT ON: MAIN every tick, SUB only on open and ulFine", async () => {
     await sleep(200);
     assert.ok(radio.cmds.some((c) => c === "16,5a,1"), "SAT ON sent");
     assert.ok(
-      warns.some((w) => /TRACKING to REV/.test(w)),
-      "NOR/REV warning for inverting: " + warns.join("|"),
+      warns.some((w) => /TRACK to OFF/.test(w)),
+      "TRACK OFF warning: " + warns.join("|"),
     );
     const afterOpen = radio.writes.slice();
     assert.ok(afterOpen.some((w) => w.vfo === "main"), "MAIN written on open");
     assert.ok(afterOpen.some((w) => w.vfo === "sub"), "SUB written on open");
     const subOpenCount = afterOpen.filter((w) => w.vfo === "sub").length;
 
-    // Steady Doppler ticks: only MAIN
+    // Steady Doppler ticks: MAIN and SUB every tick, MAIN left selected
     radio.writes.length = 0;
     for (let i = 0; i < 8; i++) {
       t += 1;
@@ -110,35 +111,10 @@ test("SAT ON: MAIN every tick, SUB only on open and ulFine", async () => {
       await sleep(280);
     }
     const steady = radio.writes.slice();
-    assert.ok(steady.some((w) => w.vfo === "main"), "MAIN Doppler writes");
-    assert.strictEqual(
-      steady.filter((w) => w.vfo === "sub").length,
-      0,
-      "no SUB during steady Doppler: " + JSON.stringify(steady),
-    );
-
-    // UL fine → one SUB write
-    radio.writes.length = 0;
-    ic.adjustFine(100, "ul");
-    await ic.pushFrequencies(dopUl() + 100, dopDl());
-    await sleep(400);
-    await ic.pushFrequencies(dopUl() + 100, dopDl());
-    await sleep(280);
-    const afterFine = radio.writes.slice();
-    const subAfter = afterFine.filter((w) => w.vfo === "sub");
-    assert.ok(subAfter.length >= 1, "SUB rewritten on ulFine");
-    // Further ticks: no more SUB
-    radio.writes.length = 0;
-    for (let i = 0; i < 4; i++) {
-      t += 1;
-      await ic.pushFrequencies(dopUl() + 100, dopDl());
-      await sleep(280);
-    }
-    assert.strictEqual(
-      radio.writes.filter((w) => w.vfo === "sub").length,
-      0,
-      "no further SUB after ulFine absorbed",
-    );
+    assert.ok(steady.filter((w) => w.vfo === "main").length >= 6, "MAIN Doppler writes");
+    assert.ok(steady.filter((w) => w.vfo === "sub").length >= 6, "SUB Doppler writes");
+    assert.strictEqual(radio.sel, "main", "MAIN selected after ticks");
+    assert.strictEqual(radio.sub, dopUl(), "SUB at latest UL");
     void subOpenCount;
   } finally {
     console.warn = origWarn;
@@ -187,6 +163,10 @@ test("SAT MAIN dial settle: no snap-back, single absorb", async () => {
       (w) => w.t > tStart + 300 && w.t < tStop + 900 && w.vfo === "main",
     );
     assert.deepStrictEqual(during, [], "MAIN snap-back during tuning: " + JSON.stringify(during));
+    const subDuring = radio.writes.filter(
+      (w) => w.t > tStart + 300 && w.t < tStop + 900 && w.vfo === "sub",
+    );
+    assert.deepStrictEqual(subDuring, [], "SUB held during tuning");
     const m = ic.getRadioState().manualDlOffset || 0;
     assert.ok(m > 19000 && m < 24000, "full delta absorbed: " + m);
 
@@ -194,8 +174,89 @@ test("SAT MAIN dial settle: no snap-back, single absorb", async () => {
     const after = radio.writes.filter((w) => w.t > tStop + 900 && w.vfo === "main");
     assert.ok(after.length > 0, "MAIN Doppler resumed");
     assert.ok(Math.abs(radio.main - (dopDl() + m)) < 800, "MAIN tracks Doppler+manual");
+    assert.ok(Math.abs(radio.sub - (435100000 - m)) < 50, "SUB follows mirrored offset: " + radio.sub);
     ticking = false;
     await loop;
+  } finally {
+    ic.close();
+  }
+});
+
+// Tracker uplink math (mirrors lib/state.js)
+function ulFor(f0, df, inv, manual, ulFine, fixed) {
+  if (fixed) return Math.round(f0 + ulFine);
+  return Math.round(inv ? f0 * (2 - df) - manual + ulFine : f0 * df + manual + ulFine);
+}
+
+for (const [sat, inv] of [["JO-97", true], ["AO-91", false]]) {
+  test("SUB moves every tick — " + (inv ? "inverting" : "non-inverting") + " " + sat, async () => {
+    console.log = () => {};
+    console.warn = () => {};
+    try {
+      ic.init({ getContext: () => ({ currentSatKey: sat, currentModeIndex: 0 }) });
+      ic.setLock(true); // no dial poll interference
+      ic.resetOffsets();
+      ic.setOffsets({ manualDlOffset: 1200, ulFineOffset: 300, dlFineOffset: 0 });
+      ic.setRadio(true);
+      const ulF0 = 435100000, dlF0 = 145870000;
+      let rr = -6.5; // km/s, closing
+      const tick = () => {
+        const df = 1 - (rr * 1000) / 299792458;
+        const s = ic.getRadioState();
+        return [ulFor(ulF0, df, inv, s.manualDlOffset, s.ulFineOffset, false),
+          Math.round(dlF0 * df + s.manualDlOffset + s.dlFineOffset)];
+      };
+      for (let i = 0; i < 80 && ic.getRadioState().syncNeeded; i++) {
+        await ic.pushFrequencies(...tick());
+        await sleep(50);
+      }
+      radio.writes.length = 0;
+      const subs = [];
+      let want;
+      for (let i = 0; i < 6; i++) {
+        rr += 0.4;
+        want = tick();
+        await ic.pushFrequencies(...want);
+        subs.push(radio.sub);
+        await sleep(520);
+      }
+      const subW = radio.writes.filter((w) => w.vfo === "sub");
+      assert.strictEqual(subW.length, 6, "one SUB write per tick: " + JSON.stringify(subW));
+      for (let i = 1; i < subs.length; i++) {
+        const d = subs[i] - subs[i - 1];
+        assert.ok(inv ? d > 0 : d < 0, "SUB direction " + d);
+      }
+      assert.strictEqual(radio.sub, want[0], "SUB = tracker UL incl. mirrored manual + ulFine");
+      assert.strictEqual(radio.main, want[1]);
+      assert.strictEqual(radio.sel, "main");
+    } finally {
+      ic.close();
+    }
+  });
+}
+
+test("UL fixed: SUB not Doppler'd", async () => {
+  console.log = () => {};
+  console.warn = () => {};
+  try {
+    ic.init({ getContext: () => ({ currentSatKey: "AO-91", currentModeIndex: 0 }) });
+    ic.setLock(true);
+    ic.resetOffsets();
+    ic.setRadio(true);
+    let dlHz = 145960000;
+    for (let i = 0; i < 80 && ic.getRadioState().syncNeeded; i++) {
+      await ic.pushFrequencies(435250000, dlHz);
+      await sleep(50);
+    }
+    radio.writes.length = 0;
+    for (let i = 0; i < 4; i++) {
+      dlHz -= 300;
+      await ic.pushFrequencies(435250000, dlHz);
+      await sleep(520);
+    }
+    assert.strictEqual(radio.writes.filter((w) => w.vfo === "sub").length, 0);
+    assert.ok(radio.writes.filter((w) => w.vfo === "main").length >= 4);
+    assert.strictEqual(radio.sub, 435250000);
   } finally {
     ic.close();
   }
