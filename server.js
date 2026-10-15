@@ -231,6 +231,9 @@ function applyWsjtxListener() {
 
 function applyProfileToRuntime(prof) {
   if (!prof) return;
+  // Spinner/fine offsets are stored per profile — switch store + re-apply live.
+  if (typeof state.setOffsetsProfile === "function")
+    state.setOffsetsProfile(profiles.getActiveName());
   state.setFavorites(Array.isArray(prof.favorites) ? prof.favorites : []);
   const cfg = prof.config && typeof prof.config === "object" ? prof.config : {};
   if (Object.keys(cfg).length) {
@@ -983,7 +986,14 @@ wss.on("connection", (ws, req) => {
       }
 
       if (msg.type === "profile-rename" && msg.from && msg.to) {
+        const oldActive = profiles.getActiveName();
         if (profiles.renameProfile(msg.from, msg.to)) {
+          // Carry the profile's per-sat offsets over to its new name.
+          const satOffsets = require("./lib/sat-offsets");
+          if (oldActive !== profiles.getActiveName())
+            satOffsets.renameProfile(oldActive, profiles.getActiveName());
+          else if (typeof profiles.sanitizeName === "function")
+            satOffsets.renameProfile(profiles.sanitizeName(msg.from), profiles.sanitizeName(msg.to));
           broadcastProfiles();
         } else {
           ws.send(

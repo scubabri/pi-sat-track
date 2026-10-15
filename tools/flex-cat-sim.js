@@ -104,7 +104,7 @@ async function runTests() {
     satOffsets.set("JO-97", { ulFineOffset: s0.ulFineOffset, dlFineOffset: s0.dlFineOffset, manualDlOffset: s0.manualDlOffset });
     if (satOffsets.flush) satOffsets.flush();
     await sleep(1500);
-    const saved = JSON.parse(require("fs").readFileSync(require("path").join(process.env.HOME, ".rpitrack", "sat-offsets.json"), "utf8"))["JO-97"] || {};
+    const saved = JSON.parse(require("fs").readFileSync(require("path").join(process.env.HOME, ".rpitrack", "sat-offsets.json"), "utf8")).profiles[satOffsets.getProfile()]["JO-97"] || {};
     check("(e) saved file keeps DL fine -1500 + manual", saved.dlFineOffset === -1500 && Math.abs(saved.manualDlOffset - expectManual) < 150,
       JSON.stringify(saved));
   }
