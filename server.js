@@ -250,6 +250,10 @@ function broadcastProfiles() {
 
 // Load named profiles from ~/.rpitrack/profiles.json and apply active one
 profiles.load();
+// Offsets store initialized as "default" in state.init (before profiles were
+// loaded): switch it to the real active profile now, before any sat loads.
+if (typeof state.setOffsetsProfile === "function")
+  state.setOffsetsProfile(profiles.getActiveName());
 applyProfileToRuntime(profiles.getActive());
 
 /** In-memory NORAD → SatNOGS sat_id cache (process lifetime). */
