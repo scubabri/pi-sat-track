@@ -77,6 +77,21 @@ test("Flex data ON: DIGU/DIGL (linear), DFM (FM); OFF restores; one resend", asy
     assert.strictEqual(u.st.md, "1"); assert.strictEqual(d.st.md, "2");
     assert.ok(logs.some((l) => /^Flex data OFF/.test(l)));
 
+    // CW (linear): MD3 both, exclusive with Data, one resend
+    flex.setDataMode(true);
+    await push(3, 145965300, 435637000);
+    u.st.cmds.length = 0; d.st.cmds.length = 0;
+    flex.setCwMode(true);
+    assert.strictEqual(flex.getRadioState().dataMode, false, "CW clears Data");
+    await push(6, 145965400, 435636000);
+    assert.strictEqual(u.st.md, "3"); assert.strictEqual(d.st.md, "3");
+    assert.strictEqual(u.st.cmds.filter((c) => c === "MD3").length, 1, "one CW resend UL: " + u.st.cmds.join(","));
+    assert.ok(logs.some((l) => /^Flex CW ON/.test(l)));
+    flex.setCwMode(false);
+    await push(4, 145965500, 435635000);
+    assert.strictEqual(u.st.md, "1"); assert.strictEqual(d.st.md, "2");
+    assert.ok(logs.some((l) => /^Flex CW OFF/.test(l)));
+
     // FM sat: DFM on both
     sat = "SO-50";
     flex.resetOffsets();

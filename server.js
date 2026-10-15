@@ -626,6 +626,11 @@ wss.on("connection", (ws, req) => {
         if (state.setDataMode(!!msg.on)) pushNow();
       }
 
+      if (msg.type === "cwMode") {
+        // CW on linear sats (UL+DL CW); exclusive with Data; no-op if unsupported
+        if (state.setCwMode(!!msg.on)) pushNow();
+      }
+
       if (msg.type === "ulFixed") {
         state.setUlFixed(!!msg.on);
         pushNow();

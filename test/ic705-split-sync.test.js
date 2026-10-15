@@ -246,3 +246,43 @@ test("Data ON: 0x26 data=1 on both VFOs (USB-D/LSB-D, FM-D), resent once; OFF re
     ic.close();
   }
 });
+
+test("CW ON (linear): 0x26 CW data=0 on both VFOs; exclusive with Data; FM ignores", async () => {
+  const logs = [];
+  const origLog = console.log, origWarn = console.warn;
+  console.log = (...a) => logs.push(a.join(" ")); console.warn = () => {};
+  let sat = "RS-44";
+  try {
+    ic.close();
+    ic.setDataMode(false); ic.setCwMode(false);
+    ic.init({ getContext: () => ({ currentSatKey: sat, currentModeIndex: 0 }) });
+    ic.applyDefaultCtcss(null, null);
+    ic.setLock(true);
+    ic.setRadio(true);
+    const run = async (n) => { for (let i = 0; i < n; i++) { await ic.pushFrequencies(145967000, 435633000); await sleep(30); } };
+    for (let i = 0; i < 40 && ic.getRadioState().syncNeeded; i++) await run(1);
+    assert.strictEqual(ic.getRadioState().cwMode, false, "default OFF");
+    ic.setDataMode(true); await run(2);
+    radio.cmds.length = 0;
+    ic.setCwMode(true);
+    assert.strictEqual(ic.getRadioState().dataMode, false, "CW turns Data off");
+    await run(4);
+    assert.deepStrictEqual(radio.cmds.filter((c) => c.startsWith("26,")), ["26,0,3,0,1", "26,1,3,0,1"]);
+    assert.ok(logs.some((l) => /^IC705 CW ON/.test(l)));
+    // Freq unchanged by CW (no BFO offset)
+    assert.strictEqual(radio.A.hz, 435633000);
+    assert.strictEqual(radio.B.hz, 145967000);
+    radio.cmds.length = 0;
+    ic.setCwMode(false); await run(3);
+    assert.deepStrictEqual(radio.cmds.filter((c) => c.startsWith("26,")), ["26,0,1,0,1", "26,1,0,0,1"]);
+    assert.ok(logs.includes("IC705 CW OFF"));
+    // FM sat: CW flag has no effect
+    ic.close(); sat = "SO-50"; ic.setCwMode(true); radio.cmds.length = 0; ic.setRadio(true);
+    for (let i = 0; i < 40 && ic.getRadioState().syncNeeded; i++) await run(1);
+    assert.deepStrictEqual(radio.cmds.filter((c) => c.startsWith("26,")), ["26,0,5,0,1", "26,1,5,0,1"]);
+  } finally {
+    console.log = origLog; console.warn = origWarn;
+    ic.setCwMode(false);
+    ic.close();
+  }
+});

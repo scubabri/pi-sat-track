@@ -427,3 +427,32 @@ test("continuous dial spin: no F snaps back, offset held after settle", async ()
     await new Promise((r) => fake.server.close(r));
   }
 });
+
+test("CW toggle (linear): M CW 0 / X CW 0 once, OFF restores USB/LSB", async () => {
+  const fake = await startFakeRigctld();
+  const logs = [];
+  console.log = (...a) => logs.push(a.join(" "));
+  console.warn = () => {};
+  let rig;
+  try {
+    rig = loadRigctl(fake.port, true);
+    rig.init({ getContext: () => ({ currentSatKey: "RS-44", currentModeIndex: 0 }) });
+    rig.setLock(true);
+    rig.setRadio(true);
+    await sleep(150);
+    for (let i = 0; i < 3; i++) { await rig.pushFrequencies(145965000 + i, 435640000 - i); await sleep(40); }
+    fake.state.cmds.length = 0;
+    rig.setCwMode(true);
+    for (let i = 0; i < 4; i++) { await rig.pushFrequencies(145965100 + i, 435639000 - i); await sleep(40); }
+    assert.deepStrictEqual(fake.state.cmds.filter((c) => /^[MX] /.test(c)), ["M CW 0", "X CW 0"]);
+    assert.strictEqual(rig.getRadioState().supportsCwMode, true);
+    assert.ok(logs.some((l) => /^rigctl CW ON/.test(l)));
+    fake.state.cmds.length = 0;
+    rig.setCwMode(false);
+    for (let i = 0; i < 3; i++) { await rig.pushFrequencies(145965200 + i, 435638000 - i); await sleep(40); }
+    assert.deepStrictEqual(fake.state.cmds.filter((c) => /^[MX] /.test(c)), ["M USB 0", "X LSB 0"]);
+  } finally {
+    if (rig) try { rig.setRadio(false); } catch (_) {}
+    await new Promise((r) => fake.server.close(r));
+  }
+});

@@ -3,6 +3,8 @@
 (function () {
   let dataMode = false;
   let supported = false;
+  let cwMode = false;
+  let cwSupported = false;
   let isFm = false;
   let modes = [];
   let modeIndex = 0;
@@ -22,7 +24,19 @@
     return tickMode;
   }
 
+  function isLinearMode(m) {
+    return /\b(SSB|USB|LSB)\b/i.test(String(m || "")) && !isFm;
+  }
+
   function updateUi() {
+    const cwBtn = document.getElementById("btn-cw-mode");
+    if (cwBtn) {
+      cwBtn.hidden = !cwSupported || !isLinearMode(selectedModeStr());
+      cwBtn.classList.toggle("active", cwMode);
+      cwBtn.title = cwMode
+        ? "CW ON (UL + DL CW) — click for voice (USB/LSB)"
+        : "CW OFF (voice) — click for CW on UL + DL";
+    }
     const btn = document.getElementById("btn-data-mode");
     if (!btn) return;
     void isFm;
@@ -33,8 +47,18 @@
       : "Data mode OFF (voice USB/LSB/FM) — click for data mode";
   }
 
+  function sendCw(on) {
+    cwMode = !!on;
+    if (cwMode) dataMode = false; // exclusive
+    updateUi();
+    if (typeof ws !== "undefined" && ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "cwMode", on: cwMode }));
+    }
+  }
+
   function send(on) {
     dataMode = !!on;
+    if (dataMode) cwMode = false; // exclusive
     updateUi();
     if (typeof ws !== "undefined" && ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "dataMode", on: dataMode }));
@@ -46,6 +70,9 @@
     if (typeof msg.dataModeSupported === "boolean") supported = msg.dataModeSupported;
     else if (typeof msg.supportsDataMode === "boolean") supported = msg.supportsDataMode;
     if (typeof msg.dataMode === "boolean") dataMode = msg.dataMode;
+    if (typeof msg.cwModeSupported === "boolean") cwSupported = msg.cwModeSupported;
+    else if (typeof msg.supportsCwMode === "boolean") cwSupported = msg.supportsCwMode;
+    if (typeof msg.cwMode === "boolean") cwMode = msg.cwMode;
     if (typeof msg.isFm === "boolean") isFm = msg.isFm;
     if (Array.isArray(msg.modes)) modes = msg.modes;
     if (typeof msg.mode === "string") tickMode = msg.mode;
@@ -73,6 +100,8 @@
   function init() {
     const btn = document.getElementById("btn-data-mode");
     if (btn) btn.addEventListener("click", () => send(!dataMode));
+    const cwBtn = document.getElementById("btn-cw-mode");
+    if (cwBtn) cwBtn.addEventListener("click", () => sendCw(!cwMode));
     const sel = document.getElementById("mode-select");
     if (sel) sel.addEventListener("change", updateUi); // live on mode change
     updateUi();

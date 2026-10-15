@@ -21,3 +21,14 @@ test("dataMode persists with offsets", () => {
   assert.strictEqual(so.getDataMode("JO-97"), false);
   assert.strictEqual(so.getModeIndex("JO-97"), 1);
 });
+
+test("cwMode persists independently of dataMode", () => {
+  so.load();
+  so.setCwMode("RS-44", true);
+  so.set("RS-44", { ulFineOffset: 0, dlFineOffset: 50, manualDlOffset: 0 });
+  so.flush(); so.load();
+  assert.strictEqual(so.getCwMode("RS-44"), true);
+  assert.strictEqual(so.getDataMode("RS-44"), false);
+  so.setCwMode("RS-44", false);
+  assert.strictEqual(so.getCwMode("RS-44"), false);
+});
