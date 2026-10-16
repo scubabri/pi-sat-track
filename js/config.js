@@ -101,6 +101,7 @@ function sendEndpointsToServer(cfg) {
       logAdifPath: cfg.logAdifPath || "~/.rpitrack/pi-sat-track.adi",
       logUdpHost: cfg.logUdpHost || "127.0.0.1",
       logUdpPort: cfg.logUdpPort != null ? cfg.logUdpPort : 2237,
+      radioUpdateMs: cfg.radioUpdateMs != null ? cfg.radioUpdateMs : 250,
       logUdpFormat: cfg.logUdpFormat || "wsjtx",
       logUdpTtl: cfg.logUdpTtl != null ? cfg.logUdpTtl : 1,
       logUdpIface: cfg.logUdpIface || "",
