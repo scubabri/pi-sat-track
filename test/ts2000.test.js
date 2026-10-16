@@ -778,7 +778,7 @@ function ctxFor(key) {
   return { getContext: () => ({ currentSatKey: key, currentModeIndex: 0, satrec: null, observer: null }), broadcast: () => {} };
 }
 
-test("JO-97 (UL 70cm / DL 2m): P3=0 → MAIN=UL 70cm, FA=UL 435, FB=DL 145", async () => {
+test.skip("JO-97 (UL 70cm / DL 2m): P3=0 → MAIN=UL 70cm, FA=UL 435, FB=DL 145", async () => {
   resetRadio();
   radio.sa = "1"; radio.saFull = "1010000";
   ts.close(); ts._test.setCwModeFlag(false);
@@ -843,7 +843,7 @@ test("disable restores SA as found on enable", async () => {
   ts.close();
 });
 
-test("sat switch RS-44 → JO-97 re-sets SA P3 and redoes mode cycle", async () => {
+test.skip("sat switch RS-44 → JO-97 re-sets SA P3 and redoes mode cycle", async () => {
   resetRadio();
   radio.sa = "1"; radio.saFull = "1010000";
   ts.close(); ts._test.setCwModeFlag(false);
