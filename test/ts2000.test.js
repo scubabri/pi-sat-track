@@ -83,6 +83,9 @@ class FakePort {
       if (up === "FA") {
         const v = radio.faRound ? Math.round(radio.fa / radio.faRound) * radio.faRound : radio.fa;
         reply += "FA" + String(v).padStart(11, "0") + ";";
+      } else if (radio.sa === "1" && /^F[AB]\d/.test(up) && radio.strictBands &&
+          ((up[1] === "A") === (parseInt(up.slice(2), 10) < 300e6) ? !radio.strictReversed : radio.strictReversed)) {
+        reply += "?;"; // real TS-2000 SAT: FA=MAIN=70cm, FB=SUB=2m
       } else if (up.startsWith("FB") && up.length > 2 && radio.rejectFb) {
         reply += "?;";
       } else if (up.startsWith("FA") && up.length > 2 && radio.swapFaFb) {
@@ -212,6 +215,8 @@ function resetRadio() {
   radio.rejectFb = false;
   radio.hangNextFaRead = false;
   radio.swapFaFb = false;
+  radio.strictBands = true;
+  radio.strictReversed = false;
   radio.rejectMd = false;
   radio.cmds = [];
   radio.overlap = 0;
@@ -773,7 +778,7 @@ function ctxFor(key) {
   return { getContext: () => ({ currentSatKey: key, currentModeIndex: 0, satrec: null, observer: null }), broadcast: () => {} };
 }
 
-test("JO-97 (UL 70cm / DL 2m): P3=0 → MAIN=UL 70cm, FA=DL 145, FB=UL 435", async () => {
+test("JO-97 (UL 70cm / DL 2m): P3=0 → MAIN=UL 70cm, FA=UL 435, FB=DL 145", async () => {
   resetRadio();
   radio.sa = "1"; radio.saFull = "1010000";
   ts.close(); ts._test.setCwModeFlag(false);
@@ -784,8 +789,11 @@ test("JO-97 (UL 70cm / DL 2m): P3=0 → MAIN=UL 70cm, FA=DL 145, FB=UL 435", asy
   assert.strictEqual(ts._test.getWantP3(), "0");
   assert.ok(radio.cmds.includes("SA1000000"), "SA P3=0 sent");
   assert.strictEqual(radio.saFull[2], "0");
-  assert.ok(Math.abs(radio.fa - 145865000) < 10, "FA=DL 2m " + radio.fa);
-  assert.ok(Math.abs(radio.fb - 435110000) < 10, "FB=UL 70cm " + radio.fb);
+  assert.ok(Math.abs(radio.fa - 435110000) < 10, "FA=UL 70cm " + radio.fa);
+  assert.ok(Math.abs(radio.fb - 145865000) < 10, "FB=DL 2m " + radio.fb);
+  assert.ok(radio.cmds.some((c) => /^FA00435/.test(c)) && radio.cmds.some((c) => /^FB00145/.test(c)), "FA00435… / FB00145…");
+  assert.ok(!radio.cmds.some((c) => /^FA00145|^FB00435/.test(c)), "never FA00145/FB00435");
+  assert.ok(!radio.replies.some((x) => x.includes("?;")), "no naks");
   assert.ok(radio.cmds.includes("SA1001000"), "SUB mode cycle uses P3=0 base");
   ts.setRadio(false); await sleep(300); ts.close();
 });
@@ -805,18 +813,17 @@ test("RS-44 (UL 2m / DL 70cm): P3=1, FA=DL 435, FB=UL 145", async () => {
   ts.setRadio(false); await sleep(300); ts.close();
 });
 
-test("FA/FB band verify: radio maps FA to UL → driver swaps", async () => {
+test("FA/FB nak → swap once (radio wants opposite band mapping)", async () => {
   resetRadio();
-  radio.sa = "1"; radio.saFull = "1000000"; radio.swapFaFb = true;
+  radio.sa = "1"; radio.saFull = "1000000"; radio.strictReversed = true;
   ts.close(); ts._test.setCwModeFlag(false);
   ts.init(ctxFor("JO-97"));
   ts.setRadio(true);
   await sleep(50);
-  for (let i = 0; i < 5; i++) { await ts.pushFrequencies(435110000 + i * 3, 145865000 - i * 3); await sleep(250); }
-  assert.strictEqual(ts._test.getFaIsDl(), false, "swapped");
-  // Fake: FA cmd → fb store. DL (145) must land in radio.fa via FB cmd.
-  assert.ok(Math.abs(radio.fa - 145865000) < 30, "DL in place " + radio.fa);
-  assert.ok(Math.abs(radio.fb - 435110000) < 30, "UL in place " + radio.fb);
+  for (let i = 0; i < 6; i++) { await ts.pushFrequencies(435110000 + i * 3, 145865000 - i * 3); await sleep(250); }
+  assert.strictEqual(ts._test.getFaIsDl(), true, "swapped to FA=DL");
+  assert.ok(Math.abs(radio.fa - 145865000) < 30, "FA=145 " + radio.fa);
+  assert.ok(Math.abs(radio.fb - 435110000) < 30, "FB=435 " + radio.fb);
   ts.setRadio(false); await sleep(300); ts.close();
 });
 
@@ -864,8 +871,8 @@ test("sat switch RS-44 → JO-97 re-sets SA P3 and redoes mode cycle", async () 
   for (let i = 0; i < 4; i++) { await ts.pushFrequencies(435110000, 145865000); await sleep(250); }
   assert.ok(radio.cmds.includes("SA1000000"), "SA P3=0 on switch");
   assert.ok(radio.cmds.includes("SA1001000"), "mode cycle redone");
-  assert.ok(Math.abs(radio.fa - 145865000) < 10);
-  assert.ok(Math.abs(radio.fb - 435110000) < 10);
+  assert.ok(Math.abs(radio.fa - 435110000) < 10);
+  assert.ok(Math.abs(radio.fb - 145865000) < 10);
   ts.setRadio(false); await sleep(300); ts.close();
 });
 
@@ -914,4 +921,44 @@ test("hard-timeout timer not leaked: 50 commands → 0 timeout logs, none after 
     console.warn = ow;
     ts.close();
   }
+});
+
+test("JO-97 knob on MAIN (UL, FA) with SUB reverse tracking → absorbed, no snap-back", async () => {
+  resetRadio();
+  radio.sa = "1"; radio.saFull = "1000000";
+  ts.close(); ts._test.setCwModeFlag(false); ts._test.setManualDlOffset(0);
+  ts.init(ctxFor("JO-97"));
+  ts.setLock(false);
+  ts.setRadio(true);
+  await sleep(50);
+  // inverting: UL = f0u - manual, DL = f0d + manual
+  const tick = (i) => ts.pushFrequencies(435110000 - ts._test.getManualDlOffset(), 145865000 - i * 3 + ts._test.getManualDlOffset());
+  for (let i = 0; i < 6; i++) { await tick(i); await sleep(250); }
+  let snaps = 0;
+  for (let k = 0; k < 15; k++) {
+    radio.fa += 100; // MAIN knob = UL
+    radio.fb -= 100; // SUB reverse-tracks = DL
+    const want = radio.fa;
+    await sleep(100); await tick(6 + k); await sleep(100);
+    if (radio.fa < want - 50) snaps++;
+  }
+  assert.ok(snaps <= 1, "snaps " + snaps);
+  assert.ok(ts._test.getManualDlOffset() < -1000, "absorbed into offset: " + ts._test.getManualDlOffset());
+  ts.setRadio(false); await sleep(300); ts.close();
+});
+
+test("no FR/FT/MD before SA read on enable (JO-97, DL-only and full ticks)", async () => {
+  resetRadio();
+  radio.sa = "1"; radio.saFull = "1000000";
+  ts.close(); ts._test.setCwModeFlag(false);
+  ts.init(ctxFor("JO-97"));
+  ts.setRadio(true);
+  ts.pushFrequencies(null, 145865000);
+  ts.pushFrequencies(435110000, 145865000);
+  await sleep(1500);
+  const firstSa = radio.cmds.findIndex((c) => /^SA/i.test(c));
+  const firstBad = radio.cmds.findIndex((c) => /^(F[RT]\d|MD\d|FA\d|FB\d)/i.test(c));
+  assert.ok(firstSa >= 0 && (firstBad < 0 || firstSa < firstBad), radio.cmds.slice(0, 8).join(","));
+  assert.ok(!radio.cmds.some((c) => /^F[RT]\d/i.test(c)), "no FR/FT at all");
+  ts.setRadio(false); await sleep(300); ts.close();
 });
