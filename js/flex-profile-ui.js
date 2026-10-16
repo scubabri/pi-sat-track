@@ -1,7 +1,7 @@
 /**
- * Flex SmartSDR global profile dropdown — between Data and CW.
- * Shown only when the active radio supports Flex profiles and the API is up;
- * otherwise hidden (layout collapses). Blank = "(no change)".
+ * Flex SmartSDR global profile dropdown — own row above Uplink.
+ * Always visible. Greyed/disabled for non-Flex radios or when API is down
+ * (same idea as CW greyed on FM). Blank = "(no change)".
  */
 (function () {
   let supported = false;
@@ -19,9 +19,7 @@
     if (!sel) return;
     const want = selected || "";
     const names = Array.isArray(profiles) ? profiles.slice() : [];
-    // Keep current selection in the list even if radio list is momentarily empty
     if (want && names.indexOf(want) < 0) names.unshift(want);
-    const prev = sel.value;
     sel.innerHTML = "";
     const blank = document.createElement("option");
     blank.value = "";
@@ -34,26 +32,19 @@
       sel.appendChild(opt);
     }
     sel.value = want;
-    if (sel.value !== want && want) {
-      // Option missing somehow — force blank display but keep state
-      sel.value = "";
-    }
-    if (prev !== sel.value) {
-      /* rebuilt */
-    }
+    if (sel.value !== want && want) sel.value = "";
   }
 
   function updateUi() {
     const sel = el();
     if (!sel) return;
-    const show = !!supported;
-    sel.hidden = !show;
-    // Enabled once API is connected (list populates from status); greyed otherwise
+    // Always shown; greyed when not Flex or API not connected
+    sel.hidden = false;
     const hasList = Array.isArray(profiles) && profiles.length > 0;
-    const disable = !show || !apiConnected;
+    const disable = !supported || !apiConnected;
     sel.disabled = disable;
-    sel.title = !show
-      ? "SmartSDR profiles (Flex only)"
+    sel.title = !supported
+      ? "Flex Profile — only for SmartSDR / AetherSDR"
       : !apiConnected
         ? "Waiting for Flex radio API (LAN IP:4992)…"
         : !hasList
