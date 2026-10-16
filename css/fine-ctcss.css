@@ -60,7 +60,7 @@
   color: #34d399;
 }
 
-.fine-row #fine-step {
+.fine-row .spin-input {
   width: 3.4rem;
   padding: 2px 6px;
   font-size: 0.75rem;
@@ -215,7 +215,7 @@
   background: var(--bg, #0d1117);
 }
 .fine-row .step-spin:focus-within { border-color: var(--accent, #58a6ff); }
-.fine-row .step-spin #fine-step {
+.fine-row .step-spin .spin-input {
   border: none;
   border-radius: 0;
   height: 26px;

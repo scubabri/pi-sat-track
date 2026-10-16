@@ -485,6 +485,7 @@ function readFormConfig() {
   const radioDl = singleRadio ? Object.assign({}, radioUl) : readSide("dl");
 
   return {
+    radioUpdateMs: prev.radioUpdateMs != null ? prev.radioUpdateMs : 250,
     callsign: val("cfg-callsign").trim().toUpperCase(),
     grid: val("cfg-grid").trim().toUpperCase(),
     elevation: elevRaw ? parseInt(elevRaw.value, 10) || 0 : 0,

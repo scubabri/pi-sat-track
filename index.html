@@ -1121,6 +1121,7 @@
                 <input
                   type="number"
                   id="fine-step"
+                  class="spin-input"
                   value="100"
                   min="1"
                   step="1"
@@ -1149,6 +1150,26 @@
               >
                 Fix UL
               </button>
+            </div>
+            <div class="fine-row">
+              <span class="fine-side fine-side-step">Update</span>
+              <span class="step-spin">
+                <input
+                  type="number"
+                  id="update-ms"
+                  class="spin-input"
+                  value="250"
+                  min="100"
+                  max="2000"
+                  step="50"
+                  title="Radio update interval (ms): how often Doppler is written to the radio. Map/display unaffected."
+                />
+                <span class="step-spin-arrows">
+                  <button type="button" id="btn-update-up" tabindex="-1" title="+50 ms" aria-label="Slower updates">▲</button>
+                  <button type="button" id="btn-update-down" tabindex="-1" title="−50 ms" aria-label="Faster updates">▼</button>
+                </span>
+              </span>
+              <span class="unit">ms</span>
             </div>
             <div id="ctcss-row" class="ctcss-row" hidden>
               <span class="ctcss-label">CTCSS</span>
@@ -1301,6 +1322,7 @@
     <script src="js/pass-ui.js"></script>
     <script src="js/tracker.js"></script>
     <script src="js/fine-ctcss.js"></script>
+    <script src="js/update-rate.js"></script>
     <script src="js/data-mode.js"></script>
     <script src="js/flex-profile-ui.js"></script>
     <script src="js/ul-fixed.js"></script>

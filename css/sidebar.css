@@ -132,7 +132,7 @@
 }
 
 .fine-tune input,
-#fine-step {
+.spin-input {
   width: 64px;
   height: 28px;
   text-align: center;
@@ -150,8 +150,8 @@
 
 .fine-tune input::-webkit-outer-spin-button,
 .fine-tune input::-webkit-inner-spin-button,
-#fine-step::-webkit-outer-spin-button,
-#fine-step::-webkit-inner-spin-button {
+.spin-input::-webkit-outer-spin-button,
+.spin-input::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }

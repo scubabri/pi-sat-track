@@ -182,6 +182,7 @@ function defaultsEndpoints() {
     logAdifPath: "~/.rpitrack/pi-sat-track.adi",
     logUdpHost: "127.0.0.1",
     logUdpPort: 2237,
+    radioUpdateMs: 250,
     logUdpFormat: "wsjtx",
     // multicast only (224.0.0.0-239.255.255.255)
     logUdpTtl: 1,

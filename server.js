@@ -241,6 +241,8 @@ function applyProfileToRuntime(prof) {
     radios.applyEndpointChange(flags);
     if (flags.rotorChanged) rotor.applyEndpointChange();
   }
+  console.log("Radio update:", config.RADIO_UPDATE_MS, "ms");
+  if (typeof state.forceRadioPush === "function") state.forceRadioPush();
   applyWsjtxListener();
 }
 
@@ -465,7 +467,7 @@ function broadcastSats() {
 }
 
 function pushNow() {
-  const tk = state.computeTick();
+  const tk = state.computeTick({ forceRadio: true });
   if (tk) broadcast(tk);
 }
 
@@ -651,6 +653,20 @@ wss.on("connection", (ws, req) => {
         if (state.setFlexProfile(msg.name != null ? msg.name : "")) pushNow();
       }
 
+      if (msg.type === "radioUpdateMs") {
+        const before = config.RADIO_UPDATE_MS;
+        const ms = config.setRadioUpdateMs(msg.ms);
+        if (ms !== before) console.log("Radio update:", ms, "ms");
+        profiles.updateActive({ config: { radioUpdateMs: ms } });
+        broadcastProfiles();
+        broadcast({
+          type: "endpoints",
+          ...config.getEndpoints(),
+          rotorCatalog: rotors.catalog(),
+        });
+        pushNow();
+      }
+
       if (msg.type === "ulFixed") {
         state.setUlFixed(!!msg.on);
         pushNow();
@@ -744,6 +760,7 @@ wss.on("connection", (ws, req) => {
           logAdifPath: msg.logAdifPath,
           logUdpHost: msg.logUdpHost,
           logUdpPort: msg.logUdpPort,
+          radioUpdateMs: msg.radioUpdateMs,
           logUdpFormat: msg.logUdpFormat,
           logUdpTtl: msg.logUdpTtl,
           logUdpIface: msg.logUdpIface,
