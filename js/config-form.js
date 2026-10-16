@@ -611,8 +611,8 @@ function applyWsjtxListenerStatus(msg) {
       text = msg.error || "Listener error";
       cls = "err";
     } else if (msg.state === "paused") {
-      text = msg.message || "Paused";
-      cls = "warn";
+      text = (msg.bind || "0.0.0.0") + ":" + msg.port;
+      cls = "err";
     } else if (msg.state === "starting") {
       text = "Starting\u2026";
     } else {

@@ -96,14 +96,7 @@
       String(logCfg.logMethod || "off").toLowerCase() !== "off";
     let text = base;
     let cls = "";
-    if (!on) {
-      text = configured
-        ? base + " \u2014 Paused"
-        : base;
-      cls = configured ? "warn" : "";
-    } else if (configured) {
-      cls = "ok";
-    }
+    if (configured) cls = on ? "ok" : "err";
     e.dest.textContent = text;
     e.dest.className = "qso-wsjtx-state" + (cls ? " " + cls : "");
     e.dest.hidden = false;
@@ -278,9 +271,8 @@
         cls = "ok";
       } else if (stt === "paused") {
         text =
-          "WSJT-X Logging: " +
-          (msg.message || "Paused");
-        cls = "warn";
+          "WSJT-X Logging: " + (msg.bind || "0.0.0.0") + ":" + msg.port;
+        cls = "err";
       } else if (stt === "error") {
         text = "WSJT-X Logging: " + (msg.error || "error");
         cls = "err";
