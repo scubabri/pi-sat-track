@@ -223,11 +223,6 @@
       stepEl.addEventListener("dblclick", sendCenter);
     }
 
-    const centerBtn = document.getElementById("btn-fine-center");
-    if (centerBtn) {
-      centerBtn.classList.add("btn-fine-center");
-      centerBtn.addEventListener("click", sendCenter);
-    }
 
     const acc = document.getElementById("btn-ctcss-access");
     const act = document.getElementById("btn-ctcss-activation");

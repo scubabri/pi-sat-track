@@ -75,27 +75,7 @@
   color: #6b7280;
 }
 
-.fine-row .btn-fine-center {
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border-radius: 4px;
-  border: 1px solid rgba(75, 85, 99, 0.55);
-  background: rgba(55, 65, 81, 0.45);
-  color: #9ca3af;
-  font-size: 0.75rem;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.fine-row .btn-fine-center:hover {
-  background: rgba(75, 85, 99, 0.8);
-  color: #e5e7eb;
-}
-
-/* Fix UL — same family as LOCK */
+/* Fix UL */
 .btn-ul-fixed {
   font-size: 0.68rem;
   font-weight: 600;

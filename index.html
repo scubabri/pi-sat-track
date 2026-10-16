@@ -20,7 +20,6 @@
     <link rel="stylesheet" href="css/amsat-report.css" />
     <link rel="stylesheet" href="css/decode-overlay.css" />
     <link rel="stylesheet" href="css/schedule.css" />
-    <link rel="stylesheet" href="css/lock.css" />
     <link rel="stylesheet" href="css/fine-ctcss.css" />
     <link rel="stylesheet" href="css/connection-test.css" />
     <link rel="stylesheet" href="css/config-modal.css" />
@@ -1117,7 +1116,7 @@
 
           <div class="fine-tune-block">
             <div class="fine-row">
-              <span class="fine-side fine-side-step">Step</span>
+              <span class="fine-side fine-side-step">Offset</span>
               <span class="step-spin">
                 <input
                   type="number"
@@ -1126,22 +1125,14 @@
                   value="100"
                   min="1"
                   step="1"
-                  title="Fine step (Hz). Type any value, or use ▲/▼ / mouse wheel / arrow keys to change by 1 Hz. Double-click to center."
+                  title="Offset step (Hz) applied by the UL/DL −/+ buttons. Type any value, or use ▲/▼ / mouse wheel / arrow keys to change by 1 Hz. Double-click to center offsets."
                 />
                 <span class="step-spin-arrows">
-                  <button type="button" id="btn-step-up" tabindex="-1" title="Increase step by 1 Hz" aria-label="Larger step">▲</button>
-                  <button type="button" id="btn-step-down" tabindex="-1" title="Decrease step by 1 Hz" aria-label="Smaller step">▼</button>
+                  <button type="button" id="btn-step-up" tabindex="-1" title="Increase offset step by 1 Hz" aria-label="Larger offset step">▲</button>
+                  <button type="button" id="btn-step-down" tabindex="-1" title="Decrease offset step by 1 Hz" aria-label="Smaller offset step">▼</button>
                 </span>
               </span>
               <span class="unit">Hz</span>
-              <button
-                type="button"
-                id="btn-fine-center"
-                class="btn-fine-center"
-                title="Center offsets"
-              >
-                ⌖
-              </button>
               <button
                 type="button"
                 id="btn-ul-fixed"
