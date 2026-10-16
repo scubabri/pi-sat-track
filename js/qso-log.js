@@ -279,7 +279,7 @@
       } else if (stt === "paused") {
         text =
           "WSJT-X Logging: " +
-          (msg.message || "Paused \u2014 Radio and Antenna must be on");
+          (msg.message || "Paused");
         cls = "warn";
       } else if (stt === "error") {
         text = "WSJT-X Logging: " + (msg.error || "error");
