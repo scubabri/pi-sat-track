@@ -115,3 +115,16 @@
 .qso-wsjtx-state.err {
   color: var(--red);
 }
+
+/* Callsign grid lookup line under the callsign box */
+.qso-log-grid {
+  margin-top: 4px;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: #ffd34d;
+  min-height: 1em;
+}
+.qso-log-grid.none {
+  color: var(--text-dim, #8b93a7);
+  font-family: var(--font);
+}

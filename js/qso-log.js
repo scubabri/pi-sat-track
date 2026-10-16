@@ -177,6 +177,7 @@
         call,
         stationCallsign: st.callsign,
         stationGrid: st.grid,
+        dxGrid: window.qsoDxGrid && window.qsoDxGrid.call === call ? window.qsoDxGrid.grid : "",
       }),
     );
     setBusy(true);

@@ -592,6 +592,20 @@ wss.on("connection", (ws, req) => {
         ws.send(JSON.stringify(state.computeFavoriteTracks()));
         return;
       }
+      if (msg.type === "call-grid-lookup") {
+        // Logging-panel callsign → grid. Prefer a recent WSJT-X decode (no
+        // network), else the Sked Finder g7vrd lookup (shared 30 min cache).
+        const cs = String(msg.call || "").trim().toUpperCase();
+        const reply = (o) => ws.send(JSON.stringify(Object.assign({ type: "call-grid", reqId: msg.reqId, call: cs }, o)));
+        const heard = decodeStore.list().find((s) => s.call === cs);
+        if (heard && heard.grid) {
+          reply({ ok: true, grid: heard.grid, source: "wsjtx" });
+        } else {
+          schedule.callsignGrid(cs).then((r) => reply({ ok: true, grid: r.grid, source: r.source || "g7vrd" }))
+            .catch((e) => reply({ ok: false, error: e.message }));
+        }
+        return;
+      }
       if (msg.type === "schedule-lookup") {
         const q = String(msg.query || "").trim();
         const reply = (o) => ws.send(JSON.stringify(Object.assign({ type: "schedule-lookup", reqId: msg.reqId, query: q }, o)));
@@ -799,6 +813,12 @@ wss.on("connection", (ws, req) => {
         logbook
           .logQso({
             call: msg.call,
+            dxGrid: (() => {
+              if (schedule.isGrid(String(msg.dxGrid || ""))) return String(msg.dxGrid);
+              const cs = String(msg.call || "").trim().toUpperCase();
+              const h = decodeStore.list().find((s) => s.call === cs);
+              return h && h.grid ? h.grid : "";
+            })(),
             ctx: state.getLogContext(),
             station,
             cfg: logOutputCfg(),
