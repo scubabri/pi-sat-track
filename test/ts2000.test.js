@@ -113,6 +113,10 @@ class FakePort {
         radio.ct = up.slice(2);
       } else if (up === "SA") {
         reply += "SA" + radio.saFull + ";";
+      } else if (up.startsWith("SA") && up.length > 2 && (radio.rejectSa || (up.length !== 3 && up.length !== 9))) {
+        reply += "?;"; // real TS-2000: SA set is SA + 7 digits (or SA0)
+      } else if (up.startsWith("MD") && up.length === 3 && radio.rejectMd) {
+        reply += "?;";
       } else if (up.startsWith("SA") && up.length > 2) {
         radio.sa = up.slice(2, 3);
         radio.saFull = up.slice(2).padEnd(8, "0").slice(0, 8);
@@ -175,6 +179,8 @@ function resetRadio() {
   radio.saFull = "00000000";
   radio.dc = "00";
   radio.tnMain = null;
+  radio.rejectSa = false;
+  radio.rejectMd = false;
   radio.cmds = [];
   radio.overlap = 0;
   radio.replies = [];
@@ -233,7 +239,7 @@ test("SAT mode: SA10100000, MAIN=DL FA, SUB=UL FB, MD via DC, cached", async () 
   await sleep(200);
   const mdFirst = radio.cmds.filter((c) => /^MD/i.test(c) && c.length === 3).length;
   assert.strictEqual(radio.sa, "1", "SAT on");
-  assert.strictEqual(radio.saFull, "10100000");
+  assert.ok(radio.cmds.includes("SA1010000"), "7-digit SA set");
   assert.ok(ts._test.getSatOn());
   assert.strictEqual(radio.fa, dlHz, "MAIN = DL via FA");
   assert.strictEqual(radio.fb, ul, "SUB = UL via FB");
@@ -327,7 +333,7 @@ test("CTCSS 67.0 → TN01 TO1 CT0 + readback clears toneError", async () => {
   await sleep(80);
   ts.applyDefaultCtcss(67.0, null);
   ts.setCtcss("access");
-  await sleep(400);
+  await sleep(1500);
   assert.ok(radio.cmds.some((c) => c.toUpperCase() === "CT0"));
   assert.ok(radio.cmds.some((c) => c.toUpperCase() === "TN01"));
   assert.ok(radio.cmds.some((c) => c.toUpperCase() === "TO1"));
@@ -453,4 +459,54 @@ test("cleanup close", async () => {
   ts.setRadio(false);
   await sleep(30);
   assert.strictEqual(ts.getRadioState().radioOn, false);
+});
+
+test("SA rejected → clean VFO split fallback (FT1, no DC, no SA spam)", async () => {
+  resetRadio();
+  radio.rejectSa = true;
+  ts.close();
+  ts.init({
+    getContext: () => ({ currentSatKey: "RS-44", currentModeIndex: 0, satrec: null, observer: null }),
+    broadcast: () => {},
+  });
+  ts.setRadio(true);
+  await sleep(3500);
+  assert.strictEqual(ts._test.getSatOn(), false);
+  for (const c of ["SA1010000", "SA1", "SA10100000"])
+    assert.ok(radio.cmds.includes(c), "tried " + c);
+  assert.strictEqual(ts._test.getSatFailed(), true);
+  radio.cmds = [];
+  await ts.pushFrequencies(145950000, 435640000);
+  await sleep(200);
+  assert.strictEqual(radio.ft, 1, "split TX on B");
+  assert.ok(!radio.cmds.some((c) => /^DC/i.test(c)), "no DC in fallback");
+  radio.cmds = [];
+  await ts.pushFrequencies(145950000, 435640000);
+  await ts.pushFrequencies(145950000, 435640000);
+  await sleep(200);
+  assert.ok(!radio.cmds.some((c) => /^SA/i.test(c)), "no SA retries per tick");
+  assert.ok(!radio.cmds.some((c) => /^FR1/i.test(c)), "no FR1 churn per tick");
+  ts.setRadio(false);
+  await sleep(300);
+});
+
+test("MD nak → not resent every tick", async () => {
+  resetRadio();
+  radio.rejectMd = true;
+  ts.close();
+  ts.init({
+    getContext: () => ({ currentSatKey: "RS-44", currentModeIndex: 0, satrec: null, observer: null }),
+    broadcast: () => {},
+  });
+  ts.setRadio(true);
+  await sleep(1200);
+  await ts.pushFrequencies(145950000, 435640000);
+  await sleep(200);
+  radio.cmds = [];
+  for (let i = 0; i < 3; i++) await ts.pushFrequencies(145950000 + i * 10, 435640000 - i * 10);
+  await sleep(200);
+  assert.strictEqual(radio.cmds.filter((c) => /^MD\d/i.test(c)).length, 0, "no MD spam");
+  ts.setRadio(false);
+  await sleep(300);
+  ts.close();
 });
