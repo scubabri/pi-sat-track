@@ -133,7 +133,7 @@ Per-sat fine offsets (UL/DL) and optional UL fixed for FM
 
 Profiles (save multiple station/radio setups on the server)
 
-Radio + Antenna enable toggles, lock, CTCSS controls where applicable
+Radio + Antenna enable toggles, CTCSS controls where applicable
 
 Rotor gauges and map footprint / ground track
 

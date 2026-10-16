@@ -631,10 +631,6 @@ wss.on("connection", (ws, req) => {
         syncWsjtxGate();
       }
 
-      if (msg.type === "lock") {
-        radios.setLock(!!msg.on);
-      }
-
       if (msg.type === "dataMode") {
         // USB-D/LSB-D on linear sats; no-op on radios without the capability
         if (state.setDataMode(!!msg.on)) pushNow();

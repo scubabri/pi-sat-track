@@ -817,23 +817,7 @@ function initRadioControls() {
     });
   }
 
-  if (stepEl) {
-    stepEl.addEventListener("change", () => {
-      const step = parseInt(stepEl.value, 10);
-      if (!Number.isFinite(step) || step <= 0) {
-        stepEl.value = String(fineStep);
-        return;
-      }
-      fineStep = step;
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "fine", delta: 0, step: fineStep }));
-      }
-    });
-    stepEl.addEventListener("dblclick", () => {
-      sendCenter();
-    });
-    stepEl.title = "Fine step (Hz). Double-click to center/reset offsets.";
-  }
+  // Offset-step input (change/▲▼/dblclick-center) is wired once in fine-ctcss.js.
 
   updateFineOffsetDisplay();
 }
