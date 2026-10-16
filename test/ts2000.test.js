@@ -90,14 +90,16 @@ class FakePort {
         radio.ft = parseInt(up.slice(2), 10) || 0;
       } else if (up === "DC") {
         reply += "DC" + radio.dc + ";";
+      } else if (up.startsWith("DC") && up.length === 4 && radio.dcLocked) {
+        // real radio in SAT: DC change ignored
       } else if (up.startsWith("DC") && up.length === 4) {
         // Kenwood: P1 change forces P2 = P1
         radio.dc = up[2] !== radio.dc[0] ? up[2] + up[2] : up.slice(2);
       } else if (up === "MD" && radio.sa === "1") {
-        reply += "MD" + (radio.dc[1] === "1" ? radio.mdB : radio.mdA) + ";";
+        reply += "MD" + (radio.dc[1] === "1" || radio.saFull[3] === "1" ? radio.mdB : radio.mdA) + ";";
       } else if (up.startsWith("MD") && up.length === 3 && radio.sa === "1") {
-        // SATL: MD acts on control band (DC P2)
-        if (radio.dc[1] === "1") radio.mdB = up.slice(2);
+        // SATL: MD acts on control band (DC P2 or SA P4)
+        if (radio.dc[1] === "1" || radio.saFull[3] === "1") radio.mdB = up.slice(2);
         else radio.mdA = up.slice(2);
       } else if (up.startsWith("TN") && up.length === 4 && radio.sa === "1" && radio.dc[1] !== "1") {
         radio.tnMain = up.slice(2);
@@ -188,6 +190,7 @@ function resetRadio() {
   radio.dc = "00";
   radio.tnMain = null;
   radio.rejectSa = false;
+  radio.dcLocked = false;
   radio.rejectMd = false;
   radio.cmds = [];
   radio.overlap = 0;
@@ -254,7 +257,7 @@ test("SAT mode: SA1010000, MAIN=DL FA, SUB=UL FB, MD via DC, cached", async () =
   assert.strictEqual(radio.mdA, "2", "DL USB on MAIN");
   assert.strictEqual(radio.mdB, "1", "UL LSB on SUB");
   assert.ok(radio.cmds.some((c) => c.toUpperCase() === "DC11"), "CTRL SUB before UL MD");
-  assert.strictEqual(radio.dc, "10", "CTRL restored to MAIN, PTT kept SUB");
+  assert.strictEqual(radio.dc[1], "0", "CTRL restored to MAIN");
   assert.ok(!radio.cmds.some((c) => /^F[RT]\d/i.test(c)), "no FR/FT in SATL");
   assert.ok(mdFirst >= 2);
 
@@ -428,7 +431,7 @@ test("SO-50 FM in SAT: tone on SUB via DC11, disable leaves SAT on", async () =>
   assert.ok(i > 0);
   assert.ok(radio.cmds.slice(0, i).map((c) => c.toUpperCase()).lastIndexOf("DC11") >= 0, "CTRL SUB before TN");
   assert.strictEqual(radio.tnMain, null, "tone not on MAIN");
-  assert.strictEqual(radio.dc, "10");
+  assert.strictEqual(radio.dc[1], "0");
   ts.setRadio(false);
   await sleep(500);
   assert.strictEqual(radio.sa, "1", "SAT left on at disable");
@@ -555,4 +558,51 @@ test("SAT: unchanged mode/freq not resent; no FR/FT/CT", async () => {
   assert.ok(!radio.cmds.some((c) => /^(MD\d|FA\d|FB\d|F[RT]\d|CT)/i.test(c)), radio.cmds.join(","));
   ts.setRadio(false);
   await sleep(100);
+});
+
+test("SAT: DC locked → SUB mode via SA P4=1 then back to SA1010000; FB always sent", async () => {
+  resetRadio();
+  radio.sa = "1";
+  radio.saFull = "1011000";
+  radio.dcLocked = true;
+  ts.close();
+  ts._test.setCwModeFlag(false);
+  ts.init({
+    getContext: () => ({ currentSatKey: "RS-44", currentModeIndex: 0, satrec: null, observer: null }),
+    broadcast: () => {},
+  });
+  ts.setRadio(true);
+  await sleep(1500);
+  await ts.pushFrequencies(145960000, 435640000);
+  await sleep(200);
+  assert.strictEqual(radio.fb, 145960000, "FB sent");
+  assert.strictEqual(radio.mdB, "1", "SUB LSB via SA P4");
+  assert.strictEqual(radio.saFull.slice(0, 7), "1010000", "SA restored CTRL MAIN");
+  assert.ok(radio.cmds.includes("SA1011000"));
+  radio.cmds = [];
+  await ts.pushFrequencies(145960000, 435640000);
+  await sleep(100);
+  assert.ok(!radio.cmds.some((c) => /^(DC\d|SA1)/i.test(c)), "no per-tick ctrl attempts");
+  ts.setRadio(false);
+  await sleep(100);
+});
+
+test("concurrent ticks coalesce (no duplicate FA writes)", async () => {
+  resetRadio();
+  ts.close();
+  ts.init({
+    getContext: () => ({ currentSatKey: "RS-44", currentModeIndex: 0, satrec: null, observer: null }),
+    broadcast: () => {},
+  });
+  ts.setRadio(true);
+  await sleep(1500);
+  await ts.pushFrequencies(145950000, 435640000);
+  await sleep(100);
+  radio.cmds = [];
+  await Promise.all([1, 2, 3].map(() => ts.pushFrequencies(145950000, 435640100)));
+  await sleep(500);
+  assert.strictEqual(radio.cmds.filter((c) => c === "FA00435640100").length, 1, radio.cmds.join(","));
+  ts.setRadio(false);
+  await sleep(100);
+  ts.close();
 });
