@@ -16,9 +16,14 @@
     <link rel="stylesheet" href="css/pass-panel.css" />
     <link rel="stylesheet" href="css/layout.css" />
     <link rel="stylesheet" href="css/sidebar.css" />
+    <link rel="stylesheet" href="css/qso-log.css" />
+    <link rel="stylesheet" href="css/amsat-report.css" />
+    <link rel="stylesheet" href="css/decode-overlay.css" />
+    <link rel="stylesheet" href="css/schedule.css" />
     <link rel="stylesheet" href="css/lock.css" />
     <link rel="stylesheet" href="css/fine-ctcss.css" />
     <link rel="stylesheet" href="css/connection-test.css" />
+    <link rel="stylesheet" href="css/config-modal.css" />
   </head>
   <body>
     <header id="topbar">
@@ -67,16 +72,32 @@
       <div id="top-controls">
         <button class="btn" id="btn-radio">Radio</button>
         <button class="btn" id="btn-antenna">Antenna</button>
-        <button class="btn" id="btn-log" title="Server log (live)">Log</button>
+        <button class="btn" id="btn-log" title="Server log (live)">Server Log</button>
 
         <div id="config-wrapper">
           <button class="btn btn-icon" id="btn-config" title="Configuration">
             &#9881;
           </button>
 
-          <div id="config-panel">
-            <h3>Station Configuration</h3>
+        </div>
+      </div>
+    </header>
 
+    <div id="config-backdrop" hidden></div>
+    <div id="config-panel" role="dialog" aria-modal="true" aria-labelledby="config-title">
+      <div class="cfg-modal-head">
+        <h3 id="config-title">Station Configuration</h3>
+        <button type="button" class="btn btn-icon" id="btn-config-close" title="Close (Esc)" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="cfg-modal-body">
+          <nav class="cfg-tabs" role="tablist">
+            <button type="button" class="cfg-tab active" data-tab="station" role="tab">Station<span class="cfg-tab-dot" aria-hidden="true"></span></button>
+            <button type="button" class="cfg-tab" data-tab="radio" role="tab">Radio<span class="cfg-tab-dot" aria-hidden="true"></span></button>
+            <button type="button" class="cfg-tab" data-tab="rotor" role="tab">Rotor<span class="cfg-tab-dot" aria-hidden="true"></span></button>
+            <button type="button" class="cfg-tab" data-tab="logging" role="tab">Logging &amp; WSJT-X<span class="cfg-tab-dot" aria-hidden="true"></span></button>
+          </nav>
+          <div class="cfg-tab-content">
+            <section class="cfg-tab-pane" data-tab="station" role="tabpanel">
             <div class="form-row profile-row">
               <label for="cfg-profile">Profile</label>
               <div class="profile-controls">
@@ -117,7 +138,7 @@
             </p>
 
             <div class="form-row">
-              <label for="cfg-callsign">Callsign</label>
+              <label for="cfg-callsign">My callsign</label>
               <input
                 type="text"
                 id="cfg-callsign"
@@ -141,11 +162,9 @@
               <input type="number" id="cfg-elev" placeholder="1324" step="1" />
             </div>
 
-            <div class="form-section" id="cfg-ul-section">
-              <div class="form-section-title" id="cfg-ul-title">
-                Radio UL (TX)
-              </div>
-
+            </section>
+            <section class="cfg-tab-pane" data-tab="radio" role="tabpanel" hidden>
+            <div class="cfg-radio-opts">
               <div class="form-row">
                 <label class="cfg-check-label" for="cfg-single-radio">
                   <input type="checkbox" id="cfg-single-radio" />
@@ -156,6 +175,13 @@
                   TX radio split (VFO B = uplink)
                 </label>
               </div>
+            </div>
+            <div class="cfg-radio-cols">
+            <div class="form-section" id="cfg-ul-section">
+              <div class="form-section-title" id="cfg-ul-title">
+                Radio UL (TX)
+              </div>
+
 
               <div class="form-row">
                 <label for="cfg-ul-transport">Connection</label>
@@ -225,6 +251,31 @@
                     Hamlib/rigctl TCP — SDR++, remote rigctld, any net rigctl
                     server.
                   </p>
+                  <details class="rigctld-help" id="cfg-ul-rigctld-help">
+                    <summary>How to start rigctld on the radio computer</summary>
+                    <h4>Mac</h4>
+                    <p>Install: <code>brew install hamlib</code> · find port: <code>ls /dev/cu.usbmodem*</code></p>
+                    <pre><code>rigctld -m 3085 -r /dev/cu.usbmodemXXXX -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span></code></pre>
+                    <p>Background:</p>
+                    <pre><code>nohup rigctld -m 3085 -r /dev/cu.usbmodemXXXX -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span> &gt; ~/rigctld.log 2&gt;&amp;1 &amp;</code></pre>
+                    <h4>Windows</h4>
+                    <p>Install: Hamlib Windows build from github.com/Hamlib/Hamlib/releases · port: Device Manager (COMx)</p>
+                    <pre><code>rigctld.exe -m 3085 -r COM5 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span></code></pre>
+                    <p>Background (cmd, or PowerShell):</p>
+                    <pre><code>start /min rigctld.exe -m 3085 -r COM5 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span></code></pre>
+                    <pre><code>Start-Process rigctld.exe -ArgumentList '-m 3085 -r COM5 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span>' -WindowStyle Hidden</code></pre>
+                    <h4>Linux (incl. Raspberry Pi)</h4>
+                    <p>Install: <code>sudo apt install libhamlib-utils</code> · find port: <code>ls /dev/ttyACM*</code></p>
+                    <pre><code>rigctld -m 3085 -r /dev/ttyACM0 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span></code></pre>
+                    <p>Background:</p>
+                    <pre><code>nohup rigctld -m 3085 -r /dev/ttyACM0 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span> &gt; ~/rigctld.log 2&gt;&amp;1 &amp;</code></pre>
+                    <p class="form-hint">
+                      <code>-m</code> model (3085 IC-705, 3081 IC-9700; <code>rigctl -l | grep 9700</code>) ·
+                      <code>-r</code> serial port · <code>-s</code> baud = radio CI-V USB baud ·
+                      <code>-T 0.0.0.0</code> listen on network · <code>-t</code> port = endpoint port (<span class="rigctld-port">4532</span>) ·
+                      <code>-vvvv</code> verbose. rigctld has no daemon flag; for start-at-boot use a systemd service (Linux) or launchd agent (Mac).
+                    </p>
+                  </details>
                 </div>
 
                 <div id="cfg-ul-sdrconnect-block" hidden>
@@ -322,12 +373,12 @@
                   />
                 </div>
               </div>
-            </div>
 
-            <div class="form-row">
-              <button type="button" class="btn-test" id="btn-test-radio-ul">
-                Test UL
-              </button>
+              <div class="form-row">
+                <button type="button" class="btn-test" id="btn-test-radio-ul">
+                  Test UL
+                </button>
+              </div>
             </div>
 
             <div class="form-section" id="cfg-dl-section">
@@ -401,6 +452,31 @@
                     Hamlib/rigctl TCP — SDR++, remote rigctld, any net rigctl
                     server.
                   </p>
+                  <details class="rigctld-help" id="cfg-dl-rigctld-help">
+                    <summary>How to start rigctld on the radio computer</summary>
+                    <h4>Mac</h4>
+                    <p>Install: <code>brew install hamlib</code> · find port: <code>ls /dev/cu.usbmodem*</code></p>
+                    <pre><code>rigctld -m 3085 -r /dev/cu.usbmodemXXXX -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span></code></pre>
+                    <p>Background:</p>
+                    <pre><code>nohup rigctld -m 3085 -r /dev/cu.usbmodemXXXX -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span> &gt; ~/rigctld.log 2&gt;&amp;1 &amp;</code></pre>
+                    <h4>Windows</h4>
+                    <p>Install: Hamlib Windows build from github.com/Hamlib/Hamlib/releases · port: Device Manager (COMx)</p>
+                    <pre><code>rigctld.exe -m 3085 -r COM5 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span></code></pre>
+                    <p>Background (cmd, or PowerShell):</p>
+                    <pre><code>start /min rigctld.exe -m 3085 -r COM5 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span></code></pre>
+                    <pre><code>Start-Process rigctld.exe -ArgumentList '-m 3085 -r COM5 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span>' -WindowStyle Hidden</code></pre>
+                    <h4>Linux (incl. Raspberry Pi)</h4>
+                    <p>Install: <code>sudo apt install libhamlib-utils</code> · find port: <code>ls /dev/ttyACM*</code></p>
+                    <pre><code>rigctld -m 3085 -r /dev/ttyACM0 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span></code></pre>
+                    <p>Background:</p>
+                    <pre><code>nohup rigctld -m 3085 -r /dev/ttyACM0 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span> &gt; ~/rigctld.log 2&gt;&amp;1 &amp;</code></pre>
+                    <p class="form-hint">
+                      <code>-m</code> model (3085 IC-705, 3081 IC-9700; <code>rigctl -l | grep 9700</code>) ·
+                      <code>-r</code> serial port · <code>-s</code> baud = radio CI-V USB baud ·
+                      <code>-T 0.0.0.0</code> listen on network · <code>-t</code> port = endpoint port (<span class="rigctld-port">4532</span>) ·
+                      <code>-vvvv</code> verbose. rigctld has no daemon flag; for start-at-boot use a systemd service (Linux) or launchd agent (Mac).
+                    </p>
+                  </details>
                 </div>
 
                 <div id="cfg-dl-sdrconnect-block" hidden>
@@ -506,8 +582,89 @@
               </div>
             </div>
 
-            <div class="form-section">
-              <div class="form-section-title">Rotor</div>
+            </div>
+            </section>
+            <section class="cfg-tab-pane" data-tab="rotor" role="tabpanel" hidden>
+            <div class="form-section cfg-group" id="cfg-rotor-limits-group">
+              <div class="form-section-title">Limits &amp; stops</div>
+              <div class="form-row-3">
+                <div>
+                  <label for="cfg-rotor-min-el">Min elevation °</label>
+                  <input
+                    type="number"
+                    id="cfg-rotor-min-el"
+                    placeholder="0"
+                    min="0"
+                    max="90"
+                    step="0.5"
+                  />
+                </div>
+                <div>
+                  <label for="cfg-rotor-park-az">Park AZ °</label>
+                  <input
+                    type="number"
+                    id="cfg-rotor-park-az"
+                    placeholder="0"
+                    min="0"
+                    max="360"
+                    step="0.1"
+                  />
+                </div>
+                <div id="cfg-rotor-park-el-wrap">
+                  <label for="cfg-rotor-park-el">Park EL °</label>
+                  <input
+                    type="number"
+                    id="cfg-rotor-park-el"
+                    placeholder="0"
+                    min="0"
+                    max="180"
+                    step="0.1"
+                  />
+                </div>
+              </div>
+              <div class="form-row">
+                <div id="cfg-rotor-el-180-wrap">
+                  <label class="cfg-check-label" for="cfg-rotor-el-180">
+                    <input type="checkbox" id="cfg-rotor-el-180" checked />
+                    180° elevation
+                  </label>
+                </div>
+              </div>
+              <div class="form-row" id="cfg-rotor-az-stop-wrap">
+                <label>AZ mechanical stop</label>
+                <div class="cfg-radio-row">
+                  <label class="cfg-check-label" for="cfg-rotor-az-stop-n">
+                    <input
+                      type="radio"
+                      name="cfg-rotor-az-stop"
+                      id="cfg-rotor-az-stop-n"
+                      value="north"
+                      checked
+                    />
+                    North (0°)
+                  </label>
+                  <label class="cfg-check-label" for="cfg-rotor-az-stop-s">
+                    <input
+                      type="radio"
+                      name="cfg-rotor-az-stop"
+                      id="cfg-rotor-az-stop-s"
+                      value="south"
+                    />
+                    South (180°)
+                  </label>
+                </div>
+                <p class="form-hint">
+                  Never drive across this stop — tracking and rotator test go
+                  the long way instead.
+                </p>
+              </div>
+              <p class="form-hint">
+                Min EL applies to tracking and pass AOS/LOS. After LOS, hold
+                min-EL az; Antenna on → preposition 5 min before next AOS.
+              </p>
+            </div>
+            <div class="form-section cfg-group" id="cfg-rotor-device-group">
+              <div class="form-section-title">Device &amp; test</div>
 
               <div class="form-row">
                 <label for="cfg-rotor-type">Controller</label>
@@ -589,41 +746,6 @@
                     step="1"
                   />
                 </div>
-                <div id="cfg-rotor-el-180-wrap">
-                  <label class="cfg-check-label" for="cfg-rotor-el-180">
-                    <input type="checkbox" id="cfg-rotor-el-180" checked />
-                    180° elevation
-                  </label>
-                </div>
-              </div>
-
-              <div class="form-row" id="cfg-rotor-az-stop-wrap">
-                <label>AZ mechanical stop</label>
-                <div class="cfg-radio-row">
-                  <label class="cfg-check-label" for="cfg-rotor-az-stop-n">
-                    <input
-                      type="radio"
-                      name="cfg-rotor-az-stop"
-                      id="cfg-rotor-az-stop-n"
-                      value="north"
-                      checked
-                    />
-                    North (0°)
-                  </label>
-                  <label class="cfg-check-label" for="cfg-rotor-az-stop-s">
-                    <input
-                      type="radio"
-                      name="cfg-rotor-az-stop"
-                      id="cfg-rotor-az-stop-s"
-                      value="south"
-                    />
-                    South (180°)
-                  </label>
-                </div>
-                <p class="form-hint">
-                  Never drive across this stop — tracking and rotator test go
-                  the long way instead.
-                </p>
               </div>
 
               <div class="form-row">
@@ -631,56 +753,165 @@
                   Test rotator
                 </button>
               </div>
-
-              <div class="form-row-3">
-                <div>
-                  <label for="cfg-rotor-min-el">Min elevation °</label>
-                  <input
-                    type="number"
-                    id="cfg-rotor-min-el"
-                    placeholder="0"
-                    min="0"
-                    max="90"
-                    step="0.5"
-                  />
-                </div>
-                <div>
-                  <label for="cfg-rotor-park-az">Park AZ °</label>
-                  <input
-                    type="number"
-                    id="cfg-rotor-park-az"
-                    placeholder="0"
-                    min="0"
-                    max="360"
-                    step="0.1"
-                  />
-                </div>
-                <div id="cfg-rotor-park-el-wrap">
-                  <label for="cfg-rotor-park-el">Park EL °</label>
-                  <input
-                    type="number"
-                    id="cfg-rotor-park-el"
-                    placeholder="0"
-                    min="0"
-                    max="180"
-                    step="0.1"
-                  />
-                </div>
-              </div>
-              <p class="form-hint">
-                Min EL applies to tracking and pass AOS/LOS. After LOS, hold
-                min-EL az; Antenna on → preposition 5 min before next AOS.
-              </p>
               <p class="form-hint" id="cfg-rotor-hint"></p>
             </div>
 
-            <div id="config-actions">
-              <button class="btn active" id="btn-save-config">Save</button>
+            </section>
+            <section class="cfg-tab-pane" data-tab="logging" role="tabpanel" hidden>
+            <div class="form-section" id="cfg-log-section">
+              <div class="form-section-title">Logging</div>
+
+              <div class="form-row">
+                <label for="cfg-log-method">Log QSOs to</label>
+                <select id="cfg-log-method" class="cfg-select">
+                  <option value="off">Off</option>
+                  <option value="adif">ADIF file (on this server)</option>
+                  <option value="udp">UDP (WSJT-X protocol)</option>
+                </select>
+              </div>
+
+              <div id="cfg-log-adif-block" hidden>
+                <div class="form-row">
+                  <label for="cfg-log-adif-path">ADIF file path</label>
+                  <input
+                    type="text"
+                    id="cfg-log-adif-path"
+                    placeholder="~/.rpitrack/pi-sat-track.adi"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                </div>
+                <p class="form-hint">
+                  Records are appended; header is written when the file is
+                  new. ~ = home of the user running pi-sat-track.
+                </p>
+              </div>
+
+              <div id="cfg-log-udp-block" hidden>
+                <div class="form-row-2">
+                  <div>
+                    <label for="cfg-log-udp-host">IP address</label>
+                    <input
+                      type="text"
+                      id="cfg-log-udp-host"
+                      placeholder="127.0.0.1"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                  </div>
+                  <div>
+                    <label for="cfg-log-udp-port">Port</label>
+                    <input
+                      type="number"
+                      id="cfg-log-udp-port"
+                      placeholder="2237"
+                      min="1"
+                      max="65535"
+                      step="1"
+                    />
+                  </div>
+                </div>
+                <div id="cfg-log-mcast-block" hidden>
+                  <div class="form-row-2">
+                    <div>
+                      <label for="cfg-log-udp-ttl">Multicast TTL</label>
+                      <input
+                        type="number"
+                        id="cfg-log-udp-ttl"
+                        placeholder="1"
+                        min="0"
+                        max="255"
+                        step="1"
+                        title="1 = local subnet only (WSJT-X default); 0 = this host only"
+                      />
+                    </div>
+                    <div>
+                      <label for="cfg-log-udp-iface">Outgoing interface</label>
+                      <select id="cfg-log-udp-iface" class="cfg-select">
+                        <option value="">Auto (OS chooses)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <p class="form-hint">
+                    Multicast group: loopback is on, so apps on this Pi also
+                    receive it. TTL 1 = local subnet (WSJT-X default).
+                  </p>
+                </div>
+                <div class="form-row">
+                  <label for="cfg-log-udp-format">Message</label>
+                  <select id="cfg-log-udp-format" class="cfg-select">
+                    <option value="wsjtx">
+                      WSJT-X: QSO Logged (5) + Logged ADIF (12)
+                    </option>
+                    <option value="wsjtx12">WSJT-X: Logged ADIF (12) only</option>
+                    <option value="wsjtx5">WSJT-X: QSO Logged (5) only</option>
+                    <option value="adif">Plain ADIF text (ADIF UDP)</option>
+                  </select>
+                </div>
+                <p class="form-hint">
+                  GridTracker2 / Log4OM 2 listen on 2237 (WSJT-X). Unicast
+                  IP, x.x.x.255 broadcast, or a multicast group such as
+                  224.0.0.1 or 239.255.0.1 (enable multicast in the receiver
+                  with the same group + port). In Log4OM
+                  enable "Import QSO from JT Message #12" so SAT_NAME comes
+                  through. Plain ADIF: Log4OM ADIF inbound (2333) or
+                  GridTracker2 "Receive ADIF UDP Broadcasts".
+                </p>
+              </div>
             </div>
+
+            <div class="form-section" id="cfg-wsjtx-section">
+              <div class="form-section-title">WSJT-X listener</div>
+              <div class="form-row">
+                <label class="cfg-check-label" for="cfg-wsjtx-listen">
+                  <input type="checkbox" id="cfg-wsjtx-listen" />
+                  Receive WSJT-X logged QSOs, add satellite info, re-send
+                </label>
+              </div>
+              <div id="cfg-wsjtx-block" hidden>
+                <div class="form-row-2">
+                  <div>
+                    <label for="cfg-wsjtx-listen-bind">Bind address</label>
+                    <input
+                      type="text"
+                      id="cfg-wsjtx-listen-bind"
+                      placeholder="0.0.0.0"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                  </div>
+                  <div>
+                    <label for="cfg-wsjtx-listen-port">Listen port</label>
+                    <input
+                      type="number"
+                      id="cfg-wsjtx-listen-port"
+                      placeholder="2237"
+                      min="1"
+                      max="65535"
+                      step="1"
+                    />
+                  </div>
+                </div>
+                <p class="form-hint">
+                  In WSJT-X Settings &gt; Reporting set UDP Server to this Pi's IP
+                  and this port. QSOs are re-sent with PROP_MODE=SAT, SAT_NAME and
+                  tracker UL/DL frequencies through the Logging output above
+                  (only while the selected sat is up; otherwise unchanged). The listener
+                  only runs while both Radio and Antenna are on.
+                </p>
+              </div>
+              <p class="form-hint wsjtx-status" id="cfg-wsjtx-status">Listener off</p>
+              <p class="form-hint wsjtx-warning" id="cfg-wsjtx-warning" hidden></p>
+            </div>
+
+            </section>
           </div>
-        </div>
       </div>
-    </header>
+      <div id="config-actions">
+        <button class="btn" id="btn-cancel-config">Cancel</button>
+        <button class="btn active" id="btn-save-config">Save</button>
+      </div>
+    </div>
 
     <div id="fav-panel">
       <button
@@ -768,6 +999,49 @@
       </div>
 
       <aside id="sidebar">
+        <section class="panel-section cfg-summary collapsible" id="cfg-summary" data-collapse-key="station-summary">
+          <div class="cfg-summary-head">
+            <h3 class="collapse-head">Station</h3>
+            <button type="button" class="btn btn-small" id="btn-config-open" title="Open station configuration">&#9881; Configure</button>
+          </div>
+          <dl class="cfg-summary-list collapse-body">
+            <dt>Profile</dt><dd id="cfg-sum-profile">-</dd>
+            <dt>Grid</dt><dd id="cfg-sum-grid">-</dd>
+            <dt>Radio</dt><dd id="cfg-sum-radio">-</dd>
+            <dt>Rotor</dt><dd id="cfg-sum-rotor">-</dd>
+            <dt>Logging</dt><dd id="cfg-sum-log">-</dd>
+          </dl>
+        </section>
+        <section class="panel-section qso-log-section">
+          <h3>Logging</h3>
+          <form id="qso-log-form" class="qso-log-row" autocomplete="off">
+            <input
+              type="text"
+              id="qso-log-call"
+              class="qso-log-call"
+              placeholder="Callsign"
+              maxlength="20"
+              spellcheck="false"
+              autocapitalize="characters"
+              aria-label="Callsign to log"
+            />
+            <button type="submit" id="btn-qso-log" class="btn-qso-log">
+              Log
+            </button>
+          </form>
+          <div id="qso-log-status" class="qso-log-status" aria-live="polite"></div>
+          <div id="qso-log-dest" class="qso-wsjtx-state" aria-live="polite">Log to: not configured</div>
+          <div id="qso-wsjtx-state" class="qso-wsjtx-state" hidden></div>
+        </section>
+        <section class="panel-section amsat-report-section">
+          <h3>AMSAT Report</h3>
+          <div class="amsat-inline" id="amsat-inline">
+            <button type="button" class="btn btn-small amsat-rep" data-v="Heard" disabled>Heard</button>
+            <button type="button" class="btn btn-small amsat-rep" data-v="Telemetry Only" disabled>TLM Only</button>
+            <button type="button" class="btn btn-small amsat-rep" data-v="Not Heard" disabled>Not Heard</button>
+          </div>
+          <div id="amsat-status" class="amsat-status" aria-live="polite"></div>
+        </section>
         <section class="panel-section">
           <h3>Frequencies</h3>
           <div class="freq-block">
@@ -779,69 +1053,84 @@
             >
               <option value="0">—</option>
             </select>
+            <div class="mode-toggle-row">
+              <button
+                type="button"
+                id="btn-data-mode"
+                class="btn-ul-fixed btn-data-mode"
+                disabled
+                title="Data mode (USB-D / LSB-D / FM-D) on UL and DL — default OFF"
+              >
+                Data
+              </button>
+              <button
+                type="button"
+                id="btn-cw-mode"
+                class="btn-ul-fixed btn-data-mode"
+                disabled
+                title="CW on UL and DL (linear sats) — default OFF"
+              >
+                CW
+              </button>
+            </div>
           </div>
-          <div class="freq-block">
+          <div class="freq-block" id="flex-profile-block">
+            <div class="freq-label" id="flex-profile-label">Flex Profile</div>
+            <select
+              id="flex-profile-select"
+              class="mode-select"
+              disabled
+              title="SmartSDR global profile for this satellite"
+            >
+              <option value="">(no change)</option>
+            </select>
+          </div>
+          <div class="freq-block freq-block-split">
+            <div class="freq-main">
             <div class="freq-label" id="freq-ul-label">Uplink (LSB)</div>
             <div class="freq-value uplink" id="freq-ul">-</div>
             <div class="freq-doppler" id="freq-ul-doppler"></div>
+            </div>
+            <div class="fine-row freq-fine">
+              <div class="freq-fine-btns">
+                <button type="button" id="btn-fine-ul-minus" class="btn-fine" title="UL −">−</button>
+                <button type="button" id="btn-fine-ul-plus" class="btn-fine" title="UL +">+</button>
+              </div>
+              <span id="fine-offset-ul" class="fine-offset">0 Hz</span>
+            </div>
           </div>
-          <div class="freq-block">
+          <div class="freq-block freq-block-split">
+            <div class="freq-main">
             <div class="freq-label" id="freq-dl-label">Downlink (USB)</div>
             <div class="freq-value downlink" id="freq-dl">-</div>
             <div class="freq-doppler" id="freq-dl-doppler"></div>
+            </div>
+            <div class="fine-row freq-fine">
+              <div class="freq-fine-btns">
+                <button type="button" id="btn-fine-dl-minus" class="btn-fine" title="DL −">−</button>
+                <button type="button" id="btn-fine-dl-plus" class="btn-fine" title="DL +">+</button>
+              </div>
+              <span id="fine-offset-dl" class="fine-offset">0 Hz</span>
+            </div>
           </div>
 
           <div class="fine-tune-block">
             <div class="fine-row">
-              <span class="fine-side">UL</span>
-              <button
-                type="button"
-                id="btn-fine-ul-minus"
-                class="btn-fine"
-                title="UL −"
-              >
-                −
-              </button>
-              <button
-                type="button"
-                id="btn-fine-ul-plus"
-                class="btn-fine"
-                title="UL +"
-              >
-                +
-              </button>
-              <span id="fine-offset-ul" class="fine-offset">0 Hz</span>
-            </div>
-            <div class="fine-row">
-              <span class="fine-side">DL</span>
-              <button
-                type="button"
-                id="btn-fine-dl-minus"
-                class="btn-fine"
-                title="DL −"
-              >
-                −
-              </button>
-              <button
-                type="button"
-                id="btn-fine-dl-plus"
-                class="btn-fine"
-                title="DL +"
-              >
-                +
-              </button>
-              <span id="fine-offset-dl" class="fine-offset">0 Hz</span>
-            </div>
-            <div class="fine-row">
-              <span class="fine-side">Step</span>
-              <input
-                type="number"
-                id="fine-step"
-                value="100"
-                min="1"
-                step="1"
-                title="Fine step (Hz). Double-click to center."
-              />
+              <span class="fine-side fine-side-step">Step</span>
+              <span class="step-spin">
+                <input
+                  type="number"
+                  id="fine-step"
+                  value="100"
+                  min="1"
+                  step="1"
+                  title="Fine step (Hz). Type any value, or use ▲/▼ / mouse wheel / arrow keys to change by 1 Hz. Double-click to center."
+                />
+                <span class="step-spin-arrows">
+                  <button type="button" id="btn-step-up" tabindex="-1" title="Increase step by 1 Hz" aria-label="Larger step">▲</button>
+                  <button type="button" id="btn-step-down" tabindex="-1" title="Decrease step by 1 Hz" aria-label="Smaller step">▼</button>
+                </span>
+              </span>
               <span class="unit">Hz</span>
               <button
                 type="button"
@@ -916,37 +1205,9 @@
           </div>
         </section>
 
-        <section class="panel-section">
-          <h3>Station Status</h3>
-          <div class="status-item">
-            <span class="label">Callsign</span><span id="station-call">-</span>
-          </div>
-          <div class="status-item">
-            <span class="label">Grid</span><span id="station-grid">-</span>
-          </div>
-          <div class="status-item">
-            <span class="label">Latitude</span><span id="station-lat">-</span>
-          </div>
-          <div class="status-item">
-            <span class="label">Longitude</span><span id="station-lon">-</span>
-          </div>
-          <div class="status-item">
-            <span class="label">Elevation</span><span id="station-elev">-</span>
-          </div>
-          <div class="status-item">
-            <span class="label">Radio</span
-            ><span id="status-tci">Disconnected</span>
-          </div>
-          <div class="status-item">
-            <span class="label">Rotor AZ</span><span id="rotor-az">-</span>
-          </div>
-          <div class="status-item">
-            <span class="label">Rotor EL</span><span id="rotor-el">-</span>
-          </div>
-        </section>
-
-        <section class="panel-section">
-          <h3>Satellite Status</h3>
+        <section class="panel-section collapsible" data-collapse-key="sat-status">
+          <h3 class="collapse-head">Satellite Status</h3>
+          <div class="collapse-body">
           <div class="status-item">
             <span class="label">Name</span><span id="sat-common">-</span>
           </div>
@@ -989,6 +1250,38 @@
               SatNOGS
             </label>
           </div>
+          </div>
+        </section>
+
+        <section class="panel-section collapsible" data-collapse-key="station-status">
+          <h3 class="collapse-head">Station Status</h3>
+          <div class="collapse-body">
+          <div class="status-item">
+            <span class="label">Callsign</span><span id="station-call">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Grid</span><span id="station-grid">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Latitude</span><span id="station-lat">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Longitude</span><span id="station-lon">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Elevation</span><span id="station-elev">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Radio</span
+            ><span id="status-tci">Disconnected</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Rotor AZ</span><span id="rotor-az">-</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Rotor EL</span><span id="rotor-el">-</span>
+          </div>
+          </div>
         </section>
       </aside>
     </div>
@@ -1008,6 +1301,7 @@
     <script src="js/config-form.js"></script>
     <script src="js/config-test-ui.js"></script>
     <script src="js/config.js"></script>
+    <script src="js/config-modal.js"></script>
     <script src="js/freq-utils.js"></script>
     <script src="js/sat-menu.js"></script>
     <script src="js/fav-panel.js"></script>
@@ -1016,8 +1310,16 @@
     <script src="js/tracker.js"></script>
     <script src="js/lock-ui.js"></script>
     <script src="js/fine-ctcss.js"></script>
+    <script src="js/data-mode.js"></script>
+    <script src="js/flex-profile-ui.js"></script>
     <script src="js/ul-fixed.js"></script>
+    <script src="js/qso-log.js"></script>
+    <script src="js/decode-overlay.js"></script>
+    <script src="js/schedule.js"></script>
+    <script src="js/fav-overlay.js"></script>
     <script src="js/log-viewer.js"></script>
+    <script src="js/amsat-report.js"></script>
     <script src="js/app.js"></script>
+      <script src="js/collapsible.js"></script>
   </body>
 </html>

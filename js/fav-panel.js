@@ -73,6 +73,15 @@ function favNextLabel(s, multi, key) {
   if (multi && multi.above) return "UP";
   if (s && s.above) return "UP";
 
+  // Server-computed next pass (kept fresh for every favorite, not just the
+  // selected one) — authoritative over the sat-list snapshot.
+  const np = multi && multi.nextPass;
+  if (np && typeof np.aos === "number") {
+    const now = Date.now();
+    if (now >= np.aos && (np.los == null || now <= np.los)) return "UP";
+    if (now < np.aos) return formatAosHms((np.aos - now) / 1000);
+  }
+
   // Live countdown from absolute deadline (ticks every second client-side)
   if (key && favAosDeadline[key] != null) {
     const sec = (favAosDeadline[key] - Date.now()) / 1000;
@@ -91,6 +100,30 @@ function favNextLabel(s, multi, key) {
   }
   if (s.soon) return formatAosHms(15 * 60);
   return "\u2014";
+}
+
+/** CSS class for favorites AOS cell: aos5 / aos15 / "" (tooltips unchanged). */
+function favAosUrgencyClass(s, multi, key) {
+  if (s && s.above) return "";
+  let sec = null;
+  if (key && favAosDeadline[key] != null) {
+    sec = (favAosDeadline[key] - Date.now()) / 1000;
+  } else if (
+    s &&
+    typeof s.secToAos === "number" &&
+    Number.isFinite(s.secToAos) &&
+    s.secToAos >= 0
+  ) {
+    sec = s.secToAos;
+  } else if (multi && typeof multi.aos === "number") {
+    const now = Date.now();
+    if (now < multi.aos) sec = (multi.aos - now) / 1000;
+    else return "";
+  }
+  if (sec == null || !Number.isFinite(sec) || sec < 0) return "";
+  if (sec <= 5 * 60) return "aos5";
+  if (sec <= 15 * 60) return "aos15";
+  return "";
 }
 
 /** Sort key: above horizon first, then soonest AOS, then name */
@@ -112,6 +145,11 @@ function favAosSortKey(row) {
     (el != null && el >= 0) || !!(multi && multi.above) || !!(s && s.above);
 
   if (above) return -1e12;
+
+  const np = multi && multi.nextPass;
+  if (np && typeof np.aos === "number") {
+    return Math.max(0, (np.aos - Date.now()) / 1000);
+  }
 
   if (
     typeof s.secToAos === "number" &&
@@ -315,6 +353,7 @@ function favRowValues(row) {
     alt: alt,
     orbit: orbit,
     next: favNextLabel(s, multi || live, row.key),
+    aosClass: favAosUrgencyClass(s, multi || live, row.key),
     active: row.key === currentSatKey,
   };
 }
@@ -352,6 +391,8 @@ function patchFavRow(el, row) {
   setCellText(cells[9], v.alt);
   setCellText(cells[10], v.orbit);
   setCellText(cells[11], v.next);
+  cells[11].classList.remove("aos5", "aos15");
+  if (v.aosClass) cells[11].classList.add(v.aosClass);
 }
 
 function buildFavRowEl(row) {
@@ -384,7 +425,8 @@ function buildFavRowEl(row) {
   numCell(v.lon);
   numCell(v.alt);
   numCell(v.orbit);
-  numCell(v.next, "fav-next");
+  const nextCell = numCell(v.next, "fav-next");
+  if (v.aosClass) nextCell.classList.add(v.aosClass);
 
   el.addEventListener("click", () => {
     if (typeof selectSatellite === "function") {

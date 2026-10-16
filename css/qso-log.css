@@ -1,0 +1,117 @@
+/* Sidebar QSO logger (callsign + Log) */
+.qso-log-section {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+}
+
+.qso-log-row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.qso-log-call {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 0.95rem;
+  font-family: var(--mono);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.qso-log-call::placeholder {
+  color: var(--text-dim);
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  font-family: var(--font);
+}
+
+.qso-log-call:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.qso-log-call:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  color: var(--text-dim);
+}
+
+.btn-qso-log {
+  flex: 0 0 auto;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.btn-qso-log:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.btn-qso-log:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.qso-log-status {
+  min-height: 1em;
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-dim);
+  word-break: break-word;
+}
+
+.qso-log-status.ok {
+  color: var(--green);
+}
+.qso-log-status.warn {
+  color: var(--yellow);
+}
+.qso-log-status.err {
+  color: var(--red);
+}
+
+/* Config: WSJT-X listener status */
+#config-panel .wsjtx-status.ok {
+  color: var(--green);
+}
+#config-panel .wsjtx-status.err {
+  color: var(--red);
+}
+#config-panel .wsjtx-warning {
+  color: var(--yellow);
+}
+#config-panel .wsjtx-status.warn {
+  color: var(--yellow);
+}
+
+/* Sidebar: persistent WSJT-X listener state */
+.qso-wsjtx-state {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim, #8b93a7);
+}
+.qso-wsjtx-state.ok {
+  color: var(--green);
+}
+.qso-wsjtx-state.warn {
+  color: var(--yellow);
+}
+.qso-wsjtx-state.err {
+  color: var(--red);
+}

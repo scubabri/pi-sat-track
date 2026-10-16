@@ -1,0 +1,50 @@
+/* WSJT-X decoded stations on the map */
+.leaflet-tooltip.decode-label {
+  padding: 0 3px;
+  font: 600 11px/1.3 system-ui, sans-serif;
+  color: #f2f2f2;
+  background: rgba(10, 18, 28, 0.62);
+  border: none;
+  border-radius: 3px;
+  box-shadow: none;
+  white-space: nowrap;
+}
+.leaflet-tooltip.decode-label::before { display: none; }
+.decode-label .dc-grid {
+  margin-left: 3px;
+  font-size: 9px;
+  font-weight: 400;
+  color: #b9c6d2;
+}
+.decode-toggle-control .decode-toggle-btn {
+  font: 700 11px/30px system-ui, sans-serif;
+  text-align: center;
+  color: #777;
+}
+.decode-toggle-control .decode-toggle-btn.active { color: #c48a00; }
+
+/* Match zoom / center controls */
+.decode-toggle-control {
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+.decode-toggle-control a {
+  background: #161b22 !important;
+  color: #e6edf3 !important;
+  border: 1px solid #30363d !important;
+}
+.decode-toggle-control a:hover {
+  background: #21262d !important;
+  color: #58a6ff !important;
+}
+.decode-toggle-control .decode-toggle-btn { color: #8b949e !important; }
+.decode-toggle-control .decode-toggle-btn.active { color: #c48a00 !important; }
+/* Text-label buttons ("WSJT Heard", "Sked Finder") are wider than the 30px icon buttons */
+.decode-toggle-control .decode-toggle-btn { width: auto !important; min-width: 30px; padding: 0 8px; white-space: nowrap; }
+.decode-toggle-control .decode-clear-btn { font: 700 11px/30px system-ui, sans-serif !important; color: #8b949e !important; width: auto !important; min-width: 30px; padding: 0 8px; white-space: nowrap; }
+/* Favorites overlay labels (hover highlight) */
+.leaflet-tooltip.fav-label { pointer-events: auto; cursor: pointer; transition: opacity .12s; }
+.leaflet-tooltip.fav-label.fav-hi { background: rgba(10, 18, 28, 0.92); color: #fff; font-size: 12px; }
+.leaflet-tooltip.fav-label.fav-dim { opacity: 0.35 !important; }
+/* Selected sat name label (map.js) */
+.leaflet-tooltip.decode-label.sel-sat-label { color: #58a6ff; font-weight: 800; font-size: 12px; background: rgba(10, 18, 28, 0.8); border-left: 2px solid #58a6ff; z-index: 1100; }

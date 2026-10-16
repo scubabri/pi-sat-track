@@ -293,13 +293,13 @@ function applyFreqAndLook(msg) {
 
   if (ulDopEl)
     ulDopEl.textContent =
-      ulDop != null ? "Doppler " + fmtDopplerMHz(ulDop) : "";
+      ulDop != null ? "Doppler " + fmtDopplerKHz(ulDop) : "";
   if (dlDopEl)
     dlDopEl.textContent =
-      dlDop != null ? "Doppler " + fmtDopplerMHz(dlDop) : "";
+      dlDop != null ? "Doppler " + fmtDopplerKHz(dlDop) : "";
 
-  if (ulEl && ulDop != null) ulEl.title = "Doppler " + fmtDopplerMHz(ulDop);
-  if (dlEl && dlDop != null) dlEl.title = "Doppler " + fmtDopplerMHz(dlDop);
+  if (ulEl && ulDop != null) ulEl.title = "Doppler " + fmtDopplerKHz(ulDop);
+  if (dlEl && dlDop != null) dlEl.title = "Doppler " + fmtDopplerKHz(dlDop);
 
   if (pbUl) pbUl.textContent = msg.passbandUl || "-";
   if (pbDl) pbDl.textContent = msg.passbandDl || "-";
@@ -430,10 +430,9 @@ function connectTracker() {
     sendObserver();
     if (typeof pushSavedEndpoints === "function") pushSavedEndpoints();
     updateStationStatus();
-    if (typeof currentSatKey !== "undefined" && currentSatKey) {
-      if (typeof pendingSatKey !== "undefined") pendingSatKey = currentSatKey;
-      ws.send(JSON.stringify({ type: "sat", key: currentSatKey }));
-    }
+    // Do NOT push our localStorage sat on (re)connect: the server is the
+    // source of truth and sends "state" right after connect. Pushing here let
+    // a second tab / reconnecting client switch the live sat (and rotor).
   };
 
   ws.onmessage = (ev) => {
@@ -452,6 +451,12 @@ function connectTracker() {
 
       if (msg.type === "rotor") {
         applyRotorStatus(msg);
+        return;
+      }
+
+      if (msg.type === "wsjtx-listener") {
+        if (typeof applyWsjtxListenerStatus === "function")
+          applyWsjtxListenerStatus(msg);
         return;
       }
 
@@ -484,6 +489,11 @@ function connectTracker() {
       }
 
       if (msg.type === "host" || msg.type === "endpoints") {
+        const ifs =
+          msg.ipv4Interfaces || (msg.host && msg.host.ipv4Interfaces) || null;
+        if (Array.isArray(ifs) && typeof setHostIPv4Interfaces === "function") {
+          setHostIPv4Interfaces(ifs);
+        }
         if (
           Array.isArray(msg.tleSources) &&
           typeof applyTleSourceChecks === "function"
@@ -544,6 +554,7 @@ function connectTracker() {
       }
 
       if (msg.type === "tick") {
+        if (pendingSatKey && msg.sat && msg.sat !== pendingSatKey && Date.now() - pendingSatAt < 15000) return;
         applyFreqAndLook(msg);
         if (typeof updateFavPanelFromState === "function") {
           updateFavPanelFromState(
@@ -555,14 +566,27 @@ function connectTracker() {
 
       if (msg.type !== "state") return;
 
+      // After a local switch, drop in-flight state for any other sat (it would
+      // draw the old sat's position under the new name). Expires after 15 s
+      // so a switch made from another client still wins.
+      if (pendingSatKey && msg.sat) {
+        if (msg.sat === pendingSatKey) pendingSatKey = null;
+        else if (Date.now() - pendingSatAt < 15000) return;
+        else pendingSatKey = null;
+      }
+
       if (msg.sat) {
         if (msg.sat !== lastStateSat) {
           lastStateSat = msg.sat;
           lastModesKey = "";
           if (typeof clearProfileLock === "function") clearProfileLock();
           if (typeof clearMapTracking === "function") clearMapTracking();
+          if (typeof clearRadar === "function") clearRadar();
         }
         currentSatKey = msg.sat;
+        try {
+          localStorage.setItem("satTrackerSat", msg.sat);
+        } catch (_) {}
         if (typeof setSatButtonLabel === "function") {
           setSatButtonLabel(msg.display || msg.sat);
         }
@@ -826,3 +850,9 @@ if (document.readyState === "loading") {
 } else {
   initTrackerUi();
 }
+
+function fmtDopplerKHz(hz) {
+  const k = Number(hz) / 1000;
+  return (k >= 0 ? "+" : "") + k.toFixed(3) + " kHz";
+}
+

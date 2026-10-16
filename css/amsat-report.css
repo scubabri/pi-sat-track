@@ -1,0 +1,6 @@
+.amsat-inline { display: flex; align-items: center; gap: 6px; }
+.amsat-inline-label { font-size: .75rem; color: var(--text-dim, #999); white-space: nowrap; }
+.amsat-inline .amsat-rep { flex: 1; padding-left: 4px; padding-right: 4px; white-space: nowrap; }
+.amsat-inline .amsat-rep:disabled { opacity: .45; cursor: not-allowed; }
+.amsat-status { min-height: 1.1em; font-size: .75rem; margin-top: 4px; color: var(--text-dim, #999); }
+.amsat-status.ok { color: #66bb6a; } .amsat-status.err { color: #ef5350; }

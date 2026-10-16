@@ -97,6 +97,16 @@ function sendEndpointsToServer(cfg) {
       rotorMinEl: cfg.rotorMinEl != null ? cfg.rotorMinEl : 0,
       rotorAzOnly: !!cfg.rotorAzOnly,
       rotorAzStop: cfg.rotorAzStop || "north",
+      logMethod: cfg.logMethod || "off",
+      logAdifPath: cfg.logAdifPath || "~/.rpitrack/pi-sat-track.adi",
+      logUdpHost: cfg.logUdpHost || "127.0.0.1",
+      logUdpPort: cfg.logUdpPort != null ? cfg.logUdpPort : 2237,
+      logUdpFormat: cfg.logUdpFormat || "wsjtx",
+      logUdpTtl: cfg.logUdpTtl != null ? cfg.logUdpTtl : 1,
+      logUdpIface: cfg.logUdpIface || "",
+      wsjtxListen: !!cfg.wsjtxListen,
+      wsjtxListenPort: cfg.wsjtxListenPort != null ? cfg.wsjtxListenPort : 2237,
+      wsjtxListenBind: cfg.wsjtxListenBind || "0.0.0.0",
     }),
   );
 }
@@ -297,6 +307,19 @@ function initConfig() {
       if (typeof updateSingleRadioVisibility === "function")
         updateSingleRadioVisibility();
     });
+  }
+
+  const logMethodEl = document.getElementById("cfg-log-method");
+  if (logMethodEl && typeof updateLogFormVisibility === "function") {
+    logMethodEl.addEventListener("change", updateLogFormVisibility);
+  }
+  const wsjtxEl = document.getElementById("cfg-wsjtx-listen");
+  if (wsjtxEl && typeof updateLogFormVisibility === "function") {
+    wsjtxEl.addEventListener("change", updateLogFormVisibility);
+  }
+  const logHostEl = document.getElementById("cfg-log-udp-host");
+  if (logHostEl && typeof updateLogFormVisibility === "function") {
+    logHostEl.addEventListener("input", updateLogFormVisibility);
   }
 
   const rotorTypeEl = document.getElementById("cfg-rotor-type");

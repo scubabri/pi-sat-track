@@ -120,6 +120,26 @@
   color: #ecfdf5;
 }
 
+/* Data + CW toggles: one row, side by side (always shown; disabled when N/A) */
+.mode-toggle-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+.btn-data-mode {
+  display: inline-block;
+  margin-top: 0;
+}
+.btn-data-mode:disabled,
+.btn-data-mode:disabled:hover {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: rgba(31, 41, 55, 0.55);
+  border-color: rgba(75, 85, 99, 0.5);
+  color: #9ca3af;
+}
+
 .ctcss-row {
   display: flex;
   flex-wrap: wrap;
@@ -164,3 +184,75 @@
 .btn-ctcss.active:hover {
   background: rgba(6, 95, 70, 0.95);
 }
+
+/* Offset controls beside each frequency: grid so −/+ align with the
+   frequency and the offset aligns with the Doppler line. */
+.freq-block-split {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  column-gap: 14px;
+  align-items: center;
+  justify-content: start;
+}
+.freq-block-split .freq-main,
+.freq-block-split .fine-row.freq-fine { display: contents; }
+.freq-block-split .freq-label { grid-column: 1 / -1; grid-row: 1; }
+.freq-block-split .freq-value { grid-column: 1; grid-row: 2; }
+.freq-block-split .freq-doppler { grid-column: 1; grid-row: 3; }
+.freq-block-split .freq-fine-btns { grid-column: 2; grid-row: 2; display: flex; gap: 6px; }
+.freq-block-split .fine-offset { grid-column: 2; grid-row: 3; min-width: 0; text-align: left; }
+.fine-tune-block { margin-top: 4px; }
+.fine-row .fine-side-step { width: auto; margin-right: 6px; }
+
+/* Step spinner: stacked ▲/▼ inside the right edge of the step box */
+.fine-row .step-spin {
+  display: inline-flex;
+  align-items: stretch;
+  height: 28px;
+  border: 1px solid var(--border, #30363d);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg, #0d1117);
+}
+.fine-row .step-spin:focus-within { border-color: var(--accent, #58a6ff); }
+.fine-row .step-spin #fine-step {
+  border: none;
+  border-radius: 0;
+  height: 26px;
+  width: 56px;
+  background: transparent;
+  outline: none;
+}
+.fine-row .step-spin-arrows {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border, #30363d);
+}
+.fine-row .step-spin-arrows button {
+  flex: 1;
+  width: 26px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: rgba(55, 65, 81, 0.55);
+  color: #c9d1d9;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s;
+}
+.fine-row .step-spin-arrows button + button { border-top: 1px solid var(--border, #30363d); }
+.fine-row .step-spin-arrows button:hover { background: rgba(75, 85, 99, 0.9); color: #fff; }
+.fine-row .step-spin-arrows button:active { background: rgba(31, 111, 235, 0.45); }
+
+/* Radio readback did not confirm the tone */
+.btn-ctcss.tone-error,
+.btn-ctcss.active.tone-error {
+  background: rgba(127, 29, 29, 0.85);
+  border-color: rgba(239, 68, 68, 0.9);
+  color: #fef2f2;
+}
+

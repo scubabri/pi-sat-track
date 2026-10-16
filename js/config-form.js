@@ -257,6 +257,9 @@ function refreshHostSerialDevices() {
   return fetch("/api/host", { cache: "no-store" })
     .then((r) => (r.ok ? r.json() : null))
     .then((data) => {
+      if (data && Array.isArray(data.ipv4Interfaces)) {
+        setHostIPv4Interfaces(data.ipv4Interfaces);
+      }
       if (data && Array.isArray(data.serialDevices)) {
         setHostSerialDevices(
           data.serialDevices,
@@ -428,6 +431,7 @@ function updateSideVisibility(side) {
   if (protocolRow) protocolRow.hidden = isRigctl || isSdrconnect;
   if (tciBlock) tciBlock.hidden = !isTci;
   if (rigctlBlock) rigctlBlock.hidden = !isRigctl;
+  if (isRigctl) updateRigctldHelpPort(p);
   if (sdrconnectBlock) sdrconnectBlock.hidden = !isSdrconnect;
   if (catBlock) catBlock.hidden = !isCat;
   if (apiBlock) apiBlock.hidden = !needsApi;
@@ -549,7 +553,134 @@ function readFormConfig() {
       if (s && s.checked) return "south";
       return "north";
     })(),
+    logMethod: (function () {
+      const m = val("cfg-log-method") || "off";
+      return ["off", "adif", "udp"].indexOf(m) >= 0 ? m : "off";
+    })(),
+    logAdifPath:
+      val("cfg-log-adif-path").trim() || "~/.rpitrack/pi-sat-track.adi",
+    logUdpHost: val("cfg-log-udp-host").trim() || "127.0.0.1",
+    logUdpPort: (function () {
+      const p = parseInt(val("cfg-log-udp-port"), 10);
+      return p > 0 && p < 65536 ? p : 2237;
+    })(),
+    logUdpFormat: val("cfg-log-udp-format") || "wsjtx",
+    logUdpTtl: (function () {
+      const t = parseInt(val("cfg-log-udp-ttl"), 10);
+      return Number.isFinite(t) && t >= 0 && t <= 255 ? t : 1;
+    })(),
+    logUdpIface: val("cfg-log-udp-iface") || "",
+    wsjtxListen: (function () {
+      const el = document.getElementById("cfg-wsjtx-listen");
+      return !!(el && el.checked);
+    })(),
+    wsjtxListenPort: (function () {
+      const p = parseInt(val("cfg-wsjtx-listen-port"), 10);
+      return p > 0 && p < 65536 ? p : 2237;
+    })(),
+    wsjtxListenBind: (function () {
+      const b = val("cfg-wsjtx-listen-bind").trim();
+      return /^\d{1,3}(\.\d{1,3}){3}$/.test(b) ? b : "0.0.0.0";
+    })(),
   };
+}
+
+/** Last wsjtx-listener status from the server. */
+let WSJTX_LISTENER_STATUS = null;
+
+function applyWsjtxListenerStatus(msg) {
+  if (!msg || msg.type !== "wsjtx-listener") return;
+  WSJTX_LISTENER_STATUS = msg;
+  const el = document.getElementById("cfg-wsjtx-status");
+  const warnEl = document.getElementById("cfg-wsjtx-warning");
+  if (el) {
+    let text = "";
+    let cls = "";
+    if (msg.state === "listening") {
+      text =
+        "Listening on " +
+        (msg.bind || "0.0.0.0") +
+        ":" +
+        msg.port +
+        " \u00b7 " +
+        (msg.forwarded || 0) +
+        " forwarded" +
+        (msg.lastClient ? " \u00b7 last from " + msg.lastClient : "");
+      cls = "ok";
+    } else if (msg.state === "error") {
+      text = msg.error || "Listener error";
+      cls = "err";
+    } else if (msg.state === "paused") {
+      text = msg.message || "Paused \u2014 Radio and Antenna must be on";
+      cls = "warn";
+    } else if (msg.state === "starting") {
+      text = "Starting\u2026";
+    } else {
+      text = "Listener off";
+    }
+    el.textContent = text;
+    el.className = "form-hint wsjtx-status " + cls;
+  }
+  if (warnEl) {
+    warnEl.textContent = msg.warning || "";
+    warnEl.hidden = !msg.warning;
+  }
+}
+
+/** IPv4 multicast 224.0.0.0 - 239.255.255.255 */
+function isMulticastIPv4(host) {
+  const m = String(host || "")
+    .trim()
+    .match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return false;
+  const a = parseInt(m[1], 10);
+  return a >= 224 && a <= 239;
+}
+
+/** Local IPv4 interfaces from server hostInfo().ipv4Interfaces */
+let HOST_IPV4_INTERFACES = [];
+
+function setHostIPv4Interfaces(list) {
+  if (!Array.isArray(list)) return;
+  HOST_IPV4_INTERFACES = list.filter((x) => x && x.address);
+  populateLogIfaceSelect();
+}
+
+/** Fill the multicast "Outgoing interface" select; keeps a saved address even if absent. */
+function populateLogIfaceSelect(preferred) {
+  const el = document.getElementById("cfg-log-udp-iface");
+  if (!el) return;
+  const want = preferred != null ? String(preferred) : el.value || "";
+  el.innerHTML = "";
+  const add = (value, label) => {
+    const o = document.createElement("option");
+    o.value = value;
+    o.textContent = label;
+    el.appendChild(o);
+  };
+  add("", "Auto (OS chooses)");
+  const seen = {};
+  HOST_IPV4_INTERFACES.forEach((x) => {
+    if (seen[x.address]) return;
+    seen[x.address] = true;
+    add(x.address, x.address + " (" + x.name + ")");
+  });
+  if (want && !seen[want]) add(want, want + " (not present)");
+  el.value = want;
+}
+
+/** Show ADIF path or UDP fields depending on the logging method. */
+function updateLogFormVisibility() {
+  const m = val("cfg-log-method") || "off";
+  const adif = document.getElementById("cfg-log-adif-block");
+  const udp = document.getElementById("cfg-log-udp-block");
+  const mc = document.getElementById("cfg-log-mcast-block");
+  if (adif) adif.hidden = m !== "adif";
+  if (udp) udp.hidden = m !== "udp";
+  if (mc) mc.hidden = m !== "udp" || !isMulticastIPv4(val("cfg-log-udp-host"));
+  const wl = document.getElementById("cfg-wsjtx-listen");
+  const wb = document.getElementById("cfg-wsjtx-block");
+  if (wb) wb.hidden = !(wl && wl.checked);
 }
 
 function fillForm(cfg) {
@@ -605,4 +736,30 @@ function fillForm(cfg) {
   if (stopN) stopN.checked = stop === "north";
   if (stopS) stopS.checked = stop === "south";
   updateRotorFormVisibility();
+  setVal("cfg-log-method", d.logMethod || "off");
+  setVal("cfg-log-adif-path", d.logAdifPath || "~/.rpitrack/pi-sat-track.adi");
+  setVal("cfg-log-udp-host", d.logUdpHost || "127.0.0.1");
+  setVal("cfg-log-udp-port", d.logUdpPort != null ? d.logUdpPort : 2237);
+  setVal("cfg-log-udp-format", d.logUdpFormat || "wsjtx");
+  setVal("cfg-log-udp-ttl", d.logUdpTtl != null ? d.logUdpTtl : 1);
+  populateLogIfaceSelect(d.logUdpIface || "");
+  const wl = document.getElementById("cfg-wsjtx-listen");
+  if (wl) wl.checked = !!d.wsjtxListen;
+  setVal("cfg-wsjtx-listen-port", d.wsjtxListenPort != null ? d.wsjtxListenPort : 2237);
+  setVal("cfg-wsjtx-listen-bind", d.wsjtxListenBind || "0.0.0.0");
+  updateLogFormVisibility();
+}
+
+/** Show the configured rigctl endpoint port in the rigctld help commands. */
+function updateRigctldHelpPort(p) {
+  const ep = document.getElementById(p + "-rigctl-endpoint");
+  const help = document.getElementById(p + "-rigctld-help");
+  if (!ep || !help) return;
+  const m = String(ep.value || ep.placeholder || "").match(/:(\d{1,5})\s*$/);
+  const port = m ? m[1] : "4532";
+  help.querySelectorAll(".rigctld-port").forEach((el) => (el.textContent = port));
+  if (!ep.__rigctldHelpBound) {
+    ep.__rigctldHelpBound = true;
+    ep.addEventListener("input", () => updateRigctldHelpPort(p));
+  }
 }

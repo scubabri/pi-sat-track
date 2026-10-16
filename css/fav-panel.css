@@ -177,3 +177,13 @@
   color: var(--text-dim);
   font-size: 0.82rem;
 }
+
+/* AOS countdown urgency — original red / yellow */
+.fav-next.aos5 {
+  color: var(--red);
+  font-weight: 600;
+}
+.fav-next.aos15 {
+  color: var(--yellow);
+  font-weight: 600;
+}

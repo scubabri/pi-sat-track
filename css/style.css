@@ -10,6 +10,9 @@
   --red: #f85149;
   --orange: #f0883e;
   --yellow: #d4a72c;
+  /* AMSAT status page legend */
+  --amsat-heard: #648fff; /* Sat/Mode Active (Heard) */
+  --amsat-tlm: #ffb000; /* TLM/Beacon only */
   --uplink: #58a6ff;
   --downlink: #3fb950;
   --topbar-h: 52px;
@@ -201,7 +204,15 @@ body {
 }
 
 #sat-menu .sat-option.sat-down {
-  color: var(--accent);
+  color: var(--text-dim);
+}
+
+/* Heard-on-AMSAT: AMSAT legend colors on sat-down name text only (no left bar) */
+#sat-menu .sat-option.sat-down.heard-kind-heard {
+  color: var(--amsat-heard);
+}
+#sat-menu .sat-option.sat-down.heard-kind-tlm {
+  color: var(--amsat-tlm);
 }
 
 #sat-menu .sat-option.active {
@@ -296,6 +307,12 @@ body {
 }
 .status-dot.red {
   background: var(--red);
+}
+.status-dot.aos5 {
+  background: var(--red);
+}
+.status-dot.aos15 {
+  background: var(--yellow);
 }
 
 #pass-summary {

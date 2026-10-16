@@ -7,6 +7,7 @@
   let ctcssMode = "off";
   let ctcssAccessHz = null;
   let ctcssActivationHz = null;
+  let toneError = null; // radio readback said tone didn't set → red button
 
   function fmtOffsetHz(hz) {
     if (hz == null || !Number.isFinite(hz) || hz === 0) return "0 Hz";
@@ -61,6 +62,15 @@
           ? "Activation tone ON — click to turn off"
           : "Enable activation CTCSS (timer arm)";
     }
+    // Readback failure: paint the active tone button red with radio's report.
+    const activeBtn =
+      ctcssMode === "access" ? btnAcc : ctcssMode === "activation" ? btnAct : null;
+    for (const b of [btnAcc, btnAct]) {
+      if (!b) continue;
+      const err = b === activeBtn && toneError;
+      b.classList.toggle("tone-error", !!err);
+      if (err) b.title = "Tone NOT confirmed by radio — " + toneError;
+    }
   }
 
   function sendFine(delta, side) {
@@ -93,6 +103,7 @@
     let next = which;
     if (ctcssMode === which) next = "off";
     ctcssMode = next;
+    toneError = null;
     updateDisplays();
     if (typeof ws !== "undefined" && ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "ctcss", which: next }));
@@ -104,6 +115,7 @@
     if (typeof msg.ulFineOffset === "number") ulFineOffset = msg.ulFineOffset;
     if (typeof msg.dlFineOffset === "number") dlFineOffset = msg.dlFineOffset;
     if (typeof msg.ctcssMode === "string") ctcssMode = msg.ctcssMode;
+    if (msg.toneError !== undefined) toneError = msg.toneError || null;
     if (msg.ctcssAccessHz !== undefined) ctcssAccessHz = msg.ctcssAccessHz;
     if (msg.ctcssActivationHz !== undefined)
       ctcssActivationHz = msg.ctcssActivationHz;
@@ -154,6 +166,40 @@
     bind("btn-fine-dl-plus", "dl", +1);
 
     const stepEl = document.getElementById("fine-step");
+    // ▲/▼ spinner + wheel + arrow keys: change the step by exactly 1 Hz
+    // (min 1), then reuse the "change" path below so persistence / server
+    // sync stay identical to typing a value.
+    const nextPreset = (cur, dir) => {
+      if (!Number.isFinite(cur) || cur <= 0) cur = fineStep;
+      return Math.max(1, cur + (dir > 0 ? 1 : -1));
+    };
+    const bumpStep = (dir) => {
+      if (!stepEl) return;
+      const v = nextPreset(parseInt(stepEl.value, 10), dir);
+      if (String(v) === stepEl.value) return;
+      stepEl.value = String(v);
+      stepEl.dispatchEvent(new Event("change"));
+    };
+    const upBtn = document.getElementById("btn-step-up");
+    const downBtn = document.getElementById("btn-step-down");
+    if (upBtn) upBtn.addEventListener("click", () => bumpStep(+1));
+    if (downBtn) downBtn.addEventListener("click", () => bumpStep(-1));
+    if (stepEl) {
+      stepEl.addEventListener(
+        "wheel",
+        (e) => {
+          e.preventDefault();
+          bumpStep(e.deltaY < 0 ? +1 : -1);
+        },
+        { passive: false },
+      );
+      stepEl.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+          e.preventDefault();
+          bumpStep(e.key === "ArrowUp" ? +1 : -1);
+        }
+      });
+    }
     if (stepEl) {
       stepEl.addEventListener("change", () => {
         const step = parseInt(stepEl.value, 10);

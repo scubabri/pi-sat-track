@@ -6,6 +6,7 @@ let currentSatLabel = null;
 let lastSatList = null;
 let currentEl = null;
 let pendingSatKey = null;
+let pendingSatAt = 0;
 
 function setSatButtonLabel(label) {
   currentSatLabel = label;
@@ -160,6 +161,36 @@ function applyLiveHorizon(sats) {
   });
 }
 
+
+/** Browser-local AMSAT report tip: "Heard · Oct 15, 2026, 10:30 AM MDT". */
+function formatAmsatHeardTip(s) {
+  const kindLabel = s && s.heardKind === "tlm" ? "TLM Only" : "Heard";
+  if (!s || !s.heardReportAt) return kindLabel + " (AMSAT)";
+  const ms = Date.parse(s.heardReportAt);
+  if (!Number.isFinite(ms)) return kindLabel + " (AMSAT)";
+  try {
+    const fmt = new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    });
+    return kindLabel + " · " + fmt.format(new Date(ms));
+  } catch (_) {
+    return kindLabel + " · " + s.heardReportAt;
+  }
+}
+
+function applyHeardKindClass(el, s) {
+  el.classList.remove("heard-kind-heard", "heard-kind-tlm");
+  el.classList.toggle("heard", !!(s && s.heard));
+  if (!s || !s.heard) return;
+  if (s.heardKind === "tlm") el.classList.add("heard-kind-tlm");
+  else el.classList.add("heard-kind-heard");
+}
+
 function satHorizonClass(s) {
   if (s.above) return "sat-up";
   if (
@@ -233,7 +264,7 @@ function renderSatMenu(payload) {
       el.classList.remove("sat-up", "sat-soon", "sat-imminent", "sat-down");
       el.classList.add(satHorizonClass(s));
       el.classList.toggle("active", s.key === currentSatKey);
-      el.classList.toggle("heard", !!s.heard);
+      applyHeardKindClass(el, s);
       if (s.name && el.textContent !== s.name) el.textContent = s.name;
     });
     menu.querySelectorAll(".sat-fav[data-sat]").forEach((star) => {
@@ -339,7 +370,7 @@ function renderSatMenu(payload) {
     btn.className = "sat-option";
     if (s.key === currentSatKey) btn.classList.add("active");
     btn.classList.add(satHorizonClass(s));
-    if (s.heard) btn.classList.add("heard");
+    applyHeardKindClass(btn, s);
     btn.dataset.sat = s.key;
     btn.textContent = s.name;
 
@@ -358,9 +389,8 @@ function renderSatMenu(payload) {
       tip += " — AOS < 15 min";
       if (typeof s.secToAos === "number")
         tip += " (~" + Math.round(s.secToAos / 60) + "m)";
-    } else if (s.heard) {
-      tip += " — heard (AMSAT)";
     }
+    if (s.heard) tip += " — " + formatAmsatHeardTip(s);
     btn.title = tip;
     // Clicks handled by menu event delegation
     wrap.appendChild(btn);
@@ -410,6 +440,7 @@ function refreshCurrentSatChip() {
 
 function selectSatellite(key, label) {
   pendingSatKey = key;
+  pendingSatAt = Date.now();
   currentSatKey = key;
   setSatButtonLabel(label || key);
   localStorage.setItem("satTrackerSat", key);
@@ -423,12 +454,13 @@ function selectSatellite(key, label) {
 
   if (typeof clearProfileLock === "function") clearProfileLock();
   if (typeof clearMapTracking === "function") clearMapTracking();
+  if (typeof clearRadar === "function") clearRadar();
 
   const menu = document.getElementById("sat-menu");
   if (menu) menu.hidden = true;
 
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "sat", key: key }));
+    ws.send(JSON.stringify({ type: "sat", key: key, user: true }));
   }
 }
 

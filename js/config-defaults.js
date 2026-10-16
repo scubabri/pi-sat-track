@@ -177,6 +177,19 @@ function defaultsEndpoints() {
     rotorElMax: 180,
     rotorAzOnly: false,
     rotorAzStop: "north",
+    // QSO logging (method: off | adif | udp)
+    logMethod: "off",
+    logAdifPath: "~/.rpitrack/pi-sat-track.adi",
+    logUdpHost: "127.0.0.1",
+    logUdpPort: 2237,
+    logUdpFormat: "wsjtx",
+    // multicast only (224.0.0.0-239.255.255.255)
+    logUdpTtl: 1,
+    logUdpIface: "", // "" = Auto (OS chooses)
+    // WSJT-X listener: receive WSJT-X log messages, add sat info, re-send
+    wsjtxListen: false,
+    wsjtxListenPort: 2237,
+    wsjtxListenBind: "0.0.0.0",
   };
 }
 

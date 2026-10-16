@@ -8,13 +8,48 @@ let passPolylines = [];
 
 const EARTH_RADIUS_KM = 6371;
 
+const MAP_CENTER_KEY = "mapCenterChoice";
+const MID_ATLANTIC_VIEW = { lat: 25, lon: -35, zoom: 2.5 };
+
+function getCenterChoice() {
+  try {
+    return localStorage.getItem(MAP_CENTER_KEY) === "atlantic" ? "atlantic" : "station";
+  } catch (e) {
+    return "station";
+  }
+}
+
+function setCenterChoice(choice) {
+  try {
+    localStorage.setItem(MAP_CENTER_KEY, choice);
+  } catch (e) {}
+  document.querySelectorAll(".map-center-btn").forEach(function (b) {
+    b.classList.toggle("active", b.dataset.center === choice);
+  });
+}
+
+function centerMidAtlantic() {
+  if (!map) return;
+  map.setView([MID_ATLANTIC_VIEW.lat, MID_ATLANTIC_VIEW.lon], MID_ATLANTIC_VIEW.zoom);
+}
+
 function initMap() {
   map = L.map("map", {
     worldCopyJump: true,
     minZoom: 2,
+    // finer zoom steps (+/- and wheel)
+    zoomSnap: 0.25,
+    zoomDelta: 0.5,
+    wheelPxPerZoomLevel: 120,
+    wheelDebounceTime: 40,
     maxZoom: 8,
     zoomControl: false,
-  }).setView([20, 0], 2);
+  }).setView(
+    getCenterChoice() === "atlantic"
+      ? [MID_ATLANTIC_VIEW.lat, MID_ATLANTIC_VIEW.lon]
+      : [20, 0],
+    getCenterChoice() === "atlantic" ? MID_ATLANTIC_VIEW.zoom : 2,
+  );
 
   L.control.zoom({ position: "topright" }).addTo(map);
 
@@ -25,18 +60,24 @@ function initMap() {
         "div",
         "leaflet-bar leaflet-control map-center-control",
       );
-      const btn = L.DomUtil.create("a", "map-center-btn", container);
-      btn.href = "#";
-      btn.title = "Center on station (keep zoom)";
-      btn.setAttribute("role", "button");
-      btn.setAttribute("aria-label", "Center on station");
-      btn.innerHTML = "&#8982;";
-
+      const mkBtn = function (choice, title, label, glyph, fn) {
+        const btn = L.DomUtil.create("a", "map-center-btn", container);
+        btn.href = "#";
+        btn.title = title;
+        btn.dataset.center = choice;
+        btn.setAttribute("role", "button");
+        btn.setAttribute("aria-label", label);
+        btn.innerHTML = glyph;
+        if (getCenterChoice() === choice) btn.classList.add("active");
+        L.DomEvent.on(btn, "click", function (e) {
+          L.DomEvent.preventDefault(e);
+          setCenterChoice(choice);
+          fn();
+        });
+      };
       L.DomEvent.disableClickPropagation(container);
-      L.DomEvent.on(btn, "click", function (e) {
-        L.DomEvent.preventDefault(e);
-        centerOnStation();
-      });
+      mkBtn("station", "Center on station (keep zoom)", "Center on station", "&#8982;", centerOnStation);
+      mkBtn("atlantic", "Center mid-Atlantic", "Center mid-Atlantic", "&#127760;&#xFE0E;", centerMidAtlantic);
 
       return container;
     },
@@ -101,27 +142,71 @@ function centerOnStation() {
   }
 }
 
-function splitAtDateLine(latlngs) {
-  if (!latlngs || latlngs.length < 2) return [latlngs || []];
-
-  const segments = [];
-  let current = [latlngs[0]];
-
+/**
+ * Ground-track paths come with longitudes wrapped to [-180, 180]. Splitting at
+ * the jump left a gap at the dateline and only drew lines in the central
+ * world copy, so with worldCopyJump / wide world views the parts of the
+ * track (and future orbits) in neighbouring copies were missing. Instead:
+ * unwrap to a continuous longitude, then return copies shifted by k*360 so
+ * the whole span appears in every visible world copy (-540..540).
+ */
+/** Great-circle densify so consecutive points are <= maxDeg apart (smooth curves, esp. near poles). */
+function densifyTrack(latlngs, maxDeg) {
+  maxDeg = maxDeg || 0.5;
+  const R = Math.PI / 180;
+  const out = [latlngs[0]];
   for (let i = 1; i < latlngs.length; i++) {
-    const prev = latlngs[i - 1];
-    const curr = latlngs[i];
-    const prevLon = prev[1];
-    const currLon = curr[1];
-
-    if (Math.abs(currLon - prevLon) > 180) {
-      segments.push(current);
-      current = [curr];
-    } else {
-      current.push(curr);
+    const a = latlngs[i - 1];
+    const b = latlngs[i];
+    const la1 = a[0] * R, lo1 = a[1] * R, la2 = b[0] * R, lo2 = b[1] * R;
+    const x1 = Math.cos(la1) * Math.cos(lo1), y1 = Math.cos(la1) * Math.sin(lo1), z1 = Math.sin(la1);
+    const x2 = Math.cos(la2) * Math.cos(lo2), y2 = Math.cos(la2) * Math.sin(lo2), z2 = Math.sin(la2);
+    const dot = Math.max(-1, Math.min(1, x1 * x2 + y1 * y2 + z1 * z2));
+    const ang = Math.acos(dot);
+    const n = Math.ceil(ang / R / maxDeg);
+    if (n > 1 && ang > 1e-9) {
+      const sinA = Math.sin(ang);
+      for (let k = 1; k < n; k++) {
+        const t = k / n;
+        const f1 = Math.sin((1 - t) * ang) / sinA, f2 = Math.sin(t * ang) / sinA;
+        const x = f1 * x1 + f2 * x2, y = f1 * y1 + f2 * y2, z = f1 * z1 + f2 * z2;
+        out.push([Math.atan2(z, Math.sqrt(x * x + y * y)) / R, Math.atan2(y, x) / R]);
+      }
     }
+    out.push(b);
   }
-  if (current.length) segments.push(current);
-  return segments.filter((s) => s && s.length >= 2);
+  return out;
+}
+
+function splitAtDateLine(latlngs) {
+  if (!latlngs || latlngs.length < 2) return [];
+  latlngs = densifyTrack(latlngs, 0.5);
+  const un = [];
+  let off = 0;
+  let prev = latlngs[0][1];
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < latlngs.length; i++) {
+    const lat = latlngs[i][0];
+    const lon = latlngs[i][1];
+    if (i > 0) {
+      const d = lon - prev;
+      if (d > 180) off -= 360;
+      else if (d < -180) off += 360;
+    }
+    prev = lon;
+    const ul = lon + off;
+    if (ul < min) min = ul;
+    if (ul > max) max = ul;
+    un.push([lat, ul]);
+  }
+  const out = [];
+  const kLo = Math.ceil((-540 - max) / 360);
+  const kHi = Math.floor((540 - min) / 360);
+  for (let k = kLo; k <= kHi; k++) {
+    out.push(k === 0 ? un : un.map((p) => [p[0], p[1] + k * 360]));
+  }
+  return out;
 }
 
 function clearPolylineArray(arr) {
@@ -152,7 +237,10 @@ function setPolylinesFromPath(latlngs, style, targetArray) {
 
   const segments = splitAtDateLine(latlngs);
   for (let i = 0; i < segments.length; i++) {
-    const line = L.polyline(segments[i], style).addTo(map);
+    const line = L.polyline(
+      segments[i],
+      Object.assign({ smoothFactor: 0.5, lineJoin: "round", lineCap: "round" }, style),
+    ).addTo(map);
     targetArray.push(line);
   }
 }
@@ -167,6 +255,9 @@ function centerOnGrid(grid, keepZoom) {
     if (!map.hasLayer(observerMarker)) observerMarker.addTo(map);
   }
 
+  // Load/config-driven recenter: respect a stored mid-Atlantic choice
+  if (!keepZoom && getCenterChoice() === "atlantic") return;
+
   if (keepZoom) {
     map.panTo([pos.lat, pos.lon]);
   } else {
@@ -176,6 +267,10 @@ function centerOnGrid(grid, keepZoom) {
 
 function updateMapTracking(state) {
   if (!map || !state) return;
+  // Layers belong to one sat: a state for a different sat starts fresh.
+  if (state.sat && satMarker && satMarker.__sat && satMarker.__sat !== state.sat) {
+    clearMapTracking();
+  }
 
   if (state.position) {
     const lat = state.position.lat;
@@ -189,9 +284,21 @@ function updateMapTracking(state) {
           fillColor: "#58a6ff",
           fillOpacity: 1,
         }).addTo(map);
+        satMarker.__sat = state.sat || null;
       } else {
         satMarker.setLatLng([lat, lon]);
         if (!map.hasLayer(satMarker)) satMarker.addTo(map);
+      }
+      const label = state.display || state.sat || "";
+      if (label && satMarker.__label !== label) {
+        satMarker.unbindTooltip();
+        satMarker.bindTooltip(label, {
+          permanent: true,
+          direction: "right",
+          offset: [9, 0],
+          className: "decode-label sel-sat-label",
+        });
+        satMarker.__label = label;
       }
 
       const hKm = state.position.heightKm;
@@ -221,8 +328,8 @@ function updateMapTracking(state) {
       state.trail,
       {
         color: "#58a6ff",
-        weight: 2,
-        opacity: 0.7,
+        weight: 1,
+        opacity: 0.8,
       },
       trailPolylines,
     );
@@ -235,8 +342,8 @@ function updateMapTracking(state) {
       state.forward,
       {
         color: "#58a6ff",
-        weight: 1.5,
-        opacity: 0.45,
+        weight: 0.9,
+        opacity: 0.75,
         dashArray: "6 8",
       },
       forwardPolylines,

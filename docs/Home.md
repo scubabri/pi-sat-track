@@ -241,7 +241,7 @@ Access / activation tones follow catalog data when present. Drivers apply tone w
 
 ### 7.5 Fine offsets
 
-Per-satellite UL/DL fine offsets persist under the cache directory (`sat-offsets.json`) so small calibration errors survive restarts.
+Per-satellite UL/DL fine offsets persist per profile under the cache directory (`sat-offsets.json`, keyed profile → satellite; pre-profile global values seed each profile once) so small calibration errors survive restarts.
 
 ---
 

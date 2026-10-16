@@ -252,6 +252,13 @@
   border-color: #58a6ff;
 }
 
+.mode-select:disabled,
+.mode-select:disabled:hover {
+  opacity: 0.4;
+  cursor: not-allowed;
+  color: #8b949e;
+}
+
 .passband {
   margin-top: 10px;
   padding-top: 8px;
@@ -315,6 +322,11 @@
   background: #161b22 !important;
   display: block !important;
   text-decoration: none !important;
+}
+
+.map-center-btn.active {
+  background: #1f2a37 !important;
+  box-shadow: inset 0 0 0 1px #58a6ff55;
 }
 
 .map-center-btn:hover {
