@@ -632,7 +632,8 @@ wss.on("connection", (ws, req) => {
       }
 
       if (msg.type === "lock") {
-        radios.setLock(!!msg.on);
+        // LOCK UI removed — ignore; stay unlocked.
+        radios.setLock(false);
       }
 
       if (msg.type === "dataMode") {
