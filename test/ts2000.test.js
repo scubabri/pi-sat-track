@@ -88,13 +88,20 @@ class FakePort {
         radio.fr = parseInt(up.slice(2), 10) || 0;
       } else if (up.startsWith("FT")) {
         radio.ft = parseInt(up.slice(2), 10) || 0;
+      } else if (up === "DC") {
+        reply += "DC" + radio.dc + ";";
       } else if (up.startsWith("DC") && up.length === 4) {
-        radio.dc = up.slice(2);
+        // Kenwood: P1 change forces P2 = P1
+        radio.dc = up[2] !== radio.dc[0] ? up[2] + up[2] : up.slice(2);
+      } else if (up === "MD" && radio.sa === "1") {
+        reply += "MD" + (radio.dc[1] === "1" ? radio.mdB : radio.mdA) + ";";
       } else if (up.startsWith("MD") && up.length === 3 && radio.sa === "1") {
-        // SATL: MD follows TX band (DC p1): 0=MAIN(A/DL) 1=SUB(B/UL)
-        if (radio.dc[0] === "1") radio.mdB = up.slice(2);
+        // SATL: MD acts on control band (DC P2)
+        if (radio.dc[1] === "1") radio.mdB = up.slice(2);
         else radio.mdA = up.slice(2);
       } else if (up.startsWith("TN") && up.length === 4 && radio.sa === "1" && radio.dc[1] !== "1") {
+        radio.tnMain = up.slice(2);
+      } else if (false) {
         radio.tnMain = up.slice(2);
       } else if (up.startsWith("MD") && up.length === 3) {
         if (radio.fr === 1) radio.mdB = up.slice(2);
@@ -119,6 +126,7 @@ class FakePort {
         reply += "?;";
       } else if (up.startsWith("SA") && up.length > 2) {
         radio.sa = up.slice(2, 3);
+        if (radio.sa === "1") radio.dc = "10";
         radio.saFull = up.slice(2).padEnd(8, "0").slice(0, 8);
       }
     }
@@ -218,7 +226,7 @@ test("replyLooksBad detects ?; E; O;", () => {
   assert.strictEqual(replyLooksBad("FA00014500000;"), false);
 });
 
-test("SAT mode: SA10100000, MAIN=DL FA, SUB=UL FB, MD via DC, cached", async () => {
+test("SAT mode: SA1010000, MAIN=DL FA, SUB=UL FB, MD via DC, cached", async () => {
   resetRadio();
   ts.init({
     getContext: () => ({
@@ -245,8 +253,8 @@ test("SAT mode: SA10100000, MAIN=DL FA, SUB=UL FB, MD via DC, cached", async () 
   assert.strictEqual(radio.fb, ul, "SUB = UL via FB");
   assert.strictEqual(radio.mdA, "2", "DL USB on MAIN");
   assert.strictEqual(radio.mdB, "1", "UL LSB on SUB");
-  assert.ok(radio.cmds.some((c) => c.toUpperCase() === "DC10"), "DC10 before UL MD");
-  assert.strictEqual(radio.dc, "00", "DC restored to MAIN");
+  assert.ok(radio.cmds.some((c) => c.toUpperCase() === "DC11"), "CTRL SUB before UL MD");
+  assert.strictEqual(radio.dc, "10", "CTRL restored to MAIN, PTT kept SUB");
   assert.ok(!radio.cmds.some((c) => /^F[RT]\d/i.test(c)), "no FR/FT in SATL");
   assert.ok(mdFirst >= 2);
 
@@ -399,7 +407,7 @@ test("SA already on → kept on", async () => {
   assert.ok(!radio.cmds.some((c) => /^SA1/i.test(c)), "already SA1 P2=0 → no resend");
 });
 
-test("SO-50 FM in SAT: tone on SUB via DC01, disable sends SA0", async () => {
+test("SO-50 FM in SAT: tone on SUB via DC11, disable leaves SAT on", async () => {
   resetRadio();
   ts.close();
   ts.init({
@@ -418,12 +426,12 @@ test("SO-50 FM in SAT: tone on SUB via DC01, disable sends SA0", async () => {
   assert.strictEqual(radio.mdB, "4");
   const i = radio.cmds.findIndex((c) => /^TN\d\d$/i.test(c));
   assert.ok(i > 0);
-  assert.ok(radio.cmds.slice(0, i).map((c) => c.toUpperCase()).lastIndexOf("DC01") >= 0, "DC01 before TN");
+  assert.ok(radio.cmds.slice(0, i).map((c) => c.toUpperCase()).lastIndexOf("DC11") >= 0, "CTRL SUB before TN");
   assert.strictEqual(radio.tnMain, null, "tone not on MAIN");
-  assert.strictEqual(radio.dc, "00");
+  assert.strictEqual(radio.dc, "10");
   ts.setRadio(false);
   await sleep(500);
-  assert.strictEqual(radio.sa, "0", "SA0 on disable");
+  assert.strictEqual(radio.sa, "1", "SAT left on at disable");
   ts.applyDefaultCtcss(null, null);
 });
 
@@ -461,7 +469,7 @@ test("cleanup close", async () => {
   assert.strictEqual(ts.getRadioState().radioOn, false);
 });
 
-test("SA rejected → clean VFO split fallback (FT1, no DC, no SA spam)", async () => {
+test("SA rejected → clean VFO split fallback (FT1, no DC)", async () => {
   resetRadio();
   radio.rejectSa = true;
   ts.close();
@@ -470,10 +478,9 @@ test("SA rejected → clean VFO split fallback (FT1, no DC, no SA spam)", async 
     broadcast: () => {},
   });
   ts.setRadio(true);
-  await sleep(3500);
+  await sleep(1500);
   assert.strictEqual(ts._test.getSatOn(), false);
-  for (const c of ["SA1010000", "SA1", "SA10100000"])
-    assert.ok(radio.cmds.includes(c), "tried " + c);
+  assert.ok(radio.cmds.includes("SA1010000"), "tried SA1010000");
   assert.strictEqual(ts._test.getSatFailed(), true);
   radio.cmds = [];
   await ts.pushFrequencies(145950000, 435640000);
@@ -509,4 +516,43 @@ test("MD nak → not resent every tick", async () => {
   ts.setRadio(false);
   await sleep(300);
   ts.close();
+});
+
+test("disable stops writes immediately and closes port", async () => {
+  resetRadio();
+  ts.close();
+  ts.init({
+    getContext: () => ({ currentSatKey: "RS-44", currentModeIndex: 0, satrec: null, observer: null }),
+    broadcast: () => {},
+  });
+  ts.setRadio(true);
+  await sleep(1500);
+  const p = [];
+  for (let i = 0; i < 5; i++) p.push(ts.pushFrequencies(145950000 + i * 7, 435640000 - i * 7));
+  ts.setRadio(false);
+  radio.cmds = [];
+  await Promise.all(p).catch(() => {});
+  await sleep(300);
+  assert.strictEqual(radio.cmds.length, 0, "no writes after disable: " + radio.cmds.join(","));
+  assert.strictEqual(ts._test.getLinks().dl.connected, false);
+});
+
+test("SAT: unchanged mode/freq not resent; no FR/FT/CT", async () => {
+  resetRadio();
+  ts.close();
+  ts.init({
+    getContext: () => ({ currentSatKey: "RS-44", currentModeIndex: 0, satrec: null, observer: null }),
+    broadcast: () => {},
+  });
+  ts.setRadio(true);
+  await sleep(1500);
+  await ts.pushFrequencies(145950000, 435640000);
+  await sleep(100);
+  radio.cmds = [];
+  await ts.pushFrequencies(145950000, 435640000);
+  await ts.pushFrequencies(145950000, 435640000);
+  await sleep(100);
+  assert.ok(!radio.cmds.some((c) => /^(MD\d|FA\d|FB\d|F[RT]\d|CT)/i.test(c)), radio.cmds.join(","));
+  ts.setRadio(false);
+  await sleep(100);
 });
