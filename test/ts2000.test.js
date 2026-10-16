@@ -574,3 +574,40 @@ test("concurrent ticks coalesce (no duplicate FA writes)", async () => {
   await sleep(100);
   ts.close();
 });
+
+test("SAT: many ticks over time keep updating FA/FB (no stall)", async () => {
+  resetRadio();
+  radio.sa = "1";
+  radio.saFull = "1011000";
+  ts.close();
+  ts._test.setCwModeFlag(false);
+  ts.init({
+    getContext: () => ({ currentSatKey: "RS-44", currentModeIndex: 0, satrec: null, observer: null }),
+    broadcast: () => {},
+  });
+  ts.setLock(false);
+  ts.setRadio(true);
+  const seenFa = new Set();
+  const seenFb = new Set();
+  const ticks = [];
+  for (let i = 0; i < 24; i++) {
+    ticks.push(ts.pushFrequencies(145960000 + i * 3, 435640000 - i * 9));
+    await sleep(250);
+    seenFa.add(radio.fa);
+    seenFb.add(radio.fb);
+  }
+  await Promise.all(ticks);
+  await sleep(300);
+  assert.strictEqual(radio.fa, 435640000 - 23 * 9, "FA reached latest");
+  assert.strictEqual(radio.fb, 145960000 + 23 * 3, "FB reached latest");
+  assert.ok(seenFa.size >= 8, "FA kept updating: " + seenFa.size);
+  assert.ok(seenFb.size >= 8, "FB kept updating: " + seenFb.size);
+  const firstSa = radio.cmds.findIndex((c) => /^SA/i.test(c));
+  const firstWrite = radio.cmds.findIndex((c) => /^(FA\d|FB\d|MD\d|F[RT]\d)/i.test(c));
+  assert.ok(firstSa >= 0 && firstSa < firstWrite, "SA before any write");
+  assert.ok(!radio.cmds.some((c) => /^F[RT]\d/i.test(c)), "no FR/FT");
+  ts.setLock(false);
+  ts.setRadio(false);
+  await sleep(100);
+  ts.close();
+});
