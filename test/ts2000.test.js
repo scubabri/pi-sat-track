@@ -313,7 +313,7 @@ test("SAT mode: SA1010000, MAIN=DL FA, SUB=UL FB, MAIN MD only, cached", async (
   assert.ok(radio.cmds.some((c) => /^FB/i.test(c)), "FB for UL delta");
 });
 
-test("simplex ISS: split off, VFO A only", async () => {
+test("simplex ISS: same-band split, A=DL B=UL, FT1", async () => {
   resetRadio();
   ts.close();
   ts.init({
@@ -332,11 +332,10 @@ test("simplex ISS: split off, VFO A only", async () => {
   await ts.pushFrequencies(f, f);
   await sleep(250);
   assert.strictEqual(ts._test.getSimplexActive(), true);
-  assert.strictEqual(radio.ft, 0, "FT0 simplex");
-  assert.ok(radio.cmds.some((c) => /^FA/i.test(c) && c.length > 2));
-  // No FB set for simplex
-  const fbSets = radio.cmds.filter((c) => /^FB\d/i.test(c));
-  assert.strictEqual(fbSets.length, 0, "no VFO B write in simplex");
+  assert.strictEqual(radio.ft, 1, "FT1 simplex split");
+  assert.strictEqual(radio.fa, f, "A = DL");
+  assert.strictEqual(radio.fb, f, "B = UL");
+  assert.strictEqual(radio.sa, "0", "SAT off");
 });
 
 test("queue: overlapping push+poll does not drop (no overlap writes)", async () => {
