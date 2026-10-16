@@ -813,20 +813,6 @@ test("RS-44 (UL 2m / DL 70cm): P3=1, FA=DL 435, FB=UL 145", async () => {
   ts.setRadio(false); await sleep(300); ts.close();
 });
 
-test("FA/FB nak → swap once (radio wants opposite band mapping)", async () => {
-  resetRadio();
-  radio.sa = "1"; radio.saFull = "1000000"; radio.strictReversed = true;
-  ts.close(); ts._test.setCwModeFlag(false);
-  ts.init(ctxFor("JO-97"));
-  ts.setRadio(true);
-  await sleep(50);
-  for (let i = 0; i < 6; i++) { await ts.pushFrequencies(435110000 + i * 3, 145865000 - i * 3); await sleep(250); }
-  assert.strictEqual(ts._test.getFaIsDl(), true, "swapped to FA=DL");
-  assert.ok(Math.abs(radio.fa - 145865000) < 30, "FA=145 " + radio.fa);
-  assert.ok(Math.abs(radio.fb - 435110000) < 30, "FB=435 " + radio.fb);
-  ts.setRadio(false); await sleep(300); ts.close();
-});
-
 test("FB nak flood → backoff (not every tick)", async () => {
   resetRadio();
   radio.sa = "1"; radio.saFull = "1010000"; radio.rejectFb = true;
@@ -960,5 +946,25 @@ test("no FR/FT/MD before SA read on enable (JO-97, DL-only and full ticks)", asy
   const firstBad = radio.cmds.findIndex((c) => /^(F[RT]\d|MD\d|FA\d|FB\d)/i.test(c));
   assert.ok(firstSa >= 0 && (firstBad < 0 || firstSa < firstBad), radio.cmds.slice(0, 8).join(","));
   assert.ok(!radio.cmds.some((c) => /^F[RT]\d/i.test(c)), "no FR/FT at all");
+  ts.setRadio(false); await sleep(300); ts.close();
+});
+
+test("JO-97 sat switch at enable time (RS-44 → JO-97 before first tick): never FA00145 / FB00435", async () => {
+  resetRadio();
+  radio.sa = "1"; radio.saFull = "1010000";
+  ts.close(); ts._test.setCwModeFlag(false); ts._test.setManualDlOffset(0);
+  let key = "RS-44";
+  ts.init({ getContext: () => ({ currentSatKey: key, currentModeIndex: 0, satrec: null, observer: null }), broadcast: () => {} });
+  ts.setLock(false);
+  ts.setRadio(true); // enable path SA detect with RS-44 layout
+  key = "JO-97";     // 'Loaded JO-97' after layout
+  ts.pushFrequencies(null, 145857075);
+  ts.pushFrequencies(435119982, 145857075);
+  await sleep(1200);
+  for (let i = 0; i < 8; i++) { await ts.pushFrequencies(435119982 + i * 5, 145857075 - i * 5); await sleep(250); }
+  assert.ok(!radio.cmds.some((c) => /^FA00(0|1)[0-9]{2}|^FA001[0-9]/.test(c) && parseInt(c.slice(2), 10) < 300e6), "no 2m FA: " + radio.cmds.filter((c) => /^F[AB]\d/.test(c)).slice(0, 6).join(","));
+  assert.ok(!radio.cmds.some((c) => /^FB\d/.test(c) && parseInt(c.slice(2), 10) >= 300e6), "no 70cm FB");
+  assert.ok(!radio.replies.some((x) => x.includes("?;")), "no naks");
+  assert.ok(Math.abs(radio.fa - 435120017) < 50 && Math.abs(radio.fb - 145857040) < 50, radio.fa + " " + radio.fb);
   ts.setRadio(false); await sleep(300); ts.close();
 });
