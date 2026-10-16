@@ -553,6 +553,7 @@ wss.on("connection", (ws, req) => {
         if (tk) broadcast(tk);
         const st = state.computeState();
         if (st) broadcast(st);
+        pushNow();
       }
 
       if (msg.type === "sat" && msg.key && msg.user !== true) {
