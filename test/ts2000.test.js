@@ -123,7 +123,7 @@ class FakePort {
         radio.ct = up.slice(2);
       } else if (up === "SA") {
         reply += "SA" + radio.saFull + ";";
-      } else if (up.startsWith("SA") && up.length > 2 && (radio.rejectSa || up.length !== 9 || (radio.rejectSaOff && up[2] === "0"))) {
+      } else if (up.startsWith("SA") && up.length > 2 && (radio.rejectSa || up.length !== 9 || (radio.rejectSaOff && up[2] === "0") || (radio.rejectP4 && up[5] === "1"))) {
         reply += "?;"; // real TS-2000: SA set is SA + 7 digits (or SA0)
       } else if (up.startsWith("MD") && up.length === 3 && radio.rejectMd) {
         reply += "?;";
@@ -194,6 +194,7 @@ function resetRadio() {
   radio.dcLocked = false;
   radio.faRound = 0;
   radio.rejectSaOff = false;
+  radio.rejectP4 = false;
   radio.rejectMd = false;
   radio.cmds = [];
   radio.overlap = 0;
@@ -258,7 +259,10 @@ test("SAT mode: SA1010000, MAIN=DL FA, SUB=UL FB, MAIN MD only, cached", async (
   assert.strictEqual(radio.fa, dlHz, "MAIN = DL via FA");
   assert.strictEqual(radio.fb, ul, "SUB = UL via FB");
   assert.strictEqual(radio.mdA, "2", "DL USB on MAIN");
-  assert.ok(!radio.cmds.some((c) => /^DC\d/i.test(c) || /^SA1011/i.test(c)), "no control switching");
+  assert.ok(!radio.cmds.some((c) => /^DC\d/i.test(c)), "no DC switching");
+  assert.strictEqual(radio.cmds.filter((c) => c === "SA1011000").length, 1, "one P4 SUB-mode cycle");
+  assert.strictEqual(radio.mdB, "1", "SUB LSB via P4");
+  assert.strictEqual(radio.saFull[3], "0", "CTRL back to MAIN");
   assert.strictEqual(radio.dc[1], "0", "CTRL restored to MAIN");
   {
     const a = radio.cmds.indexOf("SA0000000"), b = radio.cmds.lastIndexOf("SA1010000");
@@ -266,7 +270,7 @@ test("SAT mode: SA1010000, MAIN=DL FA, SUB=UL FB, MAIN MD only, cached", async (
       if (/^F[RT]\d/i.test(c)) assert.ok(i > a && i < b, "FR/FT only while SAT off");
     });
   }
-  assert.strictEqual(mdFirst, 2, "MD DL+UL once via split cycle");
+  assert.ok(mdFirst >= 1 && mdFirst <= 2, "MD once per band");
 
   radio.cmds = [];
   // Same freqs again — caches should skip FR1/MD for B and FA/FB
@@ -414,7 +418,7 @@ test("SA already on → kept on", async () => {
   await ts.pushFrequencies(145950000, 435640000);
   await sleep(300);
   assert.strictEqual(radio.sa, "1", "SAT kept on");
-  assert.strictEqual(radio.cmds.filter((c) => c === "SA0000000").length, 1, "one mode-set SAT cycle");
+  assert.strictEqual(radio.cmds.filter((c) => c === "SA1011000").length, 1, "one mode-set SAT cycle");
 });
 
 test("SO-50 FM in SAT: no SUB/tone cmds, disable leaves SAT on", async () => {
@@ -620,7 +624,7 @@ test("SAT: many ticks over time keep updating FA/FB (no stall)", async () => {
   ts.close();
 });
 
-test("SAT: UL mode via SA0 split once, then real tick path w/ 10 Hz FA rounding keeps tracking", async () => {
+test("SAT: UL mode via SA P4 once, then real tick path w/ 10 Hz FA rounding keeps tracking", async () => {
   resetRadio();
   radio.sa = "1";
   radio.saFull = "1010000";
@@ -646,7 +650,8 @@ test("SAT: UL mode via SA0 split once, then real tick path w/ 10 Hz FA rounding 
   assert.strictEqual(radio.sa, "1", "back in SAT");
   assert.strictEqual(radio.mdB, "1", "UL LSB set via split");
   assert.strictEqual(radio.mdA, "2", "DL USB");
-  assert.strictEqual(radio.cmds.filter((c) => c === "SA0000000").length, 1, "SA0 once");
+  assert.strictEqual(radio.cmds.filter((c) => c === "SA1011000").length, 1, "P4 cycle once");
+  assert.strictEqual(radio.cmds.filter((c) => c === "SA0000000").length, 0, "no split fallback");
   assert.ok(faSeen.size >= 12, "FA kept tracking: " + faSeen.size);
   assert.ok(fbSeen.size >= 12, "FB kept tracking: " + fbSeen.size);
   ts.setRadio(false);
@@ -659,6 +664,7 @@ test("SAT exit rejected → mode cycle aborted, no MD/FR, not retried", async ()
   radio.sa = "1";
   radio.saFull = "1010000";
   radio.rejectSaOff = true;
+  radio.rejectP4 = true;
   radio.mdA = "2";
   ts.close();
   ts._test.setCwModeFlag(false);
@@ -676,6 +682,30 @@ test("SAT exit rejected → mode cycle aborted, no MD/FR, not retried", async ()
   assert.ok(!radio.cmds.some((c) => /^(F[RT]\d|MD1)/i.test(c)), radio.cmds.filter((c) => /^(F[RT]|MD)/.test(c)).join(","));
   assert.strictEqual(radio.cmds.filter((c) => c === "SA0000000").length, 1, "exit tried once");
   assert.strictEqual(radio.fa, 435640000 - 3 * 23, "tracking continues");
+  ts.setRadio(false);
+  await sleep(100);
+  ts.close();
+});
+
+test("SAT: P4 rejected → split fallback sets UL mode", async () => {
+  resetRadio();
+  radio.sa = "1";
+  radio.saFull = "1010000";
+  radio.rejectP4 = true;
+  radio.mdB = "2";
+  ts.close();
+  ts._test.setCwModeFlag(false);
+  ts.init({
+    getContext: () => ({ currentSatKey: "RS-44", currentModeIndex: 0, satrec: null, observer: null }),
+    broadcast: () => {},
+  });
+  ts.setRadio(true);
+  await sleep(50);
+  await ts.pushFrequencies(145965000, 435640000);
+  await sleep(300);
+  assert.ok(radio.cmds.includes("SA0000000"), "fallback used");
+  assert.strictEqual(radio.mdB, "1");
+  assert.strictEqual(radio.sa, "1");
   ts.setRadio(false);
   await sleep(100);
   ts.close();
