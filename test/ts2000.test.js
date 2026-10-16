@@ -33,6 +33,8 @@ const radio = {
   to: "0",
   ct: "0",
   sa: "0",
+  saFull: "00000000",
+  dc: "00",
   cmds: [],
   inflight: 0,
   overlap: 0,
@@ -86,6 +88,14 @@ class FakePort {
         radio.fr = parseInt(up.slice(2), 10) || 0;
       } else if (up.startsWith("FT")) {
         radio.ft = parseInt(up.slice(2), 10) || 0;
+      } else if (up.startsWith("DC") && up.length === 4) {
+        radio.dc = up.slice(2);
+      } else if (up.startsWith("MD") && up.length === 3 && radio.sa === "1") {
+        // SATL: MD follows TX band (DC p1): 0=MAIN(A/DL) 1=SUB(B/UL)
+        if (radio.dc[0] === "1") radio.mdB = up.slice(2);
+        else radio.mdA = up.slice(2);
+      } else if (up.startsWith("TN") && up.length === 4 && radio.sa === "1" && radio.dc[1] !== "1") {
+        radio.tnMain = up.slice(2);
       } else if (up.startsWith("MD") && up.length === 3) {
         if (radio.fr === 1) radio.mdB = up.slice(2);
         else radio.mdA = up.slice(2);
@@ -102,9 +112,10 @@ class FakePort {
       } else if (up.startsWith("CT")) {
         radio.ct = up.slice(2);
       } else if (up === "SA") {
-        reply += "SA" + radio.sa + "0000000;";
+        reply += "SA" + radio.saFull + ";";
       } else if (up.startsWith("SA") && up.length > 2) {
         radio.sa = up.slice(2, 3);
+        radio.saFull = up.slice(2).padEnd(8, "0").slice(0, 8);
       }
     }
     radio.replies.push(reply);
@@ -161,6 +172,9 @@ function resetRadio() {
   radio.to = "0";
   radio.ct = "0";
   radio.sa = "0";
+  radio.saFull = "00000000";
+  radio.dc = "00";
+  radio.tnMain = null;
   radio.cmds = [];
   radio.overlap = 0;
   radio.replies = [];
@@ -198,7 +212,7 @@ test("replyLooksBad detects ?; E; O;", () => {
   assert.strictEqual(replyLooksBad("FA00014500000;"), false);
 });
 
-test("split ensure + VFO-B mode cached (no FR1 every tick)", async () => {
+test("SAT mode: SA10100000, MAIN=DL FA, SUB=UL FB, MD via DC, cached", async () => {
   resetRadio();
   ts.init({
     getContext: () => ({
@@ -217,11 +231,18 @@ test("split ensure + VFO-B mode cached (no FR1 every tick)", async () => {
   const dlHz = 435640000;
   await ts.pushFrequencies(ul, dlHz);
   await sleep(200);
-  const fr1First = radio.cmds.filter((c) => c.toUpperCase() === "FR1").length;
   const mdFirst = radio.cmds.filter((c) => /^MD/i.test(c) && c.length === 3).length;
-  assert.ok(radio.ft === 1, "split TX on B");
-  assert.ok(fr1First >= 1, "FR1 used to set UL mode once");
-  assert.ok(mdFirst >= 1);
+  assert.strictEqual(radio.sa, "1", "SAT on");
+  assert.strictEqual(radio.saFull, "10100000");
+  assert.ok(ts._test.getSatOn());
+  assert.strictEqual(radio.fa, dlHz, "MAIN = DL via FA");
+  assert.strictEqual(radio.fb, ul, "SUB = UL via FB");
+  assert.strictEqual(radio.mdA, "2", "DL USB on MAIN");
+  assert.strictEqual(radio.mdB, "1", "UL LSB on SUB");
+  assert.ok(radio.cmds.some((c) => c.toUpperCase() === "DC10"), "DC10 before UL MD");
+  assert.strictEqual(radio.dc, "00", "DC restored to MAIN");
+  assert.ok(!radio.cmds.some((c) => /^F[RT]\d/i.test(c)), "no FR/FT in SATL");
+  assert.ok(mdFirst >= 2);
 
   radio.cmds = [];
   // Same freqs again — caches should skip FR1/MD for B and FA/FB
@@ -350,9 +371,10 @@ test("dial absorb ignores CAT lag (readback equals last commanded)", async () =>
   );
 });
 
-test("SA on → SA0 forced off", async () => {
+test("SA already on → kept on", async () => {
   resetRadio();
   radio.sa = "1";
+  radio.saFull = "10100000";
   ts.close();
   ts.init({
     getContext: () => ({
@@ -367,8 +389,36 @@ test("SA on → SA0 forced off", async () => {
   await sleep(100);
   await ts.pushFrequencies(145950000, 435640000);
   await sleep(300);
-  assert.strictEqual(radio.sa, "0", "SAT forced off");
-  assert.ok(radio.cmds.some((c) => c.toUpperCase() === "SA0"));
+  assert.strictEqual(radio.sa, "1", "SAT kept on");
+  assert.ok(!radio.cmds.some((c) => /^SA1/i.test(c)), "already SA1 P2=0 → no resend");
+});
+
+test("SO-50 FM in SAT: tone on SUB via DC01, disable sends SA0", async () => {
+  resetRadio();
+  ts.close();
+  ts.init({
+    getContext: () => ({ currentSatKey: "SO-50", currentModeIndex: 0, satrec: null, observer: null }),
+    broadcast: () => {},
+  });
+  ts.applyDefaultCtcss(67.0, null);
+  ts.setRadio(true);
+  await sleep(100);
+  radio.cmds = [];
+  await ts.pushFrequencies(145850000, 436795000);
+  await sleep(300);
+  assert.strictEqual(radio.fa, 436795000, "MAIN DL 70cm");
+  assert.strictEqual(radio.fb, 145850000, "SUB UL 2m");
+  assert.strictEqual(radio.mdA, "4");
+  assert.strictEqual(radio.mdB, "4");
+  const i = radio.cmds.findIndex((c) => /^TN\d\d$/i.test(c));
+  assert.ok(i > 0);
+  assert.ok(radio.cmds.slice(0, i).map((c) => c.toUpperCase()).lastIndexOf("DC01") >= 0, "DC01 before TN");
+  assert.strictEqual(radio.tnMain, null, "tone not on MAIN");
+  assert.strictEqual(radio.dc, "00");
+  ts.setRadio(false);
+  await sleep(500);
+  assert.strictEqual(radio.sa, "0", "SA0 on disable");
+  ts.applyDefaultCtcss(null, null);
 });
 
 test("setCwMode maps linear to MD3; supportsDataMode false", async () => {
