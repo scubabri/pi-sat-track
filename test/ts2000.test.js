@@ -890,3 +890,28 @@ test("dropped/hung reply during knob absorb → tracking resumes (no permanent s
   assert.notStrictEqual(radio.fa, before, "FA still updating after hang");
   ts.setRadio(false); await sleep(300); ts.close();
 });
+
+test("hard-timeout timer not leaked: 50 commands → 0 timeout logs, none after close", async () => {
+  resetRadio();
+  radio.sa = "1"; radio.saFull = "1010000";
+  ts.close(); ts._test.setCwModeFlag(false);
+  ts.init(ctxFor("RS-44"));
+  const warns = [];
+  const ow = console.warn;
+  console.warn = (...a) => { warns.push(a.join(" ")); ow(...a); };
+  try {
+    ts.setRadio(true);
+    await sleep(50);
+    for (let i = 0; i < 25; i++) { await ts.pushFrequencies(145965000 + i * 3, 435640000 - i * 9); await sleep(60); }
+    const n = radio.cmds.length;
+    assert.ok(n >= 50, "ran >=50 cmds: " + n);
+    await sleep(2500);
+    assert.strictEqual(warns.filter((w) => /hard timeout/.test(w)).length, 0, "no timeout while running");
+    ts.setRadio(false);
+    await sleep(3000);
+    assert.strictEqual(warns.filter((w) => /hard timeout/.test(w)).length, 0, "no timeout after close");
+  } finally {
+    console.warn = ow;
+    ts.close();
+  }
+});
