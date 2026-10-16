@@ -38,6 +38,12 @@
   border-color: var(--accent);
 }
 
+.qso-log-call:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  color: var(--text-dim);
+}
+
 .btn-qso-log {
   flex: 0 0 auto;
   padding: 0 14px;

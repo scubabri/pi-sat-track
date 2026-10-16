@@ -491,6 +491,13 @@ wss.on("connection", (ws, req) => {
   );
   ws.send(JSON.stringify(profiles.publicPayload()));
   ws.send(JSON.stringify(wsjtxStatusPayload()));
+  ws.send(
+    JSON.stringify({
+      type: "endpoints",
+      ...config.getEndpoints(),
+      rotorCatalog: rotors.catalog(),
+    }),
+  );
   ws.send(JSON.stringify(decodeStore.payload()));
   // Re-send shortly after: the sidebar logging script hooks the socket
   // asynchronously and can miss the first message.
@@ -498,6 +505,13 @@ wss.on("connection", (ws, req) => {
     try {
       if (ws.readyState === 1) {
         ws.send(JSON.stringify(wsjtxStatusPayload()));
+        ws.send(
+          JSON.stringify({
+            type: "endpoints",
+            ...config.getEndpoints(),
+            rotorCatalog: rotors.catalog(),
+          }),
+        );
         ws.send(JSON.stringify(decodeStore.payload()));
       }
     } catch (_) {}
