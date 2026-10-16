@@ -68,6 +68,11 @@ class FakePort {
   }
   write(data, cb) {
     const s = data.toString("ascii");
+    if (radio.hangNextFaRead && s === "FA;") {
+      radio.hangNextFaRead = false;
+      radio.cmds.push("FA(hung)");
+      return; // never call cb, never reply
+    }
     radio.inflight += 1;
     if (radio.inflight > 1) radio.overlap += 1;
     const parts = s.split(";").filter(Boolean);
@@ -78,6 +83,12 @@ class FakePort {
       if (up === "FA") {
         const v = radio.faRound ? Math.round(radio.fa / radio.faRound) * radio.faRound : radio.fa;
         reply += "FA" + String(v).padStart(11, "0") + ";";
+      } else if (up.startsWith("FB") && up.length > 2 && radio.rejectFb) {
+        reply += "?;";
+      } else if (up.startsWith("FA") && up.length > 2 && radio.swapFaFb) {
+        radio.fb = parseInt(up.slice(2), 10);
+      } else if (up.startsWith("FB") && up.length > 2 && radio.swapFaFb) {
+        radio.fa = parseInt(up.slice(2), 10);
       } else if (up.startsWith("FA") && up.length > 2) {
         radio.fa = parseInt(up.slice(2), 10);
         reply += ";"; // set ack empty-ish — kenwood often silent on set
@@ -165,6 +176,9 @@ catalog.getCatalog = () => ({
       },
     ],
   },
+  "JO-97": {
+    modes: [{ mode: "SSB", uplink: "435.100-435.120", downlink: "145.855-145.875" }],
+  },
   ISS: {
     modes: [{ mode: "FM", uplink: "145.825", downlink: "145.825" }],
   },
@@ -195,6 +209,9 @@ function resetRadio() {
   radio.faRound = 0;
   radio.rejectSaOff = false;
   radio.rejectP4 = false;
+  radio.rejectFb = false;
+  radio.hangNextFaRead = false;
+  radio.swapFaFb = false;
   radio.rejectMd = false;
   radio.cmds = [];
   radio.overlap = 0;
@@ -421,7 +438,7 @@ test("SA already on → kept on", async () => {
   assert.strictEqual(radio.cmds.filter((c) => c === "SA1011000").length, 1, "one mode-set SAT cycle");
 });
 
-test("SO-50 FM in SAT: no SUB/tone cmds, disable leaves SAT on", async () => {
+test("SO-50 FM in SAT: no SUB/tone cmds, disable restores SA", async () => {
   resetRadio();
   ts.close();
   ts.init({
@@ -441,7 +458,7 @@ test("SO-50 FM in SAT: no SUB/tone cmds, disable leaves SAT on", async () => {
   assert.strictEqual(radio.dc[1], "0");
   ts.setRadio(false);
   await sleep(500);
-  assert.strictEqual(radio.sa, "1", "SAT left on at disable");
+  assert.strictEqual(radio.sa, "0", "SA restored as found on enable");
   ts.applyDefaultCtcss(null, null);
 });
 
@@ -543,7 +560,7 @@ test("disable stops writes immediately and closes port", async () => {
   radio.cmds = [];
   await Promise.all(p).catch(() => {});
   await sleep(300);
-  assert.strictEqual(radio.cmds.length, 0, "no writes after disable: " + radio.cmds.join(","));
+  assert.ok(!radio.cmds.some((c) => /^(FA\d|FB\d|MD\d|DC)/i.test(c)), "no writes after disable: " + radio.cmds.join(","));
   assert.strictEqual(ts._test.getLinks().dl.connected, false);
 });
 
@@ -750,4 +767,126 @@ test("SAT knob: continuous turning over 4 s is absorbed, no snap-back", async ()
   ts.setRadio(false);
   await sleep(100);
   ts.close();
+});
+
+function ctxFor(key) {
+  return { getContext: () => ({ currentSatKey: key, currentModeIndex: 0, satrec: null, observer: null }), broadcast: () => {} };
+}
+
+test("JO-97 (UL 70cm / DL 2m): P3=0 → MAIN=UL 70cm, FA=DL 145, FB=UL 435", async () => {
+  resetRadio();
+  radio.sa = "1"; radio.saFull = "1010000";
+  ts.close(); ts._test.setCwModeFlag(false);
+  ts.init(ctxFor("JO-97"));
+  ts.setRadio(true);
+  await sleep(50);
+  for (let i = 0; i < 3; i++) { await ts.pushFrequencies(435110000 + i, 145865000 - i); await sleep(250); }
+  assert.strictEqual(ts._test.getWantP3(), "0");
+  assert.ok(radio.cmds.includes("SA1000000"), "SA P3=0 sent");
+  assert.strictEqual(radio.saFull[2], "0");
+  assert.ok(Math.abs(radio.fa - 145865000) < 10, "FA=DL 2m " + radio.fa);
+  assert.ok(Math.abs(radio.fb - 435110000) < 10, "FB=UL 70cm " + radio.fb);
+  assert.ok(radio.cmds.includes("SA1001000"), "SUB mode cycle uses P3=0 base");
+  ts.setRadio(false); await sleep(300); ts.close();
+});
+
+test("RS-44 (UL 2m / DL 70cm): P3=1, FA=DL 435, FB=UL 145", async () => {
+  resetRadio();
+  radio.sa = "1"; radio.saFull = "1000000";
+  ts.close(); ts._test.setCwModeFlag(false);
+  ts.init(ctxFor("RS-44"));
+  ts.setRadio(true);
+  await sleep(50);
+  for (let i = 0; i < 3; i++) { await ts.pushFrequencies(145965000 + i, 435640000 - i); await sleep(250); }
+  assert.strictEqual(ts._test.getWantP3(), "1");
+  assert.strictEqual(radio.saFull[2], "1");
+  assert.ok(Math.abs(radio.fa - 435640000) < 10);
+  assert.ok(Math.abs(radio.fb - 145965000) < 10);
+  ts.setRadio(false); await sleep(300); ts.close();
+});
+
+test("FA/FB band verify: radio maps FA to UL → driver swaps", async () => {
+  resetRadio();
+  radio.sa = "1"; radio.saFull = "1000000"; radio.swapFaFb = true;
+  ts.close(); ts._test.setCwModeFlag(false);
+  ts.init(ctxFor("JO-97"));
+  ts.setRadio(true);
+  await sleep(50);
+  for (let i = 0; i < 5; i++) { await ts.pushFrequencies(435110000 + i * 3, 145865000 - i * 3); await sleep(250); }
+  assert.strictEqual(ts._test.getFaIsDl(), false, "swapped");
+  // Fake: FA cmd → fb store. DL (145) must land in radio.fa via FB cmd.
+  assert.ok(Math.abs(radio.fa - 145865000) < 30, "DL in place " + radio.fa);
+  assert.ok(Math.abs(radio.fb - 435110000) < 30, "UL in place " + radio.fb);
+  ts.setRadio(false); await sleep(300); ts.close();
+});
+
+test("FB nak flood → backoff (not every tick)", async () => {
+  resetRadio();
+  radio.sa = "1"; radio.saFull = "1010000"; radio.rejectFb = true;
+  ts.close(); ts._test.setCwModeFlag(false);
+  ts.init(ctxFor("RS-44"));
+  ts.setRadio(true);
+  await sleep(50);
+  for (let i = 0; i < 10; i++) { await ts.pushFrequencies(145965000 + i * 5, 435640000 - i * 5); await sleep(150); }
+  const fbSets = radio.cmds.filter((c) => /^FB\d/i.test(c)).length;
+  assert.ok(fbSets <= 4, "FB backoff: " + fbSets);
+  ts.setRadio(false); await sleep(300); ts.close();
+});
+
+test("disable restores SA as found on enable", async () => {
+  resetRadio();
+  radio.sa = "0"; radio.saFull = "0010000";
+  ts.close(); ts._test.setCwModeFlag(false);
+  ts.init(ctxFor("RS-44"));
+  ts.setRadio(true);
+  await sleep(50);
+  await ts.pushFrequencies(145965000, 435640000);
+  await sleep(300);
+  assert.strictEqual(radio.sa, "1");
+  ts.setRadio(false);
+  await sleep(800);
+  assert.ok(radio.cmds.includes("SA0010000"), "restore sent");
+  assert.strictEqual(radio.sa, "0", "SAT restored off");
+  ts.close();
+});
+
+test("sat switch RS-44 → JO-97 re-sets SA P3 and redoes mode cycle", async () => {
+  resetRadio();
+  radio.sa = "1"; radio.saFull = "1010000";
+  ts.close(); ts._test.setCwModeFlag(false);
+  let key = "RS-44";
+  ts.init({ getContext: () => ({ currentSatKey: key, currentModeIndex: 0, satrec: null, observer: null }), broadcast: () => {} });
+  ts.setRadio(true);
+  await sleep(50);
+  for (let i = 0; i < 2; i++) { await ts.pushFrequencies(145965000, 435640000); await sleep(250); }
+  radio.cmds = [];
+  key = "JO-97";
+  for (let i = 0; i < 4; i++) { await ts.pushFrequencies(435110000, 145865000); await sleep(250); }
+  assert.ok(radio.cmds.includes("SA1000000"), "SA P3=0 on switch");
+  assert.ok(radio.cmds.includes("SA1001000"), "mode cycle redone");
+  assert.ok(Math.abs(radio.fa - 145865000) < 10);
+  assert.ok(Math.abs(radio.fb - 435110000) < 10);
+  ts.setRadio(false); await sleep(300); ts.close();
+});
+
+test("dropped/hung reply during knob absorb → tracking resumes (no permanent stall)", async () => {
+  resetRadio();
+  radio.sa = "1"; radio.saFull = "1010000";
+  ts.close(); ts._test.setCwModeFlag(false); ts._test.setManualDlOffset(0);
+  ts.init(ctxFor("RS-44"));
+  ts.setLock(false);
+  ts.setRadio(true);
+  await sleep(50);
+  const tick = (i) => ts.pushFrequencies(145965000 - ts._test.getManualDlOffset(), 435640000 - i * 20 + ts._test.getManualDlOffset());
+  for (let i = 0; i < 6; i++) { await tick(i); await sleep(250); }
+  radio.fa += 500; // knob
+  radio.hangNextFaRead = true;
+  const t0 = Date.now();
+  let i = 6;
+  while (Date.now() - t0 < 6000) { tick(i++); await sleep(250); }
+  const before = radio.fa;
+  for (let k = 0; k < 6; k++) { tick(i++); await sleep(250); }
+  assert.ok(radio.cmds.includes("FA(hung)"), "hang injected");
+  assert.notStrictEqual(radio.fa, before, "FA still updating after hang");
+  ts.setRadio(false); await sleep(300); ts.close();
 });
