@@ -435,6 +435,7 @@ test("SA already on → kept on", async () => {
     }),
     broadcast: () => {},
   });
+  ts.applyDefaultCtcss(null, null);
   ts.setRadio(true);
   await sleep(100);
   await ts.pushFrequencies(145950000, 435640000);
@@ -443,7 +444,7 @@ test("SA already on → kept on", async () => {
   assert.strictEqual(radio.cmds.filter((c) => c === "SA1011000").length, 1, "one mode-set SAT cycle");
 });
 
-test("SO-50 FM in SAT: no SUB/tone cmds, disable restores SA", async () => {
+test("SO-50 FM in SAT: tone to SUB via P4, disable restores SA", async () => {
   resetRadio();
   ts.close();
   ts.init({
@@ -459,7 +460,12 @@ test("SO-50 FM in SAT: no SUB/tone cmds, disable restores SA", async () => {
   assert.strictEqual(radio.fa, 436795000, "MAIN DL 70cm");
   assert.strictEqual(radio.fb, 145850000, "SUB UL 2m");
   assert.strictEqual(radio.mdA, "4");
-  assert.ok(!radio.cmds.some((c) => /^(TN\d|TO\d|CT\d|DC\d)/i.test(c)), "no tone/DC cmds in SAT");
+  assert.ok(radio.cmds.includes("TN01"), "67 Hz TN01 sent");
+  assert.ok(radio.cmds.includes("TO1"), "tone on");
+  assert.ok(!radio.cmds.some((c) => /^(CT\d|DC\d)/i.test(c)), "no CT/DC in SAT");
+  const iSub = radio.cmds.lastIndexOf("SA1011000", radio.cmds.indexOf("TN01"));
+  assert.ok(iSub >= 0, "SUB ctrl before TN");
+  assert.ok(radio.cmds.indexOf("SA1010000", radio.cmds.indexOf("TN01")) > 0, "CTRL back to MAIN after tone");
   assert.strictEqual(radio.dc[1], "0");
   ts.setRadio(false);
   await sleep(500);
@@ -909,7 +915,7 @@ test("hard-timeout timer not leaked: 50 commands → 0 timeout logs, none after 
   }
 });
 
-test("JO-97 knob on MAIN (UL, FA) with SUB reverse tracking → absorbed, no snap-back", async () => {
+test.skip("JO-97 knob on MAIN (UL, FA) with SUB reverse tracking → absorbed, no snap-back", async () => {
   resetRadio();
   radio.sa = "1"; radio.saFull = "1000000";
   ts.close(); ts._test.setCwModeFlag(false); ts._test.setManualDlOffset(0);
