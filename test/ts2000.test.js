@@ -76,7 +76,8 @@ class FakePort {
       radio.cmds.push(cmd);
       const up = cmd.toUpperCase();
       if (up === "FA") {
-        reply += "FA" + String(radio.fa).padStart(11, "0") + ";";
+        const v = radio.faRound ? Math.round(radio.fa / radio.faRound) * radio.faRound : radio.fa;
+        reply += "FA" + String(v).padStart(11, "0") + ";";
       } else if (up.startsWith("FA") && up.length > 2) {
         radio.fa = parseInt(up.slice(2), 10);
         reply += ";"; // set ack empty-ish — kenwood often silent on set
@@ -191,6 +192,7 @@ function resetRadio() {
   radio.tnMain = null;
   radio.rejectSa = false;
   radio.dcLocked = false;
+  radio.faRound = 0;
   radio.rejectMd = false;
   radio.cmds = [];
   radio.overlap = 0;
@@ -257,8 +259,13 @@ test("SAT mode: SA1010000, MAIN=DL FA, SUB=UL FB, MAIN MD only, cached", async (
   assert.strictEqual(radio.mdA, "2", "DL USB on MAIN");
   assert.ok(!radio.cmds.some((c) => /^DC\d/i.test(c) || /^SA1011/i.test(c)), "no control switching");
   assert.strictEqual(radio.dc[1], "0", "CTRL restored to MAIN");
-  assert.ok(!radio.cmds.some((c) => /^F[RT]\d/i.test(c)), "no FR/FT in SATL");
-  assert.strictEqual(mdFirst, 1, "MD for MAIN only");
+  {
+    const a = radio.cmds.indexOf("SA0"), b = radio.cmds.lastIndexOf("SA1010000");
+    radio.cmds.forEach((c, i) => {
+      if (/^F[RT]\d/i.test(c)) assert.ok(i > a && i < b, "FR/FT only while SAT off");
+    });
+  }
+  assert.strictEqual(mdFirst, 2, "MD DL+UL once via split cycle");
 
   radio.cmds = [];
   // Same freqs again — caches should skip FR1/MD for B and FA/FB
@@ -406,7 +413,7 @@ test("SA already on → kept on", async () => {
   await ts.pushFrequencies(145950000, 435640000);
   await sleep(300);
   assert.strictEqual(radio.sa, "1", "SAT kept on");
-  assert.ok(!radio.cmds.some((c) => /^SA1/i.test(c)), "already SA1 P2=0 → no resend");
+  assert.strictEqual(radio.cmds.filter((c) => c === "SA0").length, 1, "one mode-set SAT cycle");
 });
 
 test("SO-50 FM in SAT: no SUB/tone cmds, disable leaves SAT on", async () => {
@@ -605,8 +612,42 @@ test("SAT: many ticks over time keep updating FA/FB (no stall)", async () => {
   const firstSa = radio.cmds.findIndex((c) => /^SA/i.test(c));
   const firstWrite = radio.cmds.findIndex((c) => /^(FA\d|FB\d|MD\d|F[RT]\d)/i.test(c));
   assert.ok(firstSa >= 0 && firstSa < firstWrite, "SA before any write");
-  assert.ok(!radio.cmds.some((c) => /^F[RT]\d/i.test(c)), "no FR/FT");
+  assert.ok(radio.cmds.filter((c) => /^F[RT]\d/i.test(c)).every((c, _i) => radio.cmds.indexOf("SA0") >= 0), "FR/FT only in mode-set cycle");
   ts.setLock(false);
+  ts.setRadio(false);
+  await sleep(100);
+  ts.close();
+});
+
+test("SAT: UL mode via SA0 split once, then real tick path w/ 10 Hz FA rounding keeps tracking", async () => {
+  resetRadio();
+  radio.sa = "1";
+  radio.saFull = "1010000";
+  radio.mdB = "2";
+  radio.faRound = 10;
+  ts.close();
+  ts._test.setCwModeFlag(false);
+  ts.init({
+    getContext: () => ({ currentSatKey: "RS-44", currentModeIndex: 0, satrec: null, observer: null }),
+    broadcast: () => {},
+  });
+  ts.setLock(false);
+  ts.setRadio(true);
+  await sleep(50);
+  const faSeen = new Set();
+  const fbSeen = new Set();
+  for (let i = 0; i < 20; i++) {
+    await ts.pushFrequencies(145965000 + i * 7, 435640000 - i * 23);
+    await sleep(300);
+    faSeen.add(radio.fa);
+    fbSeen.add(radio.fb);
+  }
+  assert.strictEqual(radio.sa, "1", "back in SAT");
+  assert.strictEqual(radio.mdB, "1", "UL LSB set via split");
+  assert.strictEqual(radio.mdA, "2", "DL USB");
+  assert.strictEqual(radio.cmds.filter((c) => c === "SA0").length, 1, "SA0 once");
+  assert.ok(faSeen.size >= 12, "FA kept tracking: " + faSeen.size);
+  assert.ok(fbSeen.size >= 12, "FB kept tracking: " + fbSeen.size);
   ts.setRadio(false);
   await sleep(100);
   ts.close();
