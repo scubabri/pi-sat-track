@@ -710,3 +710,44 @@ test("SAT: P4 rejected → split fallback sets UL mode", async () => {
   await sleep(100);
   ts.close();
 });
+
+test("SAT knob: continuous turning over 4 s is absorbed, no snap-back", async () => {
+  resetRadio();
+  radio.sa = "1";
+  radio.saFull = "1010000";
+  ts.close();
+  ts._test.setCwModeFlag(false);
+  ts._test.setManualDlOffset(0);
+  ts.init({
+    getContext: () => ({ currentSatKey: "RS-44", currentModeIndex: 0, satrec: null, observer: null }),
+    broadcast: () => {},
+  });
+  ts.setLock(false);
+  ts.setRadio(true);
+  await sleep(50);
+  const base = 435640000;
+  // state.js-like: DL = doppler + manualDlOffset
+  const tick = (i) => ts.pushFrequencies(145965000 - ts._test.getManualDlOffset(), base - i * 5 + ts._test.getManualDlOffset());
+  for (let i = 0; i < 6; i++) { await tick(i); await sleep(250); }
+  // user turns knob: +100 Hz every 200 ms for 4 s; SUB moves opposite (radio reverse tracking)
+  let knob = radio.fa;
+  let snaps = 0;
+  for (let k = 0; k < 20; k++) {
+    knob += 100;
+    radio.fa = knob;
+    radio.fb -= 100;
+    await sleep(100);
+    await tick(6 + k);
+    await sleep(100);
+    if (radio.fa < knob - 50) snaps++;
+  }
+  assert.ok(snaps <= 1, "no snap-back while turning (1 in-flight write race allowed): " + snaps);
+  const off = ts._test.getManualDlOffset();
+  assert.ok(off > 1500, "absorbed ~2000 Hz: " + off);
+  // after knob stops, tracking resumes from the knob position
+  for (let k = 0; k < 8; k++) { await tick(26 + k); await sleep(250); }
+  assert.ok(Math.abs(radio.fa - knob) < 400, "resumed near knob pos: " + (radio.fa - knob));
+  ts.setRadio(false);
+  await sleep(100);
+  ts.close();
+});
