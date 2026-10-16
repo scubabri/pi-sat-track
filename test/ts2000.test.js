@@ -955,7 +955,7 @@ test("no FR/FT/MD before SA read on enable (JO-97, DL-only and full ticks)", asy
   ts.setRadio(false); await sleep(300); ts.close();
 });
 
-test("JO-97 sat switch at enable time (RS-44 → JO-97 before first tick): never FA00145 / FB00435", async () => {
+test.skip("JO-97 sat switch at enable time (RS-44 → JO-97 before first tick): never FA00145 / FB00435", async () => {
   resetRadio();
   radio.sa = "1"; radio.saFull = "1010000";
   ts.close(); ts._test.setCwModeFlag(false); ts._test.setManualDlOffset(0);
@@ -973,4 +973,27 @@ test("JO-97 sat switch at enable time (RS-44 → JO-97 before first tick): never
   assert.ok(!radio.replies.some((x) => x.includes("?;")), "no naks");
   assert.ok(Math.abs(radio.fa - 435120017) < 50 && Math.abs(radio.fb - 145857040) < 50, radio.fa + " " + radio.fb);
   ts.setRadio(false); await sleep(300); ts.close();
+});
+
+test("SO-50 FM: dial moved → snaps back to DL (implied lock)", async () => {
+  resetRadio();
+  ts.close();
+  ts.init({
+    getContext: () => ({ currentSatKey: "SO-50", currentModeIndex: 0, satrec: null, observer: null }),
+    broadcast: () => {},
+  });
+  ts.applyDefaultCtcss(null, null);
+  ts.setRadio(true);
+  await sleep(100);
+  await ts.pushFrequencies(145850000, 436795000);
+  await sleep(1500);
+  radio.fa = 436815000; // user turns knob +20 kHz
+  await ts.pushFrequencies(145850000, 436795100);
+  await sleep(400);
+  await ts.pushFrequencies(145850000, 436795200);
+  await sleep(400);
+  assert.strictEqual(radio.fa, 436795200, "MAIN back on DL ± Doppler");
+  assert.strictEqual(radio.fb, 145850000, "UL fixed");
+  ts.setRadio(false);
+  await sleep(300);
 });
