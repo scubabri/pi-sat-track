@@ -202,7 +202,7 @@
 .freq-block-split .freq-fine-btns { grid-column: 2; grid-row: 2; display: flex; gap: 6px; }
 .freq-block-split .fine-offset { grid-column: 2; grid-row: 3; min-width: 0; text-align: left; }
 .fine-tune-block { margin-top: 4px; }
-.fine-row .fine-side-step { width: auto; margin-right: 6px; }
+.fine-row .fine-side-step { width: 3.6em; min-width: 3.6em; flex: 0 0 3.6em; margin-right: 6px; }
 
 /* Step spinner: stacked ▲/▼ inside the right edge of the step box */
 .fine-row .step-spin {
