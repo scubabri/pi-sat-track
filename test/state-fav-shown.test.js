@@ -37,3 +37,19 @@ test("shown subset filters tracks and 24 h series", (t) => {
   state.setFavOverlayShown([]);
   assert.deepStrictEqual(state.computeFavoriteTracks().tracks, []);
 });
+
+test("globe orbits: one period, ~100 pts, honors shown", () => {
+  state.setFavorites(["ISS", "SO-50"]);
+  state.setFavOverlayShown(null);
+  const g = state.computeGlobeOrbits(new Date(Date.UTC(2026, 9, 7, 12)), 100);
+  assert.strictEqual(g.type, "globe-orbits");
+  const iss = g.sats.find((x) => x.key === "ISS");
+  assert(iss && iss.pts.length === 101);
+  assert(iss.periodMin > 88 && iss.periodMin < 96, "ISS period " + iss.periodMin);
+  for (const [la, lo, h] of iss.pts) {
+    assert(Math.abs(la) <= 52 && lo >= -180 && lo <= 180 && h > 300 && h < 500);
+  }
+  state.setFavOverlayShown(["SO-50"]);
+  assert.deepStrictEqual(state.computeGlobeOrbits(new Date(), 50).sats.map((x) => x.key), ["SO-50"]);
+  state.setFavOverlayShown(null);
+});

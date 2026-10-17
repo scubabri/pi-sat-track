@@ -604,6 +604,17 @@ wss.on("connection", (ws, req) => {
         if (fp) broadcast(fp);
         return;
       }
+      if (msg.type === "globe-orbits-get") {
+        // 3D globe: cached; recomputed on sat / favorites / TLE change or after 10 min.
+        const sig = state.favProfileSig();
+        const c = globeOrbitsCache;
+        if (!c.data || c.sig !== sig || Date.now() - c.data.time > 10 * 60 * 1000) {
+          c.data = state.computeGlobeOrbits(new Date(), 100);
+          c.sig = sig;
+        }
+        ws.send(JSON.stringify(Object.assign({ sig: c.sig }, c.data)));
+        return;
+      }
       if (msg.type === "fav-profile-get") {
         const fp = favProfileCached();
         if (fp) ws.send(JSON.stringify(fp));
@@ -1157,6 +1168,7 @@ setInterval(() => broadcastFavTracks(false), 5000);
 // Recomputed only when sats / TLEs / location change, else rolled every 10 min.
 const FAV_PROFILE_ROLL_MS = 10 * 60 * 1000;
 let favProfile = null;
+const globeOrbitsCache = { data: null, sig: "" };
 let favProfileSigLast = "";
 function favProfileCached(force) {
   const sig = state.favProfileSig();

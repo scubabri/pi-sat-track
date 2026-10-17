@@ -99,3 +99,47 @@
 .fav-picker-foot { display: flex; gap: 10px; align-items: center; margin-top: 4px; font-size: 10px; color: var(--text-dim, #8b949e); }
 .fav-picker-foot a { color: #58a6ff; text-decoration: none; }
 .fav-picker-foot span { margin-left: auto; }
+
+/* Map | Globe toggle + 3D globe view (js/globe-view.js) */
+.decode-toggle-control .map-view-btn .mv-seg { opacity: 0.6; }
+.decode-toggle-control .map-view-btn .mv-seg.on { opacity: 1; color: #c48a00; }
+.decode-toggle-control .map-view-btn .mv-sep { opacity: 0.35; margin: 0 4px; }
+#globe-view {
+  position: absolute;
+  inset: 0;
+  z-index: 450; /* above Leaflet panes (400), below Leaflet controls (800) */
+  background: #0a1628;
+}
+#globe-view[hidden] { display: none; }
+.globe-label {
+  color: #e6edf3;
+  font: 600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-shadow: 0 0 4px #000, 0 0 2px #000;
+  transform: translate(8px, -16px);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.globe-dot {
+  border-radius: 50%;
+  border: 1px solid #0d1117;
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.globe-label-station { color: #79c0ff; font-weight: 500; }
+.globe-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 3000;
+  background: rgba(13, 17, 23, 0.95);
+  border: 1px solid #d29922;
+  color: #e6edf3;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+/* Leaflet zoom / attribution don't apply to the globe */
+body.globe-mode #map .leaflet-control-zoom,
+body.globe-mode #map .leaflet-control-attribution { display: none; }
