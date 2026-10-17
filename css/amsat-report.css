@@ -4,3 +4,6 @@
 .amsat-inline .amsat-rep:disabled { opacity: .45; cursor: not-allowed; }
 .amsat-status { min-height: 1.1em; font-size: .75rem; margin-top: 4px; color: var(--text-dim, #999); }
 .amsat-status.ok { color: #66bb6a; } .amsat-status.err { color: #ef5350; }
+/* Heard already reported this pass (button or auto on logged QSO) */
+.amsat-inline .amsat-rep.sent { border-color: #66bb6a; color: #66bb6a; }
+.amsat-inline .amsat-rep.sent::after { content: " \2713"; }

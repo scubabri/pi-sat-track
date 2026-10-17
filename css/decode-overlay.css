@@ -48,3 +48,123 @@
 .leaflet-tooltip.fav-label.fav-dim { opacity: 0.35 !important; }
 /* Selected sat name label (map.js) */
 .leaflet-tooltip.decode-label.sel-sat-label { color: #58a6ff; font-weight: 800; font-size: 12px; background: rgba(10, 18, 28, 0.8); border-left: 2px solid #58a6ff; z-index: 1100; }
+
+/* Favorites overlay: per-profile picker (caret on the Favorites button) */
+.fav-overlay-btn .fav-pick-caret {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 2px;
+  opacity: 0.75;
+}
+.fav-overlay-btn .fav-pick-caret:hover { opacity: 1; }
+.fav-picker {
+  position: absolute;
+  right: 120px;
+  bottom: 60px;
+  z-index: 1100;
+  min-width: 170px;
+  max-height: 60%;
+  overflow-y: auto;
+  background: rgba(13, 17, 23, 0.94);
+  border: 1px solid var(--border, #30363d);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text, #e6edf3);
+}
+.fav-picker-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.fav-picker-profile {
+  font-weight: 500;
+  font-size: 10px;
+  color: #79c0ff;
+  border: 1px solid #1f6feb;
+  border-radius: 8px;
+  padding: 0 6px;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fav-picker-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
+.fav-picker-row input { margin: 0; }
+.fav-picker-sw { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.fav-picker-empty { color: var(--text-dim, #8b949e); padding: 4px 0; }
+.fav-picker-foot { display: flex; gap: 10px; align-items: center; margin-top: 4px; font-size: 10px; color: var(--text-dim, #8b949e); }
+.fav-picker-foot a { color: #58a6ff; text-decoration: none; }
+.fav-picker-foot span { margin-left: auto; }
+
+/* Map | Globe toggle + 3D globe view (js/globe-view.js) */
+.decode-toggle-control .map-view-btn .mv-seg { opacity: 0.6; }
+.decode-toggle-control .map-view-btn .mv-seg.on { opacity: 1; color: #c48a00; }
+.decode-toggle-control .map-view-btn .mv-sep { opacity: 0.35; margin: 0 4px; }
+#globe-view {
+  position: absolute;
+  inset: 0;
+  z-index: 450; /* above Leaflet panes (400), below Leaflet controls (800) */
+  background: #0a1628;
+}
+#globe-view[hidden] { display: none; }
+.globe-label {
+  color: #e6edf3;
+  font: 600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-shadow: 0 0 4px #000, 0 0 2px #000;
+  transform: translate(8px, -16px);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.globe-dot {
+  border-radius: 50%;
+  border: 1px solid #0d1117;
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.globe-label-station { color: #79c0ff; font-weight: 500; }
+/* Selected-sat 2-line label (name + AOS/LOS, then El / Range / Alt) */
+.globe-sel-anchor { width: 0; height: 0; overflow: visible; pointer-events: none; }
+.globe-label.globe-sel-label { position: absolute; left: 9px; top: 0; transform: translateY(-50%); }
+.globe-label.globe-label-2l { white-space: pre; line-height: 1.35; }
+.leaflet-tooltip.decode-label.sel-sat-label .sel-sat-l2 { font-size: 11px; font-weight: 600; color: #e6edf3; }
+.globe-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 3000;
+  background: rgba(13, 17, 23, 0.95);
+  border: 1px solid #d29922;
+  color: #e6edf3;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+/* Leaflet zoom / attribution don't apply to the globe */
+body.globe-mode #map .leaflet-control-zoom,
+body.globe-mode #map .leaflet-control-attribution { display: none; }
+
+/* Map station label (matches .globe-label-station) */
+.leaflet-tooltip.station-label { background: transparent; border: 0; box-shadow: none; padding: 0; color: #79c0ff; font: 500 12px sans-serif; text-shadow: 0 0 3px #000, 0 0 3px #000; }
+.leaflet-tooltip.station-label::before { display: none; }
+
+/* Real-time clock, lower left of the map/globe */
+#rtc-clock { position: absolute; left: 12px; bottom: 8px; z-index: 1001; padding: 0; background: none; border: 0; color: rgba(230,237,243,0.3); font: 700 30px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 1px; text-shadow: 0 0 6px rgba(0,0,0,0.5); cursor: pointer; user-select: none; transition: color 0.15s; }
+#rtc-clock:hover { color: rgba(230,237,243,0.8); }
+
+/* Globe: Log-box callsign station (matches the map's yellow decode dot) */
+.globe-dx { width: 0; height: 0; overflow: visible; pointer-events: none; }
+.globe-dx-dot { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: #ffd34d; border: 1px solid #0b1e2d; }
+.globe-label.globe-dx-label { position: absolute; left: 8px; top: 0; transform: translateY(-50%); color: #ffd34d; white-space: nowrap; }
+
+/* Subsolar "SUN" spot (js/sun.js): map circleMarker label + globe html marker. Never captures clicks. */
+.leaflet-tooltip.sun-label { background: transparent; border: 0; box-shadow: none; padding: 0; color: #ffd34d; font: 700 11px sans-serif; text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; }
+.leaflet-tooltip.sun-label::before { display: none; }
+.globe-sun { width: 0; height: 0; overflow: visible; pointer-events: none; }
+.globe-sun-dot { position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border-radius: 50%; background: #ffd34d; border: 2px solid #ff9f1c; box-sizing: border-box; box-shadow: 0 0 6px rgba(255, 179, 71, 0.8); }
+.globe-label.globe-sun-label { position: absolute; left: 10px; top: 0; transform: translateY(-50%); color: #ffd34d; white-space: nowrap; pointer-events: none; }

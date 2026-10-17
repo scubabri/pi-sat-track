@@ -107,10 +107,11 @@
     const on = engaged();
     const disable = !on || busy;
     if (e.input) {
-      e.input.disabled = disable;
+      // Callsign can be typed anytime; only the Log button waits for Radio + Antenna.
+      e.input.disabled = busy;
       e.input.title = on
         ? "Callsign to log"
-        : "Enable Radio and Antenna to log";
+        : "Callsign to log (enable Radio and Antenna to log it)";
     }
     if (e.btn) {
       e.btn.disabled = disable;
