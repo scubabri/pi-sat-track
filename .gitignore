@@ -129,4 +129,5 @@ dist
 
 # Optional: OS generated files
 .DS_Store
-Thumbs.dbserver.log*
+Thumbs.db
+server.log*
