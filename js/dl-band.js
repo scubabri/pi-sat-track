@@ -5,10 +5,9 @@
  *   Uses the primary entry (text before the first "/"), the same one the tracker
  *   tunes. "29.400-29.500" (either order) is the transponder passband; a single
  *   frequency ("145.960") is a channel of +/- DL_SINGLE_TOL_HZ (10 kHz). Unparseable -> null.
- * dlOutOfBand({passbandDl, dlHz, dlDopplerHz}): compares the satellite-frame DL
- *   (displayed dlHz minus the Doppler correction the tracker applied, i.e. catalog
- *   centre + manual/fine offsets) against that passband, so Doppler on a pass can
- *   never trip it by itself. -> {oob, loHz, hiHz, satHz, text} or null if unknown.
+ * dlOutOfBand({passbandDl, dlHz}): compares the DISPLAYED downlink (what the
+ *   radio is tuned to, Doppler included; no Doppler removal) directly against
+ *   that passband, edges inclusive. -> {oob, loHz, hiHz, hz, text} or null if unknown.
  */
 (function (root) {
   const DL_SINGLE_TOL_HZ = 10000;
@@ -37,10 +36,9 @@
     if (!msg || msg.dlHz == null || !Number.isFinite(msg.dlHz)) return null;
     const pb = dlPassbandHz(msg.passbandDl);
     if (!pb) return null;
-    const dop = Number.isFinite(msg.dlDopplerHz) ? msg.dlDopplerHz : 0;
-    const satHz = msg.dlHz - dop;
-    const oob = satHz < pb.loHz - 0.5 || satHz > pb.hiHz + 0.5;
-    return { oob, loHz: pb.loHz, hiHz: pb.hiHz, satHz, text: "Out of band: DL passband " + fmtMHz(pb.loHz) + "\u2013" + fmtMHz(pb.hiHz) + " MHz" };
+    const hz = msg.dlHz;
+    const oob = hz < pb.loHz - 0.5 || hz > pb.hiHz + 0.5;
+    return { oob, loHz: pb.loHz, hiHz: pb.hiHz, hz, text: "Out of band: DL passband " + fmtMHz(pb.loHz) + "\u2013" + fmtMHz(pb.hiHz) + " MHz" };
   }
 
   const api = { dlPassbandHz, dlOutOfBand, DL_SINGLE_TOL_HZ };
