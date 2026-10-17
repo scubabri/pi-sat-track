@@ -41,9 +41,18 @@ module.exports = {
   },
 
   // Lifecycle
-  init({ getContext, broadcast }) {},
+  // init must NOT open any connection. Every driver is registered and
+  // inited, but only the radio selected by the active profile may connect.
+  // isActive() is true only for that driver, and only after the profile is
+  // applied (registry start()).
+  init({ getContext, broadcast, isActive }) {},
+  activate() {},          // optional: now the selected radio (radio may be off)
   setRadio(on /* boolean */) {},
+  // Only called on the selected driver(s). A driver that is no longer
+  // selected gets setRadio(false) (if on) or close(), and must drop every
+  // socket / serial port / timer / reconnect loop.
   applyEndpointChange(/* optional flags */) {},
+  close() {},
 
   // Doppler / VFO
   // ulHz or dlHz may be null when this driver only owns one side.

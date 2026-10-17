@@ -224,6 +224,8 @@ test("Flex profile: load once before CAT when selected; blank = no load", async 
     flex.init({
       getContext: () => ({ currentSatKey: "SO-50", currentModeIndex: 0 }),
     });
+    // Registry calls activate() once Flex is the active profile's radio.
+    flex.activate();
     flex.setLock(true);
     flex.setRadio(true);
 
@@ -342,6 +344,8 @@ test("Flex API connects for profile list with radio DISABLED", async () => {
     flex.init({
       getContext: () => ({ currentSatKey: "SO-50", currentModeIndex: 0 }),
     });
+    // Registry calls activate() once Flex is the active profile's radio.
+    flex.activate();
     // Do NOT enable radio — list should still arrive
     assert.strictEqual(flex.getRadioState().radioOn, false);
     for (let i = 0; i < 40 && !flex.getRadioState().apiConnected; i++)
@@ -399,6 +403,8 @@ test("Flex API: skip log when host unset", async () => {
     flex.init({
       getContext: () => ({ currentSatKey: null, currentModeIndex: 0 }),
     });
+    // Registry calls activate() once Flex is the active profile's radio.
+    flex.activate();
     await sleep(50);
     assert.ok(
       logs.some((l) => /Flex API: skip — no API host configured/.test(l)),
@@ -434,6 +440,8 @@ test("applyDefaultCtcss / radio-off must not close Flex API", async () => {
     flex.init({
       getContext: () => ({ currentSatKey: "SO-50", currentModeIndex: 0 }),
     });
+    // Registry calls activate() once Flex is the active profile's radio.
+    flex.activate();
     for (let i = 0; i < 40 && !flex.getRadioState().apiConnected; i++)
       await sleep(50);
     assert.ok(flex.getRadioState().apiConnected, "API up before CTCSS default");
