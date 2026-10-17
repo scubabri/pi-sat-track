@@ -52,6 +52,12 @@ function formatCountdownShort(sec) {
  * Otherwise:                    "NAME · AOS in 12m 34s · 14:05 UTC" / "Alt 568 km".
  * Returns { l1, l2, up } (l2 may be "").
  */
+/** "01:00:01" (HH:MM:SS) countdown for the sat-dot label. */
+function formatCountdownClock(sec) {
+  sec = Math.max(0, Math.floor(sec || 0));
+  const p = (n) => String(n).padStart(2, "0");
+  return p(Math.floor(sec / 3600)) + ":" + p(Math.floor((sec % 3600) / 60)) + ":" + p(sec % 60);
+}
 function satDotLabelLines(st, now) {
   if (!st) return null;
   now = now != null ? now : Date.now();
@@ -77,8 +83,8 @@ function satDotLabelLines(st, now) {
   const aosMs = new Date(pass.aos).getTime();
   const losMs = new Date(pass.los).getTime();
   if (aosMs <= now)
-    return out([name, "LOS in " + formatCountdownShort((losMs - now) / 1000), clock(losMs), el, rng, alt], true);
-  return out([name, "AOS in " + formatCountdownShort((aosMs - now) / 1000), clock(aosMs), rng, alt], false);
+    return out([name, "LOS " + formatCountdownClock((losMs - now) / 1000), clock(losMs), el, rng, alt], true);
+  return out([name, "AOS " + formatCountdownClock((aosMs - now) / 1000), clock(aosMs), rng, alt], false);
 }
 
 function renderPassTimes() {
