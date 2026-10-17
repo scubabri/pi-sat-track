@@ -6,7 +6,7 @@ const RADAR_RADIUS = RADAR_SIZE / 2 - 8;
 function initRadar() {
   radarCanvas = document.getElementById("radar-canvas");
   if (!radarCanvas) return;
-  radarCtx = radarCanvas.getContext("2d");
+  radarCtx = setupGaugeCanvas(radarCanvas);
   drawRadarBackground();
 }
 
@@ -39,7 +39,7 @@ function drawRadarBackground() {
   }
 
   ctx.fillStyle = "rgba(230, 237, 243, 0.85)";
-  ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  ctx.font = gaugeFont(11, '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif');
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
@@ -50,7 +50,7 @@ function drawRadarBackground() {
   ctx.fillText("W", cx - labelOffset + 8, cy);
 
   ctx.fillStyle = "rgba(139, 148, 158, 0.7)";
-  ctx.font = '9px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  ctx.font = gaugeFont(9, '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif');
   ctx.fillText("30°", cx + 4, cy - r * (1 - 30 / 90) + 3);
   ctx.fillText("60°", cx + 4, cy - r * (1 - 60 / 90) + 3);
 }

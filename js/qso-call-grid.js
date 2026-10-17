@@ -31,11 +31,13 @@
   function clearMap() {
     if (layer) layer.clearLayers();
   }
+  function notify() { try { document.dispatchEvent(new Event("qso-dx-change")); } catch (_) {} }
   function clearAll() {
     window.qsoDxGrid = null;
     pendingReq = null;
     clearMap();
     setText("");
+    notify();
   }
   function home() {
     if (typeof observerMarker !== "undefined" && observerMarker && observerMarker.getLatLng) {
@@ -72,6 +74,7 @@
     }
     return out;
   }
+  window.qsoGcPoints = gcPoints;
   function plot(call, grid) {
     const m = getMap();
     if (!m || typeof L === "undefined" || typeof maidenheadToLatLon !== "function") return null;
@@ -109,10 +112,12 @@
       window.qsoDxGrid = null;
       clearMap();
       setText("no lookup", true);
+      notify();
       return;
     }
     window.qsoDxGrid = { call: msg.call, grid: msg.grid, source: msg.source };
     const km = plot(msg.call, msg.grid);
+    notify();
     setText(msg.grid + (km != null ? " \u00b7 " + Math.round(km) + " km" : "") + (msg.source === "wsjtx" ? " (WSJT-X)" : ""));
   }
   function lookup(call) {
@@ -133,6 +138,7 @@
     }
     if (window.qsoDxGrid && window.qsoDxGrid.call !== call) {
       window.qsoDxGrid = null;
+      notify();
       clearMap();
       setText("");
     }
