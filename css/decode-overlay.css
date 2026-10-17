@@ -161,3 +161,10 @@ body.globe-mode #map .leaflet-control-attribution { display: none; }
 .globe-dx { width: 0; height: 0; overflow: visible; pointer-events: none; }
 .globe-dx-dot { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: #ffd34d; border: 1px solid #0b1e2d; }
 .globe-label.globe-dx-label { position: absolute; left: 8px; top: 0; transform: translateY(-50%); color: #ffd34d; white-space: nowrap; }
+
+/* Subsolar "SUN" spot (js/sun.js): map circleMarker label + globe html marker. Never captures clicks. */
+.leaflet-tooltip.sun-label { background: transparent; border: 0; box-shadow: none; padding: 0; color: #ffd34d; font: 700 11px sans-serif; text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; }
+.leaflet-tooltip.sun-label::before { display: none; }
+.globe-sun { width: 0; height: 0; overflow: visible; pointer-events: none; }
+.globe-sun-dot { position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border-radius: 50%; background: #ffd34d; border: 2px solid #ff9f1c; box-sizing: border-box; box-shadow: 0 0 6px rgba(255, 179, 71, 0.8); }
+.globe-label.globe-sun-label { position: absolute; left: 10px; top: 0; transform: translateY(-50%); color: #ffd34d; white-space: nowrap; pointer-events: none; }

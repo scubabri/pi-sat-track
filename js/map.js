@@ -145,6 +145,51 @@ function initMap() {
       iconAnchor: [11, 11],
     }),
   });
+
+  initSunLayer();
+}
+
+/**
+ * Day/night: translucent night polygon bounded by the terminator, a thin
+ * terminator line and a "SUN" spot at the subsolar point (js/sun.js).
+ * Own panes between tiles (200) and overlays (400) so tracks, footprints and
+ * sat markers stay on top; pointer-events off so nothing captures clicks.
+ * Drawn across three world copies (-540..540) for worldCopyJump; refreshed every 60 s.
+ */
+let nightPolygon = null;
+let terminatorLine = null;
+let sunMarker = null;
+function initSunLayer() {
+  if (!map || !window.sunCalc) return;
+  const night = map.createPane("nightPane");
+  night.style.zIndex = 350;
+  night.style.pointerEvents = "none";
+  const sunP = map.createPane("sunPane");
+  sunP.style.zIndex = 390;
+  sunP.style.pointerEvents = "none";
+  updateSunLayer();
+  setInterval(updateSunLayer, 60000);
+}
+
+function updateSunLayer() {
+  if (!map || !window.sunCalc) return;
+  const sun = window.sunCalc.subsolar(new Date());
+  const term = window.sunCalc.terminator(sun, -540, 540, 2);
+  const pole = window.sunCalc.nightPoleLat(sun);
+  const ring = term.concat([[pole, 540], [pole, -540]]);
+  if (!nightPolygon) {
+    nightPolygon = L.polygon(ring, { pane: "nightPane", stroke: false, fillColor: "#000", fillOpacity: 0.4, interactive: false, smoothFactor: 1 }).addTo(map);
+    terminatorLine = L.polyline(term, { pane: "nightPane", color: "#ffb347", weight: 1, opacity: 0.5, interactive: false }).addTo(map);
+  } else {
+    nightPolygon.setLatLngs(ring);
+    terminatorLine.setLatLngs(term);
+  }
+  if (!sunMarker) {
+    sunMarker = L.circleMarker([sun.lat, sun.lon], {
+      pane: "sunPane", radius: 9, color: "#ff9f1c", weight: 2, fillColor: "#ffd34d", fillOpacity: 0.9, interactive: false,
+    }).addTo(map);
+    sunMarker.bindTooltip("SUN", { permanent: true, direction: "right", offset: [10, 0], className: "sun-label", interactive: false });
+  } else sunMarker.setLatLng([sun.lat, sun.lon]);
 }
 
 /** Geometric horizon footprint radius (meters) from sat altitude */

@@ -29,6 +29,16 @@
   const footprint = { key: "__fp", footprint: true, color: "rgba(88,166,255,0.95)", w: 1.1, pts: [] };
   // Shaded footprint interior (polygon layer), same ring as the outline.
   const fpShade = { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [[]] } };
+  // Day/night (js/sun.js): a translucent black shell just above the surface
+  // whose per-vertex alpha follows the sun angle (night ~0.5, ~3 deg soft
+  // twilight edge), a thin terminator path and a non-interactive "SUN" marker.
+  // (globe.gl polygons were tried for the night cap: long thin pole strips
+  // triangulate with ragged edges and gaps.)
+  const NIGHT_ALPHA = 0.55;
+  let nightMesh = null; // three.js Mesh, or false if it couldn't be built
+  const terminatorPath = { key: "__term", footprint: true, color: "rgba(255,179,71,0.45)", w: 0.4, pts: [] };
+  const sunMark = { kind: "sun", lat: 0, lng: 0, alt: 0.006, text: "SUN" };
+  let sunAt = 0;
 
   function sock() { return typeof ws !== "undefined" && ws && ws.readyState === 1 ? ws : null; }
   function selColor() { return typeof SAT_SELECTED_COLOR !== "undefined" ? SAT_SELECTED_COLOR : "#58a6ff"; }
@@ -104,6 +114,10 @@
             e.className = "globe-dx";
             e.innerHTML = '<span class="globe-dx-dot"></span><span class="globe-label globe-dx-label"></span>';
             e.lastChild.textContent = d.text;
+            return e;
+          } else if (d.kind === "sun") {
+            e.className = "globe-sun";
+            e.innerHTML = '<span class="globe-sun-dot"></span><span class="globe-label globe-sun-label">SUN</span>';
             return e;
           } else if (d.kind === "sat") {
             // globe.gl owns the element's inline transform (centers it on the point),
@@ -217,6 +231,67 @@
     return out;
   }
 
+  /**
+   * Night shell: globe.gl bundles three.js but doesn't export it, so the
+   * constructors are borrowed from the globe's own mesh / material
+   * (SphereGeometry, MeshPhongMaterial, BufferAttribute, Mesh). Low-res
+   * (64x32 = 2145 vertices; 0.3% above the surface so the flat
+   * facets clear the 90x45 globe mesh), never raycast, no depth write.
+   */
+  function ensureNightMesh() {
+    if (nightMesh !== null || !G) return nightMesh;
+    try {
+      const gm = G.globeMaterial();
+      let gMesh = null;
+      G.scene().traverse((o) => { if (!gMesh && o.material === gm) gMesh = o; });
+      if (!gMesh || !gMesh.parent) return null; // globe mesh not built yet: retry on the next update
+      nightMesh = false;
+      const geo = new gMesh.geometry.constructor(G.getGlobeRadius() * 1.003, 64, 32);
+      const n = geo.attributes.position.count;
+      geo.setAttribute("color", new geo.attributes.position.constructor(new Float32Array(n * 4), 4));
+      const mat = new gm.constructor({ color: 0xffffff, vertexColors: true, transparent: true, depthWrite: false, shininess: 0 });
+      if (mat.specular) mat.specular.setRGB(0, 0, 0);
+      const m = new gMesh.constructor(geo, mat);
+      m.raycast = () => {}; // invisible to hover / click picking
+      m.renderOrder = 1;
+      m.name = "night-shell";
+      // Sibling of the globe mesh, unrotated: same frame as G.getCoords().
+      gMesh.parent.add(m);
+      nightMesh = m;
+    } catch (e) {
+      nightMesh = false;
+      console.warn("Globe night shell unavailable", e);
+    }
+    return nightMesh;
+  }
+
+  /** Recompute night shading / terminator / sun spot (cheap; at most once a minute). */
+  function updateSun(force) {
+    if (!window.sunCalc || !G) return;
+    const now = Date.now();
+    if (!force && now - sunAt < 60000) return;
+    sunAt = now;
+    const sc = window.sunCalc;
+    const sun = sc.subsolar(new Date(now));
+    sunMark.lat = sun.lat;
+    sunMark.lng = sun.lon;
+    terminatorPath.pts = sc.terminator(sun, -180, 180, 3).map((q) => [q[0], q[1], 0.003]);
+    const m = ensureNightMesh();
+    if (!m) { if (m === null) sunAt = 0; return; }
+    const c = G.getCoords(sun.lat, sun.lon, 0);
+    const cl = Math.hypot(c.x, c.y, c.z) || 1;
+    const sx = c.x / cl, sy = c.y / cl, sz = c.z / cl;
+    const pos = m.geometry.attributes.position, col = m.geometry.attributes.color;
+    const P = pos.array, C = col.array;
+    for (let i = 0, k = 0; i < pos.count; i++, k += 3) {
+      const x = P[k], y = P[k + 1], z = P[k + 2];
+      const cosZ = (x * sx + y * sy + z * sz) / (Math.hypot(x, y, z) || 1); // cos(sun zenith angle)
+      C[i * 4 + 2] = 0.02;
+      C[i * 4 + 3] = NIGHT_ALPHA * Math.min(1, Math.max(0, 0.5 - cosZ * 9));
+    }
+    col.needsUpdate = true;
+  }
+
   function point(key) {
     let p = pts.get(key);
     if (!p) { p = { kind: "dot", key, lat: 0, lng: 0, alt: 0, color: "#fff", r: 0.4, display: key }; pts.set(key, p); }
@@ -266,6 +341,7 @@
       });
     }
     if (footprint.pts.length > 1) paths.push(footprint);
+    if (terminatorPath.pts.length > 1) paths.push(terminatorPath);
     const dx = dxItems();
     if (dx && dx.path) paths.push(dx.path);
     G.pathsData(paths);
@@ -330,6 +406,7 @@
       fpShade.geometry.coordinates = [footprint.pts.map((q) => [q[1], q[0]])];
       G.polygonsData([fpShade]);
     }
+    updateSun(false);
     if (favOn()) {
       const shown = typeof window.favOverlayShown === "function" ? window.favOverlayShown() : null;
       const ok = shown ? new Set(shown) : null;
@@ -347,10 +424,11 @@
     if (pT && lastState.position) { ghost.lat = lastState.position.lat; ghost.lng = lastState.position.lon; ghost.alt = (lastState.position.heightKm || 0) / RE_KM; extra.push(ghost); }
     const dx = dxItems();
     if (dx) extra.push(dx.mk);
+    if (sunMark.lat || sunMark.lng) extra.push(sunMark);
     G.htmlElementsData([...pts.values(), stLabel].concat(st.position ? [selLabel] : [], extra));
     // footprint moves with the sat: refresh paths cheaply (same orbit arrays)
     if (orbits) renderPaths();
-    else G.pathsData((footprint.pts.length > 1 ? [footprint] : []).concat(dx && dx.path ? [dx.path] : []));
+    else G.pathsData((footprint.pts.length > 1 ? [footprint] : []).concat(terminatorPath.pts.length > 1 ? [terminatorPath] : [], dx && dx.path ? [dx.path] : []));
   }
 
   function onVisibility() {
@@ -374,9 +452,11 @@
         el.hidden = false;
         G.width(el.clientWidth).height(el.clientHeight);
         onVisibility();
+        updateSun(true);
         requestOrbits();
         applyState(true);
-        if (!orbitTimer) orbitTimer = setInterval(requestOrbits, 60000);
+        // 60 s: orbits + sun / terminator / night shading
+        if (!orbitTimer) orbitTimer = setInterval(() => { requestOrbits(); updateSun(true); applyState(true); }, 60000);
       }).catch((e) => {
         console.warn("Globe load failed", e);
         toast("Couldn't load the 3D globe; staying on Map.");
