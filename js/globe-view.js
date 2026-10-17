@@ -264,7 +264,12 @@
       if (mat.specular) mat.specular.setRGB(0, 0, 0);
       const m = new gMesh.constructor(geo, mat);
       m.raycast = () => {}; // invisible to hover / click picking
-      m.renderOrder = 1;
+      // Drawn first among the transparent layers. It writes no depth, so the
+      // footprint fill / paths drawn after it blend over it everywhere. With a
+      // later renderOrder the shell was depth-tested against the footprint
+      // fill (which writes depth): its flat facets poked through the fill's
+      // own facets as dark diamonds and the rest of the fill hid the night.
+      m.renderOrder = -1;
       m.name = "night-shell";
       // Sibling of the globe mesh, unrotated: same frame as G.getCoords().
       gMesh.parent.add(m);
