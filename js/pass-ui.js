@@ -277,3 +277,27 @@ if (document.readyState === "loading") {
 } else {
   initTleSourceUi();
 }
+
+/* ---- Real-time clock (lower left of the map/globe); click toggles UTC / local ---- */
+(function initRtcClock() {
+  function tick() {
+    const el = document.getElementById("rtc-clock");
+    if (!el) return;
+    const d = new Date();
+    el.textContent = timeMode === "utc"
+      ? d.toISOString().substr(11, 8) + " UTC"
+      : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) + " MT";
+  }
+  function start() {
+    const el = document.getElementById("rtc-clock");
+    if (!el) return;
+    el.addEventListener("click", (e) => { e.stopPropagation(); toggleTimeMode(); });
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleTimeMode(); } });
+    ["pointerdown", "mousedown", "dblclick", "wheel"].forEach((ev) => el.addEventListener(ev, (e) => e.stopPropagation()));
+    window.addEventListener("time-mode-change", tick);
+    tick();
+    setInterval(tick, 1000);
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+  else start();
+})();

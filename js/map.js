@@ -288,6 +288,13 @@ function centerOnGrid(grid, keepZoom) {
   if (observerMarker) {
     observerMarker.setLatLng([pos.lat, pos.lon]);
     if (!map.hasLayer(observerMarker)) observerMarker.addTo(map);
+    // Station label (callsign, or grid if none), matching the globe's "⌂ CALL".
+    let call = "";
+    try { const c = typeof loadConfig === "function" ? loadConfig() : null; call = (c && c.callsign) || ""; } catch (_) {}
+    const txt = "\u2302 " + (call || grid);
+    if (!observerMarker.getTooltip()) {
+      observerMarker.bindTooltip(txt, { permanent: true, direction: "right", offset: [10, 0], className: "station-label" });
+    } else observerMarker.setTooltipContent(txt);
   }
 
   // Load/config-driven recenter: respect a stored mid-Atlantic choice

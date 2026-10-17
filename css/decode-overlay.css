@@ -148,3 +148,11 @@
 /* Leaflet zoom / attribution don't apply to the globe */
 body.globe-mode #map .leaflet-control-zoom,
 body.globe-mode #map .leaflet-control-attribution { display: none; }
+
+/* Map station label (matches .globe-label-station) */
+.leaflet-tooltip.station-label { background: transparent; border: 0; box-shadow: none; padding: 0; color: #79c0ff; font: 500 12px sans-serif; text-shadow: 0 0 3px #000, 0 0 3px #000; }
+.leaflet-tooltip.station-label::before { display: none; }
+
+/* Real-time clock, lower left of the map/globe */
+#rtc-clock { position: absolute; left: 10px; bottom: 10px; z-index: 1001; padding: 3px 8px; border-radius: 6px; background: rgba(13,17,23,0.75); border: 1px solid #30363d; color: #e6edf3; font: 600 15px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; cursor: pointer; user-select: none; }
+#rtc-clock:hover { border-color: #58a6ff; }
