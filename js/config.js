@@ -95,6 +95,7 @@ function sendEndpointsToServer(cfg) {
       rotorParkEl: cfg.rotorParkEl,
       rotorElMax: cfg.rotorElMax != null ? cfg.rotorElMax : 180,
       rotorMinEl: cfg.rotorMinEl != null ? cfg.rotorMinEl : 0,
+      rotorAfterLos: cfg.rotorAfterLos || "none",
       rotorAzOnly: !!cfg.rotorAzOnly,
       rotorAzStop: cfg.rotorAzStop || "north",
       logMethod: cfg.logMethod || "off",

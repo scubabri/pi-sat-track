@@ -444,6 +444,11 @@ function connectTracker() {
         return;
       }
 
+      if (msg.type === "after-los") {
+        if (typeof showAfterLosToast === "function") showAfterLosToast(msg);
+        return;
+      }
+
       if (msg.type === "tci" || msg.type === "icom" || msg.type === "flex") {
         applyTciStatus(msg);
         return;

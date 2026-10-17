@@ -171,6 +171,7 @@ function startCountdownTimer() {
 }
 
 function updateSidebar(state) {
+  updateAfterLosIndicator(state);
   if (typeof updatePassPanelFromState === "function") {
     updatePassPanelFromState(state);
   }
@@ -301,3 +302,62 @@ if (document.readyState === "loading") {
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
   else start();
 })();
+
+/* ---- After-LOS indicator (top bar, next to the AOS/LOS countdown) ---- */
+const AFTER_LOS_FALLBACK_TEXT = {
+  "antenna-off": "antenna off — rotor will not move",
+  "no-favorites": "no favorites — will do nothing",
+  "not-favorite": "selected sat is not a favorite — will do nothing",
+  "no-upcoming-pass": "no favorite has an upcoming pass — will do nothing",
+};
+function updateAfterLosIndicator(state) {
+  const el = document.getElementById("after-los-ind");
+  if (!el) return;
+  const a = state && state.afterLos;
+  if (!a || a.mode === "none") {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  el.classList.toggle("armed", !!a.inPass);
+  el.classList.toggle("none", !!a.fallback);
+  const losTxt = a.losMs ? " at LOS " + formatClockShort(a.losMs) : " at LOS";
+  if (a.mode === "park") {
+    el.textContent = "→ Park";
+    el.title =
+      "After LOS" + losTxt + ": park rotor" +
+      (a.fallback ? " (" + AFTER_LOS_FALLBACK_TEXT[a.fallback] + ")" : "");
+    return;
+  }
+  // auto
+  if (a.target) {
+    const sec = (a.target.aos - Date.now()) / 1000;
+    const when = sec <= 0 ? "already up" : "AOS in " + formatCountdownShort(sec);
+    el.textContent = "→ Auto: " + a.target.display;
+    el.title =
+      "After LOS" + losTxt + ": auto select " + a.target.display +
+      " (" + when + ", " + formatClockShort(a.target.aos) +
+      (a.target.maxEl != null ? ", max " + Math.round(a.target.maxEl) + "°" : "") + ")";
+  } else {
+    el.textContent = "→ Auto: —";
+    el.title = "After LOS: auto select — " + (AFTER_LOS_FALLBACK_TEXT[a.fallback] || "nothing to select");
+  }
+}
+
+/** Short toast when the server ran the After-LOS action. */
+function showAfterLosToast(evt) {
+  if (!evt) return;
+  let text = "";
+  if (evt.action === "park") text = "After LOS: parked";
+  else if (evt.action === "auto") text = "After LOS: auto-selected " + (evt.display || evt.target || "");
+  if (!text) return;
+  const old = document.getElementById("after-los-toast");
+  if (old) old.remove();
+  const t = document.createElement("div");
+  t.id = "after-los-toast";
+  t.className = "app-toast";
+  t.setAttribute("role", "status");
+  t.textContent = text;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 5000);
+}

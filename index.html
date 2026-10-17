@@ -47,6 +47,7 @@
         <div class="status-dot yellow"></div>
         <span id="pass-label">Next AOS</span>
         <span id="countdown">-</span>
+        <span id="after-los-ind" class="after-los-ind" hidden></span>
       </div>
 
       <div id="pass-summary">
@@ -658,9 +659,25 @@
                   the long way instead.
                 </p>
               </div>
+              <div class="form-row" id="cfg-rotor-after-los-wrap">
+                <label for="cfg-rotor-after-los">After LOS</label>
+                <select id="cfg-rotor-after-los" class="cfg-select">
+                  <option value="none">Do nothing</option>
+                  <option value="park">Park</option>
+                  <option value="auto">Auto select</option>
+                </select>
+                <p class="form-hint">
+                  When the selected sat drops below Min EL: <b>Do nothing</b>
+                  holds the LOS azimuth; <b>Park</b> sends the rotor to Park
+                  AZ/EL; <b>Auto select</b> switches to the favorite with the
+                  soonest AOS above Min EL (falls back to do nothing if none).
+                  Park / Auto select still preposition 5 min before the next
+                  AOS.
+                </p>
+              </div>
               <p class="form-hint">
-                Min EL applies to tracking and pass AOS/LOS. After LOS, hold
-                min-EL az; Antenna on → preposition 5 min before next AOS.
+                Min EL applies to tracking and pass AOS/LOS. Antenna on →
+                preposition 5 min before next AOS.
               </p>
             </div>
             <div class="form-section cfg-group" id="cfg-rotor-device-group">

@@ -544,6 +544,10 @@ function readFormConfig() {
       if (!Number.isFinite(v)) return 0;
       return Math.max(0, Math.min(90, v));
     })(),
+    rotorAfterLos: (function () {
+      const v = val("cfg-rotor-after-los") || "none";
+      return ["none", "park", "auto"].indexOf(v) >= 0 ? v : "none";
+    })(),
     rotorElMax: (function () {
       const el = document.getElementById("cfg-rotor-el-180");
       return el && el.checked ? 180 : 90;
@@ -721,6 +725,7 @@ function fillForm(cfg) {
       ? d.rotorMinEl
       : 0,
   );
+  setVal("cfg-rotor-after-los", d.rotorAfterLos || "none");
   const el180 = document.getElementById("cfg-rotor-el-180");
   if (el180) {
     const max = d.rotorElMax != null ? Number(d.rotorElMax) : 180;

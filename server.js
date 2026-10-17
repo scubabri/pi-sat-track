@@ -473,6 +473,18 @@ function pushNow() {
 }
 
 let wsClientSeq = 0;
+/** Load + persist + broadcast a new selected sat (user pick or After-LOS auto select). */
+function selectSat(key) {
+  return state.loadSatellite(key).then(() => {
+    profiles.updateActive({ lastSat: key });
+    const st = state.computeState();
+    if (st) broadcast(st);
+    const tk = state.computeTick();
+    if (tk) broadcast(tk);
+    broadcastSats();
+  });
+}
+
 wss.on("connection", (ws, req) => {
   ws._clientTag =
     "client #" + ++wsClientSeq +
@@ -576,19 +588,11 @@ wss.on("connection", (ws, req) => {
       }
 
       if (msg.type === "sat" && msg.key) {
-        state
-          .loadSatellite(msg.key)
-          .then(() => {
-            profiles.updateActive({ lastSat: msg.key });
-            const st = state.computeState();
-            if (st) broadcast(st);
-            const tk = state.computeTick();
-            if (tk) broadcast(tk);
-            broadcastSats();
-          })
-          .catch((err) => {
-            ws.send(JSON.stringify({ type: "error", message: err.message }));
-          });
+        // Manual selection: normal switch behavior (immediate preposition).
+        rotor.deferSwitchPrep(null);
+        selectSat(msg.key).catch((err) => {
+          ws.send(JSON.stringify({ type: "error", message: err.message }));
+        });
       }
 
       if (msg.type === "fav-overlay-set") {
@@ -806,6 +810,7 @@ wss.on("connection", (ws, req) => {
           rotorElMax: msg.rotorElMax,
           rotorAzOnly: !!msg.rotorAzOnly,
           rotorMinEl: msg.rotorMinEl,
+          rotorAfterLos: msg.rotorAfterLos,
           rotorAzStop: msg.rotorAzStop,
           logMethod: msg.logMethod,
           logAdifPath: msg.logAdifPath,
@@ -1153,9 +1158,26 @@ setInterval(() => {
   if (t) broadcast(t);
 }, TICK_MS);
 
+// After-LOS action (Configure → Rotor → After LOS): park / auto select once
+// the selected sat's pass ends. Real time only (client preview never fires it).
+const afterLosWatch = require("./lib/after-los").createWatcher({
+  log: (m) => console.log(m),
+  park: () => rotor.afterLosPark(),
+  selectSat: (key) => {
+    // Auto select: hold the rotor until the new sat's normal T-5 preposition.
+    rotor.deferSwitchPrep(key);
+    return selectSat(key).catch((e) => {
+      rotor.deferSwitchPrep(null);
+      throw e;
+    });
+  },
+  notify: (evt) => broadcast({ type: "after-los", ...evt }),
+});
+
 setInterval(() => {
   const s = state.computeState();
   if (s) broadcast(s);
+  afterLosWatch(s);
 }, STATE_MS);
 
 setInterval(broadcastSats, SATS_BROADCAST_MS);
