@@ -46,6 +46,9 @@
 .leaflet-tooltip.fav-label { pointer-events: auto; cursor: pointer; transition: opacity .12s; }
 .leaflet-tooltip.fav-label.fav-hi { background: rgba(10, 18, 28, 0.92); color: #fff; font-size: 12px; }
 .leaflet-tooltip.fav-label.fav-dim { opacity: 0.35 !important; }
+/* Hovered favorite: full stacked label like the selected sat (fav-overlay.js) */
+.leaflet-tooltip.fav-label.fav-full { font-weight: 800; font-size: 12px; z-index: 1050 !important; }
+.leaflet-tooltip.fav-label.fav-full .sel-sat-l2 { font-size: 11px; font-weight: 600; color: #e6edf3; }
 /* Selected sat name label (map.js) */
 .leaflet-tooltip.decode-label.sel-sat-label { color: #58a6ff; font-weight: 800; font-size: 12px; background: rgba(10, 18, 28, 0.8); border-left: 2px solid #58a6ff; z-index: 1100; }
 
@@ -131,6 +134,9 @@
 .globe-sel-anchor { width: 0; height: 0; overflow: visible; pointer-events: none; }
 .globe-label.globe-sel-label { position: absolute; left: 9px; top: 0; transform: translateY(-50%); }
 .globe-label.globe-label-2l { white-space: pre; line-height: 1.35; }
+/* Hovered non-selected dot: same stacked label as the selected sat; never takes the pointer */
+.globe-dot.globe-dot-hover { z-index: 2; }
+.globe-label.globe-hover-label { position: absolute; left: calc(100% + 5px); top: 50%; transform: translateY(-50%); pointer-events: none; padding-left: 4px; }
 .leaflet-tooltip.decode-label.sel-sat-label .sel-sat-l2 { font-size: 11px; font-weight: 600; color: #e6edf3; }
 .globe-toast {
   position: fixed;

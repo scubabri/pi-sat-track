@@ -79,6 +79,10 @@
 .freq-value.downlink {
   color: var(--downlink);
 }
+/* DL outside the selected mode's catalog passband (js/dl-band.js) */
+.freq-value.downlink.oob {
+  color: #f85149;
+}
 
 .freq-doppler {
   font-size: 11px;

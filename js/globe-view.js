@@ -109,6 +109,8 @@
             e.className = "globe-dot";
             e.title = d.display || d.key;
             e.addEventListener("click", (ev) => { ev.stopPropagation(); pick(d); });
+            e.addEventListener("mouseenter", () => hoverOn(d));
+            e.addEventListener("mouseleave", () => hoverOff(d));
           } else if (d.kind === "dx") {
             // Callsign typed in the Log box: yellow dot + "CALL GRID" (like the map).
             e.className = "globe-dx";
@@ -302,6 +304,7 @@
     if (d.kind === "dot") {
       const px = d.sel ? 10 : 7;
       d.el.style.cssText = "width:" + px + "px;height:" + px + "px;margin:-" + px / 2 + "px 0 0 -" + px / 2 + "px;background:" + d.color + ";";
+      if (d === hoverDot && d.sel) hoverOff(d); // became the selected sat: it has its own label
     } else if (d.kind === "station") {
       d.el.textContent = d.text;
     }
@@ -352,6 +355,57 @@
    * live: line 1 = name + AOS/LOS countdown + clock, line 2 = El / Range / Alt
    * (satDotLabelLines in pass-ui.js). Two lines are joined with "\n" (white-space: pre).
    */
+  /* ---------- hover: same stacked label as the selected sat ---------- */
+  // Non-selected dots (favorites): on mouseenter a label child is added to the
+  // dot (pointer-events: none, so picking/click-to-select are unchanged) with
+  // satDotLabelLines() of that sat's favorites snapshot; it ticks with the
+  // selected label (1 s) and is removed on mouseleave. One live label at most.
+  let hoverDot = null;
+  function favSnapshot(key) {
+    const list = (lastState && lastState.favorites) || [];
+    for (const f of list) if (f && f.key === key) return f;
+    return null;
+  }
+  function hoverText(d) {
+    const f = favSnapshot(d.key);
+    if (!f || !f.position) return d.display || d.key;
+    const pp = window.passPreview;
+    const pv = pp && pp.posOf && pp.posOf(d.key);
+    return selLabelText(pv ? Object.assign({}, f, { position: pv.position }) : f, pv ? previewT() : null);
+  }
+  function paintHover() {
+    const d = hoverDot;
+    if (!d || !d.el) return;
+    let lab = d.el.__hoverLabel;
+    if (!lab || lab.parentNode !== d.el) {
+      lab = document.createElement("div");
+      lab.className = "globe-label globe-hover-label";
+      d.el.appendChild(lab);
+      d.el.__hoverLabel = lab;
+    }
+    const txt = hoverText(d);
+    if (lab.textContent !== txt) lab.textContent = txt;
+    lab.classList.toggle("globe-label-2l", txt.indexOf("\n") >= 0);
+    lab.style.borderLeft = "2px solid " + (d.color || "#fff");
+    d.el.classList.add("globe-dot-hover");
+  }
+  function hoverOn(d) {
+    if (!d || d.sel || (lastState && d.key === lastState.sat)) return; // selected sat already labelled
+    if (hoverDot && hoverDot !== d) hoverOff(hoverDot);
+    hoverDot = d;
+    if (d.el) { d.el.__title = d.el.title; d.el.title = ""; } // no native tooltip on top
+    paintHover();
+  }
+  function hoverOff(d) {
+    if (!d || hoverDot !== d) return;
+    hoverDot = null;
+    const e = d.el;
+    if (!e) return;
+    if (e.__hoverLabel) { e.__hoverLabel.remove(); e.__hoverLabel = null; }
+    e.classList.remove("globe-dot-hover");
+    if (e.__title != null) { e.title = e.__title; e.__title = null; }
+  }
+
   function selLabelText(st, pT) {
     if (pT) return (st.display || st.sat) + " \u00B7 " + Math.round(st.position.heightKm || 0) + " km" + " @ " + (typeof formatClockShort === "function" ? formatClockShort(pT) : new Date(pT).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
     const L = typeof satDotLabelLines === "function" ? satDotLabelLines(st) : null;
@@ -365,13 +419,14 @@
   }
   // Countdown ticks each second between (2 s-throttled) state applies; redraw on UTC/MT toggle.
   function tickSelLabel() {
+    if (hoverDot) { if (!hoverDot.el || !hoverDot.el.isConnected || !pts.has(hoverDot.key)) hoverOff(hoverDot); else paintHover(); }
     if (!G || mode !== "globe" || !lastState || !lastState.position) return;
     if (previewT() != null) return; // preview label is static; applyState handles it
     selLabel.text = selLabelText(lastState, null);
     paintSelLabel();
   }
   setInterval(tickSelLabel, 1000);
-  window.addEventListener("time-mode-change", () => applyState(true));
+  window.addEventListener("time-mode-change", () => { applyState(true); if (hoverDot) paintHover(); });
   document.addEventListener("qso-dx-change", () => applyState(true));
 
   /** Live positions (moved in place), footprint and labels. */
