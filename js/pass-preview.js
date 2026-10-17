@@ -17,7 +17,7 @@
   let reqTimer = null;
   let centerPending = false;
   const sock = () => (typeof ws !== "undefined" && ws && ws.readyState === 1 ? ws : null);
-  const fmt = (t) => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const fmt = (t) => (typeof formatClockShort === "function" ? formatClockShort(t) : new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
   function rel(t) {

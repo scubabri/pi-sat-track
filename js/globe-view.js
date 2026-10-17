@@ -257,7 +257,7 @@
       p.color = selColor(); p.sel = true; p.display = st.display || st.sat;
       keep.add(st.sat);
       selLabel.lat = p.lat; selLabel.lng = p.lng; selLabel.alt = p.alt;
-      selLabel.text = (st.display || st.sat) + " \u00B7 " + Math.round(st.position.heightKm || 0) + " km" + (pT ? " @ " + new Date(pT).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
+      selLabel.text = (st.display || st.sat) + " \u00B7 " + Math.round(st.position.heightKm || 0) + " km" + (pT ? " @ " + (typeof formatClockShort === "function" ? formatClockShort(pT) : new Date(pT).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })) : "");
       if (pT) p.color = "#e3b341";
       if (selLabel.el) selLabel.el.textContent = selLabel.text;
       footprint.pts = footprintPts(p.lat, p.lng, st.position.heightKm || 0);

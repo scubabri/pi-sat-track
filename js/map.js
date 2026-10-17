@@ -341,7 +341,7 @@ function updateMapTracking(state) {
         if (!map.hasLayer(satMarker)) satMarker.addTo(map);
       }
       const pT = pv && window.passPreview.get();
-      const label = (state.display || state.sat || "") + (pT ? " @ " + new Date(pT).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
+      const label = (state.display || state.sat || "") + (pT ? " @ " + (typeof formatClockShort === "function" ? formatClockShort(pT) : new Date(pT).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })) : "");
       satMarker.setStyle(pv ? { fillColor: "#e3b341", color: "#fff" } : { fillColor: "#58a6ff", color: "#fff" });
       if (label && satMarker.__label !== label) {
         satMarker.unbindTooltip();

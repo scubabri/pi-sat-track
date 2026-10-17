@@ -17,6 +17,20 @@ function formatPassTime(iso) {
   return d.toLocaleTimeString([], opts) + " MT";
 }
 
+/** Short clock for chart hover / preview labels; follows the AOS/LOS UTC|local toggle. */
+function formatClockShort(t) {
+  const d = new Date(t);
+  if (timeMode === "utc") return d.toISOString().substr(11, 5) + " UTC";
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) + " MT";
+}
+/** Chart axis hour label (no zone suffix). */
+function formatAxisHour(t) {
+  const d = new Date(t);
+  const h = timeMode === "utc" ? d.getUTCHours() : d.getHours();
+  return String(h).padStart(2, "0") + (timeMode === "utc" ? "Z" : "");
+}
+function isUtcTimeMode() { return timeMode === "utc"; }
+
 function renderPassTimes() {
   if (!lastPass) return;
   const aosEl = document.getElementById("pass-aos");
@@ -30,6 +44,7 @@ function toggleTimeMode() {
   localStorage.setItem("satTrackerTimeMode", timeMode);
   renderPassTimes();
   if (typeof renderPassPanel === "function") renderPassPanel();
+  window.dispatchEvent(new Event("time-mode-change"));
 }
 
 function formatCountdown(sec) {

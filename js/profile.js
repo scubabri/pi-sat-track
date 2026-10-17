@@ -576,10 +576,11 @@ function drawFavProfile() {
     ctx.moveTo(x, padT);
     ctx.lineTo(x, padT + plotH);
     ctx.stroke();
-    const hr = new Date(t).getHours();
+    const utc = typeof isUtcTimeMode === "function" && isUtcTimeMode();
+    const hr = utc ? new Date(t).getUTCHours() : new Date(t).getHours();
     if (hr % labelEveryH === 0) {
       ctx.fillStyle = "#8b949e";
-      ctx.fillText(new Date(t).toLocaleTimeString([], { hour: "numeric" }).replace(/\s/g, ""), x, padT + plotH + 4);
+      ctx.fillText(typeof formatAxisHour === "function" ? formatAxisHour(t) : new Date(t).toLocaleTimeString([], { hour: "numeric" }).replace(/\s/g, ""), x, padT + plotH + 4);
     }
   }
 
@@ -727,6 +728,7 @@ let chartHover = null; // {x, y} css px in canvas
 let chartDragged = false; // a preview-line drag just ended (swallow its click)
 const PREVIEW_COL = "#e3b341";
 function fmtClock(t) {
+  if (typeof formatClockShort === "function") return formatClockShort(t);
   return new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 function pill(ctx, x, y, text, opt) {
@@ -872,4 +874,5 @@ function initChartPreviewEvents() {
   });
   cv.addEventListener("dblclick", () => window.passPreview.clear());
   document.addEventListener("pass-preview-change", () => redrawCurrent());
+  window.addEventListener("time-mode-change", () => redrawCurrent());
 }
