@@ -125,6 +125,21 @@ const decodeStore = wsjtxDecodes.createStore({
   onChange: () => broadcast(decodeStore.payload()),
 });
 
+/** Auto AMSAT "Heard" when a QSO is logged (Configure → Logging; default on). */
+const amsatAuto = require("./lib/amsat-auto").createAutoHeard({
+  amsat: amsatReport,
+  getPassWindow: (key, date) => state.getPassWindow(key, date),
+  log: (m) => console.log(m),
+  notify: (evt) => broadcast(Object.assign({ type: "amsat-auto" }, evt)),
+});
+/** Fire-and-forget after a successful log; never blocks or fails the log. */
+function autoAmsatHeard(ctx, station, time, source) {
+  if (!config.LOG_AMSAT_HEARD || !ctx) return;
+  setImmediate(() => {
+    amsatAuto.fromQso({ ctx, station, time, source }).catch(() => {});
+  });
+}
+
 /** WSJT-X listener: enrich with sat info and re-send via the logging output. */
 const wsjtx = wsjtxListener.createListener({
   onQso: (q) => {
@@ -163,6 +178,8 @@ const wsjtx = wsjtxListener.createListener({
         );
         broadcast(out);
         broadcastWsjtxStatus(); // refresh forwarded count in config
+        // Only sat QSOs (enriched with the selected sat) get an AMSAT Heard.
+        if (r.ok && e.enriched) autoAmsatHeard(ctx, stationFromProfile(), rec.time, "wsjtx");
       })
       .catch((err) => console.warn("WSJT-X forward:", err.message));
   },
@@ -235,6 +252,8 @@ function applyProfileToRuntime(prof) {
   if (typeof state.setOffsetsProfile === "function")
     state.setOffsetsProfile(profiles.getActiveName());
   state.setFavorites(Array.isArray(prof.favorites) ? prof.favorites : []);
+  state.setFavOverlayShown(prof.favOverlay ? prof.favOverlay.shown : null);
+  state.setAutoSelect(prof.autoSelect === true);
   const cfg = prof.config && typeof prof.config === "object" ? prof.config : {};
   if (Object.keys(cfg).length) {
     const flags = config.applyEndpoints(cfg);
@@ -362,6 +381,11 @@ const server = http.createServer((req, res) => {
           reports: amsatReport.REPORTS.map((v) => ({ value: v, label: amsatReport.REPORT_LABELS[v] })),
           utc: amsatReport.utcParts(new Date()),
           station: stationFromProfile(),
+          heardThisPass: (() => {
+            const h = ctx && ctx.satKey ? amsatAuto.heardThisPass(ctx.satKey) : null;
+            return h && !h.pending ? { at: h.at, satName: h.satName, source: h.source } : null;
+          })(),
+          autoHeard: !!config.LOG_AMSAT_HEARD,
         });
       })
       .catch((e) => json(502, { error: e.message }));
@@ -385,12 +409,13 @@ const server = http.createServer((req, res) => {
       } catch (_) {
         return json(400, { error: "invalid JSON" });
       }
+      const btnCtx = state.getLogContext();
       amsatReport
         .getSatNames()
         .then((list) =>
           amsatReport.fillReport(r, {
             names: list.names,
-            ctx: state.getLogContext(),
+            ctx: btnCtx,
             station: stationFromProfile({ callsign: r.fallbackCallsign, grid: r.fallbackGrid }),
           }),
         )
@@ -402,6 +427,8 @@ const server = http.createServer((req, res) => {
         })
         .then((out) => {
           console.log("AMSAT report: " + out.message);
+          if (out.report === "Heard" && btnCtx && btnCtx.satKey)
+            amsatAuto.noteSent(btnCtx.satKey, { satName: out.satName, source: "button" });
           json(200, out);
         })
         .catch((e) => {
@@ -472,6 +499,18 @@ function pushNow() {
 }
 
 let wsClientSeq = 0;
+/** Load + persist + broadcast a new selected sat (user pick or After-LOS auto select). */
+function selectSat(key) {
+  return state.loadSatellite(key).then(() => {
+    profiles.updateActive({ lastSat: key });
+    const st = state.computeState();
+    if (st) broadcast(st);
+    const tk = state.computeTick();
+    if (tk) broadcast(tk);
+    broadcastSats();
+  });
+}
+
 wss.on("connection", (ws, req) => {
   ws._clientTag =
     "client #" + ++wsClientSeq +
@@ -541,7 +580,8 @@ wss.on("connection", (ws, req) => {
 
       if (msg.type === "favorites" && Array.isArray(msg.keys)) {
         state.setFavorites(msg.keys);
-        profiles.updateActive({ favorites: msg.keys });
+        const pf = profiles.updateActive({ favorites: msg.keys });
+        state.setFavOverlayShown(pf.favOverlay ? pf.favOverlay.shown : null);
         broadcastProfiles();
         const tk = state.computeTick();
         if (tk) broadcast(tk);
@@ -574,21 +614,63 @@ wss.on("connection", (ws, req) => {
       }
 
       if (msg.type === "sat" && msg.key) {
-        state
-          .loadSatellite(msg.key)
-          .then(() => {
-            profiles.updateActive({ lastSat: msg.key });
-            const st = state.computeState();
-            if (st) broadcast(st);
-            const tk = state.computeTick();
-            if (tk) broadcast(tk);
-            broadcastSats();
-          })
-          .catch((err) => {
-            ws.send(JSON.stringify({ type: "error", message: err.message }));
-          });
+        // Manual selection: normal switch behavior (immediate preposition).
+        rotor.deferSwitchPrep(null);
+        selectSat(msg.key).catch((err) => {
+          ws.send(JSON.stringify({ type: "error", message: err.message }));
+        });
       }
 
+      if (msg.type === "auto-select-set") {
+        // Top-bar Auto Select button: saved per profile, synced to all clients.
+        const pf = profiles.updateActive({ autoSelect: msg.on === true });
+        state.setAutoSelect(pf.autoSelect === true);
+        console.log("Auto Select", pf.autoSelect ? "ON" : "OFF");
+        broadcastProfiles();
+        const st = state.computeState();
+        if (st) broadcast(st);
+        return;
+      }
+
+      if (msg.type === "fav-overlay-set") {
+        // Map Favorites overlay state saved in the active profile.
+        const patch = {};
+        if (msg.on !== undefined) patch.on = !!msg.on;
+        if (msg.shown === null || Array.isArray(msg.shown)) patch.shown = msg.shown;
+        const pf = profiles.updateActive({ favOverlay: patch });
+        state.setFavOverlayShown(pf.favOverlay ? pf.favOverlay.shown : null);
+        broadcastProfiles();
+        broadcastFavTracks(true);
+        const fp = favProfileCached(false);
+        if (fp) broadcast(fp);
+        return;
+      }
+      if (msg.type === "globe-orbits-get" && Number.isFinite(msg.t)) {
+        // Pass preview: orbits starting at the preview time (not cached).
+        ws.send(JSON.stringify(Object.assign({ sig: state.favProfileSig(), preview: true }, state.computeGlobeOrbits(new Date(msg.t), 100))));
+        return;
+      }
+      if (msg.type === "globe-orbits-get") {
+        // 3D globe: cached; recomputed on sat / favorites / TLE change or after 10 min.
+        const sig = state.favProfileSig();
+        const c = globeOrbitsCache;
+        if (!c.data || c.sig !== sig || Date.now() - c.data.time > 10 * 60 * 1000) {
+          c.data = state.computeGlobeOrbits(new Date(), 100);
+          c.sig = sig;
+        }
+        ws.send(JSON.stringify(Object.assign({ sig: c.sig }, c.data)));
+        return;
+      }
+      if (msg.type === "preview-get" && Number.isFinite(msg.t)) {
+        // Pass preview at time T (selected + shown favorites).
+        ws.send(JSON.stringify(state.computePreview(msg.t)));
+        return;
+      }
+      if (msg.type === "fav-profile-get") {
+        const fp = favProfileCached();
+        if (fp) ws.send(JSON.stringify(fp));
+        return;
+      }
       if (msg.type === "fav-tracks-get") {
         ws.send(JSON.stringify(state.computeFavoriteTracks()));
         return;
@@ -765,8 +847,10 @@ wss.on("connection", (ws, req) => {
           rotorElMax: msg.rotorElMax,
           rotorAzOnly: !!msg.rotorAzOnly,
           rotorMinEl: msg.rotorMinEl,
+          rotorAfterLos: msg.rotorAfterLos,
           rotorAzStop: msg.rotorAzStop,
           logMethod: msg.logMethod,
+          logAmsatHeard: typeof msg.logAmsatHeard === "boolean" ? msg.logAmsatHeard : undefined,
           logAdifPath: msg.logAdifPath,
           logUdpHost: msg.logUdpHost,
           logUdpPort: msg.logUdpPort,
@@ -806,8 +890,11 @@ wss.on("connection", (ws, req) => {
           callsign: msg.stationCallsign,
           grid: msg.stationGrid,
         });
+        const qsoTime = new Date();
+        const logCtx = state.getLogContext();
         logbook
           .logQso({
+            now: qsoTime,
             call: msg.call,
             dxGrid: (() => {
               if (schedule.isGrid(String(msg.dxGrid || ""))) return String(msg.dxGrid);
@@ -815,7 +902,7 @@ wss.on("connection", (ws, req) => {
               const h = decodeStore.list().find((s) => s.call === cs);
               return h && h.grid ? h.grid : "";
             })(),
-            ctx: state.getLogContext(),
+            ctx: logCtx,
             station,
             cfg: logOutputCfg(),
           })
@@ -840,6 +927,7 @@ wss.on("connection", (ws, req) => {
                 Object.assign({ type: "log-result", reqId: msg.reqId || null }, r),
               ),
             );
+            if (r.ok) autoAmsatHeard(logCtx, station, qsoTime, "log");
           })
           .catch((e) => {
             ws.send(
@@ -1087,6 +1175,8 @@ wss.on("connection", (ws, req) => {
         }
         if (Array.isArray(patch.favorites)) {
           state.setFavorites(patch.favorites);
+          const pf = profiles.getActive();
+          state.setFavOverlayShown(pf.favOverlay ? pf.favOverlay.shown : null);
         }
         broadcastProfiles();
         broadcast({
@@ -1110,9 +1200,27 @@ setInterval(() => {
   if (t) broadcast(t);
 }, TICK_MS);
 
+// After-LOS actions once the selected sat's pass ends: Park (Configure → Rotor
+// → After LOS) and/or Auto Select (top-bar button). Real time only (client
+// preview never fires them).
+const afterLosWatch = require("./lib/after-los").createWatcher({
+  log: (m) => console.log(m),
+  park: () => rotor.afterLosPark(),
+  selectSat: (key) => {
+    // Auto select: hold the rotor until the new sat's normal T-5 preposition.
+    rotor.deferSwitchPrep(key);
+    return selectSat(key).catch((e) => {
+      rotor.deferSwitchPrep(null);
+      throw e;
+    });
+  },
+  notify: (evt) => broadcast({ type: "after-los", ...evt }),
+});
+
 setInterval(() => {
   const s = state.computeState();
   if (s) broadcast(s);
+  afterLosWatch(s);
 }, STATE_MS);
 
 setInterval(broadcastSats, SATS_BROADCAST_MS);
@@ -1131,6 +1239,30 @@ function broadcastFavTracks(force) {
 // Cheap 5 s check catches favorites / selected-sat changes; full refresh every 60 s.
 setInterval(() => broadcastFavTracks(false), 5000);
 
+// Elevation chart Favorites view: 24 h pass series (selected sat + favorites).
+// Recomputed only when sats / TLEs / location change, else rolled every 10 min.
+const FAV_PROFILE_ROLL_MS = 10 * 60 * 1000;
+let favProfile = null;
+const globeOrbitsCache = { data: null, sig: "" };
+let favProfileSigLast = "";
+function favProfileCached(force) {
+  const sig = state.favProfileSig();
+  if (force || !favProfile || sig !== favProfileSigLast || Date.now() - favProfile.start > FAV_PROFILE_ROLL_MS) {
+    const t = Date.now();
+    favProfile = state.computeFavProfile(new Date());
+    favProfileSigLast = sig;
+    if (Date.now() - t > 500) console.log("Fav profile: computed in", Date.now() - t, "ms");
+    return favProfile;
+  }
+  return favProfile;
+}
+setInterval(() => {
+  if (!wss || !wss.clients.size) return;
+  const prev = favProfile;
+  const fp = favProfileCached(false);
+  if (fp !== prev) broadcast(fp);
+}, 5000);
+
 setInterval(() => {
   catalog.refreshCatalog().catch(() => {});
   catalog.refreshStatus().catch(() => {});
@@ -1139,12 +1271,21 @@ setInterval(() => {
 (async () => {
   await catalog.refreshCatalog();
   await catalog.refreshStatus();
-  const key = catalog.pickDefaultKey();
-  if (key) {
+  // Start on the active profile's last selected sat; fall back to the default (RS-44).
+  const defKey = catalog.pickDefaultKey();
+  const last = (profiles.getActive() || {}).lastSat;
+  const cat = catalog.getCatalog() || {};
+  const keys = [];
+  if (last && cat[last]) keys.push(last);
+  else if (last) console.warn("Last sat " + last + " not in catalog; using default");
+  if (defKey && keys.indexOf(defKey) < 0) keys.push(defKey);
+  for (const key of keys) {
     try {
       await state.loadSatellite(key);
+      console.log("Startup sat: " + key + (key === last ? " (last selected)" : " (default)"));
+      break;
     } catch (err) {
-      console.warn("Default sat load failed (" + key + "):", err.message);
+      console.warn("Startup sat load failed (" + key + "):", err.message);
     }
   }
   server.listen(PORT, "0.0.0.0", () => {

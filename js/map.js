@@ -2,6 +2,8 @@ let map = null;
 let satMarker = null;
 let observerMarker = null;
 let footprintCircle = null;
+let nowGhost = null; // live position while a pass preview is shown
+let lastMapState = null;
 let trailPolylines = [];
 let forwardPolylines = [];
 let passPolylines = [];
@@ -28,7 +30,16 @@ function setCenterChoice(choice) {
   });
 }
 
+const MAP_VIEW_KEY = "mapViewPos";
+function savedMapView() {
+  try {
+    const v = JSON.parse(localStorage.getItem(MAP_VIEW_KEY) || "null");
+    return v && Number.isFinite(v.lat) && Number.isFinite(v.lng) && Number.isFinite(v.zoom) ? v : null;
+  } catch (_) { return null; }
+}
+
 function centerMidAtlantic() {
+  if (typeof window.globeCenterOn === "function" && window.globeCenterOn(MID_ATLANTIC_VIEW.lat, MID_ATLANTIC_VIEW.lon)) return;
   if (!map) return;
   map.setView([MID_ATLANTIC_VIEW.lat, MID_ATLANTIC_VIEW.lon], MID_ATLANTIC_VIEW.zoom);
 }
@@ -44,12 +55,28 @@ function initMap() {
     wheelDebounceTime: 40,
     maxZoom: 8,
     zoomControl: false,
-  }).setView(
-    getCenterChoice() === "atlantic"
-      ? [MID_ATLANTIC_VIEW.lat, MID_ATLANTIC_VIEW.lon]
-      : [20, 0],
-    getCenterChoice() === "atlantic" ? MID_ATLANTIC_VIEW.zoom : 2,
-  );
+  });
+  const sv = savedMapView();
+  if (sv) map.setView([sv.lat, sv.lng], sv.zoom);
+  else
+    map.setView(
+      getCenterChoice() === "atlantic"
+        ? [MID_ATLANTIC_VIEW.lat, MID_ATLANTIC_VIEW.lon]
+        : [20, 0],
+      getCenterChoice() === "atlantic" ? MID_ATLANTIC_VIEW.zoom : 2,
+    );
+  // Remember center + zoom (and the grid it was for) across reloads.
+  let mvTimer = null;
+  map.on("moveend zoomend", () => {
+    clearTimeout(mvTimer);
+    mvTimer = setTimeout(() => {
+      try {
+        const c = map.getCenter();
+        const cfg = typeof loadConfig === "function" ? loadConfig() : null;
+        localStorage.setItem(MAP_VIEW_KEY, JSON.stringify({ lat: c.lat, lng: c.lng, zoom: map.getZoom(), grid: (cfg && cfg.grid) || "" }));
+      } catch (_) {}
+    }, 500);
+  });
 
   L.control.zoom({ position: "topright" }).addTo(map);
 
@@ -118,6 +145,51 @@ function initMap() {
       iconAnchor: [11, 11],
     }),
   });
+
+  initSunLayer();
+}
+
+/**
+ * Day/night: translucent night polygon bounded by the terminator, a thin
+ * terminator line and a "SUN" spot at the subsolar point (js/sun.js).
+ * Own panes between tiles (200) and overlays (400) so tracks, footprints and
+ * sat markers stay on top; pointer-events off so nothing captures clicks.
+ * Drawn across three world copies (-540..540) for worldCopyJump; refreshed every 60 s.
+ */
+let nightPolygon = null;
+let terminatorLine = null;
+let sunMarker = null;
+function initSunLayer() {
+  if (!map || !window.sunCalc) return;
+  const night = map.createPane("nightPane");
+  night.style.zIndex = 350;
+  night.style.pointerEvents = "none";
+  const sunP = map.createPane("sunPane");
+  sunP.style.zIndex = 390;
+  sunP.style.pointerEvents = "none";
+  updateSunLayer();
+  setInterval(updateSunLayer, 60000);
+}
+
+function updateSunLayer() {
+  if (!map || !window.sunCalc) return;
+  const sun = window.sunCalc.subsolar(new Date());
+  const term = window.sunCalc.terminator(sun, -540, 540, 2);
+  const pole = window.sunCalc.nightPoleLat(sun);
+  const ring = term.concat([[pole, 540], [pole, -540]]);
+  if (!nightPolygon) {
+    nightPolygon = L.polygon(ring, { pane: "nightPane", stroke: false, fillColor: "#000", fillOpacity: 0.4, interactive: false, smoothFactor: 1 }).addTo(map);
+    terminatorLine = L.polyline(term, { pane: "nightPane", color: "#ffb347", weight: 1, opacity: 0.5, interactive: false }).addTo(map);
+  } else {
+    nightPolygon.setLatLngs(ring);
+    terminatorLine.setLatLngs(term);
+  }
+  if (!sunMarker) {
+    sunMarker = L.circleMarker([sun.lat, sun.lon], {
+      pane: "sunPane", radius: 9, color: "#ff9f1c", weight: 2, fillColor: "#ffd34d", fillOpacity: 0.9, interactive: false,
+    }).addTo(map);
+    sunMarker.bindTooltip("SUN", { permanent: true, direction: "right", offset: [10, 0], className: "sun-label", interactive: false });
+  } else sunMarker.setLatLng([sun.lat, sun.lon]);
 }
 
 /** Geometric horizon footprint radius (meters) from sat altitude */
@@ -130,9 +202,13 @@ function footprintRadiusM(heightKm) {
 }
 
 function centerOnStation() {
-  if (!map) return;
   const cfg = typeof loadConfig === "function" ? loadConfig() : null;
   const grid = cfg && cfg.grid ? cfg.grid : null;
+  if (grid && typeof window.globeCenterOn === "function" && typeof maidenheadToLatLon === "function") {
+    const ll = maidenheadToLatLon(grid);
+    if (ll && window.globeCenterOn(ll.lat, ll.lon)) return;
+  }
+  if (!map) return;
   if (grid) {
     centerOnGrid(grid, true);
     return;
@@ -225,6 +301,10 @@ function clearMapTracking() {
     map.removeLayer(satMarker);
     satMarker = null;
   }
+  if (nowGhost && map) {
+    map.removeLayer(nowGhost);
+    nowGhost = null;
+  }
   if (footprintCircle && map) {
     map.removeLayer(footprintCircle);
     footprintCircle = null;
@@ -253,10 +333,22 @@ function centerOnGrid(grid, keepZoom) {
   if (observerMarker) {
     observerMarker.setLatLng([pos.lat, pos.lon]);
     if (!map.hasLayer(observerMarker)) observerMarker.addTo(map);
+    // Station label (callsign, or grid if none), matching the globe's "⌂ CALL".
+    let call = "";
+    try { const c = typeof loadConfig === "function" ? loadConfig() : null; call = (c && c.callsign) || ""; } catch (_) {}
+    const txt = "\u2302 " + (call || grid);
+    if (!observerMarker.getTooltip()) {
+      observerMarker.bindTooltip(txt, { permanent: true, direction: "right", offset: [10, 0], className: "station-label" });
+    } else observerMarker.setTooltipContent(txt);
   }
 
   // Load/config-driven recenter: respect a stored mid-Atlantic choice
   if (!keepZoom && getCenterChoice() === "atlantic") return;
+  // Load/config-driven recenter: keep the restored view unless the grid changed.
+  if (!keepZoom) {
+    const sv = savedMapView();
+    if (sv && String(sv.grid || "").toUpperCase() === String(grid).toUpperCase()) return;
+  }
 
   if (keepZoom) {
     map.panTo([pos.lat, pos.lon]);
@@ -265,12 +357,62 @@ function centerOnGrid(grid, keepZoom) {
   }
 }
 
+function escHtmlMap(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+}
+
+/**
+ * Selected-sat dot label. Pass preview (pT) keeps the old "NAME @ HH:MM" text;
+ * live: line 1 = name + AOS/LOS countdown + clock, line 2 = El / Range / Alt.
+ */
+function selSatLabelHtml(state, pT) {
+  const name = state.display || state.sat || "";
+  if (pT) return escHtmlMap(name + " @ " + (typeof formatClockShort === "function" ? formatClockShort(pT) : new Date(pT).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })));
+  const L = typeof satDotLabelLines === "function" ? satDotLabelLines(state) : null;
+  if (!L) return escHtmlMap(name);
+  const rest = (L.lines || [L.l1, L.l2]).slice(1).filter(Boolean);
+  return escHtmlMap(L.l1) + (rest.length ? '<br><span class="sel-sat-l2">' + rest.map(escHtmlMap).join("<br>") + "</span>" : "");
+}
+
+function setSelSatLabel(label) {
+  if (!satMarker || !label || satMarker.__label === label) return;
+  if (satMarker.getTooltip()) satMarker.setTooltipContent(label);
+  else
+    satMarker.bindTooltip(label, {
+      permanent: true,
+      direction: "right",
+      offset: [9, 0],
+      className: "decode-label sel-sat-label",
+    });
+  satMarker.__label = label;
+}
+
+// Tick the AOS/LOS countdown each second between state messages; redraw on UTC/MT toggle.
+function refreshSelSatLabel() {
+  if (!satMarker || !lastMapState || !map || !map.hasLayer(satMarker)) return;
+  const pv = window.passPreview && window.passPreview.posOf(lastMapState.sat);
+  setSelSatLabel(selSatLabelHtml(lastMapState, pv && window.passPreview.get()));
+}
+setInterval(refreshSelSatLabel, 1000);
+window.addEventListener("time-mode-change", refreshSelSatLabel);
+
 function updateMapTracking(state) {
   if (!map || !state) return;
   // Layers belong to one sat: a state for a different sat starts fresh.
   if (state.sat && satMarker && satMarker.__sat && satMarker.__sat !== state.sat) {
     clearMapTracking();
   }
+
+  lastMapState = state;
+  // Pass preview: draw the selected sat at the preview time instead of now,
+  // with a hollow red "now" ghost at the live position.
+  const pv = window.passPreview && window.passPreview.posOf(state.sat);
+  const livePos = state.position;
+  if (pv) state = Object.assign({}, state, { position: pv.position });
+  if (pv && livePos && Number.isFinite(livePos.lat)) {
+    if (!nowGhost) nowGhost = L.circleMarker([livePos.lat, livePos.lon], { radius: 5, color: "#f85149", weight: 1.5, dashArray: "2 2", fillColor: "#f85149", fillOpacity: 0.15, interactive: false }).addTo(map);
+    else { nowGhost.setLatLng([livePos.lat, livePos.lon]); if (!map.hasLayer(nowGhost)) nowGhost.addTo(map); }
+  } else if (nowGhost && map.hasLayer(nowGhost)) map.removeLayer(nowGhost);
 
   if (state.position) {
     const lat = state.position.lat;
@@ -289,17 +431,10 @@ function updateMapTracking(state) {
         satMarker.setLatLng([lat, lon]);
         if (!map.hasLayer(satMarker)) satMarker.addTo(map);
       }
-      const label = state.display || state.sat || "";
-      if (label && satMarker.__label !== label) {
-        satMarker.unbindTooltip();
-        satMarker.bindTooltip(label, {
-          permanent: true,
-          direction: "right",
-          offset: [9, 0],
-          className: "decode-label sel-sat-label",
-        });
-        satMarker.__label = label;
-      }
+      const pT = pv && window.passPreview.get();
+      const label = selSatLabelHtml(state, pT);
+      satMarker.setStyle(pv ? { fillColor: "#e3b341", color: "#fff" } : { fillColor: "#58a6ff", color: "#fff" });
+      setSelSatLabel(label);
 
       const hKm = state.position.heightKm;
       const rM = footprintRadiusM(hKm);
@@ -352,3 +487,8 @@ function updateMapTracking(state) {
     clearPolylineArray(forwardPolylines);
   }
 }
+
+// Pass preview started / moved / ended: redraw from the last live state now.
+document.addEventListener("pass-preview-change", function () {
+  if (lastMapState) updateMapTracking(lastMapState);
+});
