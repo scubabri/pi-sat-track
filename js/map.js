@@ -29,6 +29,7 @@ function setCenterChoice(choice) {
 }
 
 function centerMidAtlantic() {
+  if (typeof window.globeCenterOn === "function" && window.globeCenterOn(MID_ATLANTIC_VIEW.lat, MID_ATLANTIC_VIEW.lon)) return;
   if (!map) return;
   map.setView([MID_ATLANTIC_VIEW.lat, MID_ATLANTIC_VIEW.lon], MID_ATLANTIC_VIEW.zoom);
 }
@@ -130,9 +131,13 @@ function footprintRadiusM(heightKm) {
 }
 
 function centerOnStation() {
-  if (!map) return;
   const cfg = typeof loadConfig === "function" ? loadConfig() : null;
   const grid = cfg && cfg.grid ? cfg.grid : null;
+  if (grid && typeof window.globeCenterOn === "function" && typeof maidenheadToLatLon === "function") {
+    const ll = maidenheadToLatLon(grid);
+    if (ll && window.globeCenterOn(ll.lat, ll.lon)) return;
+  }
+  if (!map) return;
   if (grid) {
     centerOnGrid(grid, true);
     return;

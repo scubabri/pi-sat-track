@@ -120,6 +120,14 @@
     return loading;
   }
 
+  /** Map center buttons call this while the globe is showing. Returns true if handled. */
+  window.globeCenterOn = function (lat, lng) {
+    if (mode !== "globe" || !G || !Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+    const pov = G.pointOfView();
+    G.pointOfView({ lat, lng, altitude: (pov && pov.altitude) || 2.2 }, 800);
+    return true;
+  };
+
   function pick(d) {
     if (!d || !d.key || d.footprint || d.kind === "station") return;
     if (lastState && d.key === lastState.sat) return;
