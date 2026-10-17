@@ -589,6 +589,11 @@ wss.on("connection", (ws, req) => {
           });
       }
 
+      if (msg.type === "fav-profile-get") {
+        const fp = favProfileCached();
+        if (fp) ws.send(JSON.stringify(fp));
+        return;
+      }
       if (msg.type === "fav-tracks-get") {
         ws.send(JSON.stringify(state.computeFavoriteTracks()));
         return;
@@ -1130,6 +1135,29 @@ function broadcastFavTracks(force) {
 }
 // Cheap 5 s check catches favorites / selected-sat changes; full refresh every 60 s.
 setInterval(() => broadcastFavTracks(false), 5000);
+
+// Elevation chart Favorites view: 24 h pass series (selected sat + favorites).
+// Recomputed only when sats / TLEs / location change, else rolled every 10 min.
+const FAV_PROFILE_ROLL_MS = 10 * 60 * 1000;
+let favProfile = null;
+let favProfileSigLast = "";
+function favProfileCached(force) {
+  const sig = state.favProfileSig();
+  if (force || !favProfile || sig !== favProfileSigLast || Date.now() - favProfile.start > FAV_PROFILE_ROLL_MS) {
+    const t = Date.now();
+    favProfile = state.computeFavProfile(new Date());
+    favProfileSigLast = sig;
+    if (Date.now() - t > 500) console.log("Fav profile: computed in", Date.now() - t, "ms");
+    return favProfile;
+  }
+  return favProfile;
+}
+setInterval(() => {
+  if (!wss || !wss.clients.size) return;
+  const prev = favProfile;
+  const fp = favProfileCached(false);
+  if (fp !== prev) broadcast(fp);
+}, 5000);
 
 setInterval(() => {
   catalog.refreshCatalog().catch(() => {});

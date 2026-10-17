@@ -12,14 +12,7 @@
   let tracks = [];
   let currentKey = null;
   const items = new Map(); // key -> { color, lines:[], dot, circle }
-  const PALETTE = ["#b07cc6", "#5fa8a0", "#c9a26b", "#8f9fd6", "#c97b7b", "#7fae6e", "#b8b06a", "#6fa0c0", "#c08fb0", "#9a8a78"];
-  const colorFor = (() => {
-    const map = new Map();
-    return (key) => {
-      if (!map.has(key)) map.set(key, PALETTE[map.size % PALETTE.length]);
-      return map.get(key);
-    };
-  })();
+  const colorFor = (key) => (typeof favColor === "function" ? favColor(key) : "#b07cc6");
 
   function getMap() { return typeof map !== "undefined" && map ? map : null; }
   function sock() { return typeof ws !== "undefined" && ws && ws.readyState === 1 ? ws : null; }
@@ -76,6 +69,12 @@
     for (const t of tracks) {
       if (t.key === currentKey) continue;
       const it = item(t.key);
+      const col = colorFor(t.key); // favorites reordered -> keep map & chart in sync
+      if (it.color !== col) {
+        it.color = col;
+        if (it.dot) it.dot.setStyle({ fillColor: col });
+        if (it.circle) it.circle.setStyle({ color: col, fillColor: col });
+      }
       it.lines.forEach((l) => layer.removeLayer(l));
       it.lines = [];
       const split = typeof splitAtDateLine === "function" ? splitAtDateLine : (p) => [p];
@@ -214,6 +213,7 @@
       syncBtn();
       ensureLayer();
       if (on) { drawTracks(); request(); }
+      document.dispatchEvent(new CustomEvent("fav-overlay-change", { detail: { on } }));
     });
     bar.insertBefore(btn, sked);
     syncBtn();
@@ -239,6 +239,8 @@
     if (ws.readyState === 1) request();
     else ws.addEventListener("open", request);
   }
+
+  window.isFavOverlayOn = () => on;
 
   function init() {
     setInterval(patchWs, 500);

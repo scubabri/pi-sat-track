@@ -85,10 +85,37 @@
 }
 
 #pass-profile {
+  position: relative;
   height: 120px;
   flex-shrink: 0;
   background: var(--bg-panel);
   border-top: 1px solid var(--border);
+}
+
+#profile-resize {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -4px;
+  height: 8px;
+  cursor: ns-resize;
+  z-index: 500;
+  touch-action: none;
+}
+#profile-resize::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 3px;
+  width: 36px;
+  height: 2px;
+  margin-left: -18px;
+  border-radius: 1px;
+  background: var(--border);
+}
+#profile-resize:hover::after,
+#profile-resize.dragging::after {
+  background: #58a6ff;
 }
 
 #profile-canvas {
