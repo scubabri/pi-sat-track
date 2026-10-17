@@ -14,6 +14,36 @@
     const row = info && info.reports && info.reports.find((r) => r.value === v);
     return (row && row.label) || v;
   }
+  function utcHm(t) {
+    return new Date(t).toISOString().substr(11, 5) + " UTC";
+  }
+  function toast(text, isErr) {
+    const old = document.getElementById("amsat-toast");
+    if (old) old.remove();
+    const t = document.createElement("div");
+    t.id = "amsat-toast";
+    t.className = "app-toast" + (isErr ? " app-toast-err" : "");
+    t.setAttribute("role", "status");
+    t.textContent = text;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), isErr ? 8000 : 5000);
+  }
+  /** Server ran the auto Heard after a logged QSO (lib/amsat-auto.js). */
+  window.onAmsatAuto = function (evt) {
+    if (!evt) return;
+    const name = evt.display || evt.satName || evt.satKey || "satellite";
+    if (evt.status === "sent") {
+      toast("AMSAT: Heard reported for " + name);
+      setStatus(
+        "Auto: reported " + amsatLabel(evt.satName || name) + " Heard - " + (evt.confirmed ? "confirmed" : "not yet visible"),
+        evt.confirmed ? "ok" : "",
+      );
+    } else if (evt.status === "error") {
+      toast("AMSAT: Heard report for " + name + " failed - " + (evt.error || "error"), true);
+      setStatus("AMSAT auto error: " + (evt.error || "error"), "err");
+    }
+    refresh();
+  };
   function amsatLabel(v) {
     // AO-91_[FM] → "AO-91 [FM]"; ISS_[VHF_Digi] → "ISS [VHF Digi]"
     return String(v || "").replace(/_/g, " ");
@@ -26,8 +56,11 @@
     else if (!info.sat) why = "No satellite selected";
     else if (!info.best) why = "No AMSAT match for " + info.sat.name + (info.sat.mode ? " (" + info.sat.mode + ")" : "");
     else if (!call) why = "Set your callsign in config to report to AMSAT";
+    const heard = info && info.heardThisPass;
     btns().forEach((b) => {
       b.disabled = busy || !!why;
+      const isHeard = b.dataset.v === "Heard";
+      b.classList.toggle("sent", isHeard && !!heard && !why);
       if (why) {
         b.title = why;
         return;
@@ -35,6 +68,12 @@
       // Match AMSAT row (includes mode tag) + report type; mention tracker mode when present
       const satMode = info.sat && info.sat.mode ? "; tracker mode " + info.sat.mode : "";
       b.title = "Report " + amsatLabel(info.best) + " as " + reportLabel(b.dataset.v) + " (" + call + ")" + satMode;
+      if (isHeard && heard) {
+        b.title +=
+          "\nHeard already reported this pass at " + utcHm(heard.at) +
+          (heard.source === "button" ? "" : " (auto, on logged QSO)");
+      }
+      if (isHeard && info.autoHeard) b.title += "\nAuto: logging a QSO also reports Heard (once per pass)";
     });
   }
   async function refresh() {
@@ -60,7 +99,8 @@
       if (!r.ok) throw new Error(j.error || "HTTP " + r.status);
       setStatus("Reported " + j.satName + " " + report + " - " + (j.confirmed ? "confirmed" : "not yet visible"), j.confirmed ? "ok" : "");
     } catch (e) { setStatus("AMSAT error: " + e.message, "err"); }
-    busy = false; render();
+    busy = false;
+    refresh();
   }
   function init() {
     btns().forEach((b) => (b.onclick = () => submit(b.dataset.v)));

@@ -17,17 +17,25 @@ function initRotorGauges() {
   azCanvas = document.getElementById("rotor-az-canvas");
   elCanvas = document.getElementById("rotor-el-canvas");
   if (azCanvas) {
-    azCanvas.width = RG_SIZE;
-    azCanvas.height = RG_SIZE;
-    azCtx = azCanvas.getContext("2d");
+    azCtx = setupGaugeCanvas(azCanvas);
   }
   if (elCanvas) {
-    elCanvas.width = RG_SIZE;
-    elCanvas.height = RG_SIZE;
-    elCtx = elCanvas.getContext("2d");
+    elCtx = setupGaugeCanvas(elCanvas);
   }
   drawAzGauge(null, null, false);
   drawElGauge(null, null, false);
+}
+
+/** DPR / breakpoint change: resize backing stores and redraw with last values. */
+function reinitGaugeCanvases() {
+  if (azCanvas) azCtx = setupGaugeCanvas(azCanvas);
+  if (elCanvas) elCtx = setupGaugeCanvas(elCanvas);
+  if (typeof radarCanvas !== "undefined" && radarCanvas) {
+    radarCtx = setupGaugeCanvas(radarCanvas);
+    if (typeof drawRadarBackground === "function") drawRadarBackground();
+  }
+  drawAzGauge(lastRotorAz, lastSatAz, lastFlipped);
+  drawElGauge(lastRotorEl, lastSatEl, lastFlipped);
 }
 
 function needleColor(flipped) {
@@ -87,7 +95,7 @@ function drawAzGauge(rotorAz, satAz, flipped) {
   }
 
   ctx.fillStyle = "rgba(230, 237, 243, 0.85)";
-  ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  ctx.font = gaugeFont(11, '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif');
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   const lo = r + 2;
@@ -146,8 +154,7 @@ function drawAzGauge(rotorAz, satAz, flipped) {
       : rotorAz;
   }
   ctx.fillStyle = displayAz != null ? "#e6edf3" : "#8b949e";
-  ctx.font =
-    "bold 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+  ctx.font = gaugeFont(16, "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", true);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(
@@ -214,7 +221,7 @@ function drawElGauge(rotorEl, satEl, flipped) {
   }
 
   ctx.fillStyle = "rgba(230, 237, 243, 0.85)";
-  ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  ctx.font = gaugeFont(11, '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif');
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText("0°", cx + r - 12, cy - 12);
@@ -222,7 +229,7 @@ function drawElGauge(rotorEl, satEl, flipped) {
   ctx.fillText("180°", cx - r + 16, cy - 12);
 
   ctx.fillStyle = "rgba(139, 148, 158, 0.75)";
-  ctx.font = '9px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  ctx.font = gaugeFont(9, '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif');
   const labelR = r - 14;
   [
     [30, "30°"],
@@ -293,8 +300,7 @@ function drawElGauge(rotorEl, satEl, flipped) {
     displayEl = trueEl > 90 ? 180 - trueEl : trueEl;
   }
   ctx.fillStyle = displayEl != null ? "#e6edf3" : "#8b949e";
-  ctx.font =
-    "bold 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+  ctx.font = gaugeFont(16, "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", true);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(

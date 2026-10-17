@@ -544,6 +544,10 @@ function readFormConfig() {
       if (!Number.isFinite(v)) return 0;
       return Math.max(0, Math.min(90, v));
     })(),
+    rotorAfterLos: (function () {
+      const v = val("cfg-rotor-after-los") || "none";
+      return v === "park" ? "park" : "none";
+    })(),
     rotorElMax: (function () {
       const el = document.getElementById("cfg-rotor-el-180");
       return el && el.checked ? 180 : 90;
@@ -557,6 +561,10 @@ function readFormConfig() {
     logMethod: (function () {
       const m = val("cfg-log-method") || "off";
       return ["off", "adif", "udp"].indexOf(m) >= 0 ? m : "off";
+    })(),
+    logAmsatHeard: (function () {
+      const el = document.getElementById("cfg-log-amsat-heard");
+      return el ? !!el.checked : true;
     })(),
     logAdifPath:
       val("cfg-log-adif-path").trim() || "~/.rpitrack/pi-sat-track.adi",
@@ -721,6 +729,7 @@ function fillForm(cfg) {
       ? d.rotorMinEl
       : 0,
   );
+  setVal("cfg-rotor-after-los", d.rotorAfterLos === "park" ? "park" : "none");
   const el180 = document.getElementById("cfg-rotor-el-180");
   if (el180) {
     const max = d.rotorElMax != null ? Number(d.rotorElMax) : 180;
@@ -738,6 +747,8 @@ function fillForm(cfg) {
   if (stopS) stopS.checked = stop === "south";
   updateRotorFormVisibility();
   setVal("cfg-log-method", d.logMethod || "off");
+  const amsatHeard = document.getElementById("cfg-log-amsat-heard");
+  if (amsatHeard) amsatHeard.checked = d.logAmsatHeard !== false;
   setVal("cfg-log-adif-path", d.logAdifPath || "~/.rpitrack/pi-sat-track.adi");
   setVal("cfg-log-udp-host", d.logUdpHost || "127.0.0.1");
   setVal("cfg-log-udp-port", d.logUdpPort != null ? d.logUdpPort : 2237);

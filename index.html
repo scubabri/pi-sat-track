@@ -45,8 +45,9 @@
 
       <div id="pass-status">
         <div class="status-dot yellow"></div>
-        <span id="pass-label">Next AOS in</span>
+        <span id="pass-label">Next AOS</span>
         <span id="countdown">-</span>
+        <span id="after-los-ind" class="after-los-ind" hidden></span>
       </div>
 
       <div id="pass-summary">
@@ -69,8 +70,10 @@
       </div>
 
       <div id="top-controls">
+        <button class="btn" id="btn-auto-select" title="Auto Select: at LOS, select the favorite with the soonest AOS">Auto Select</button>
         <button class="btn" id="btn-radio">Radio</button>
         <button class="btn" id="btn-antenna">Antenna</button>
+        <button class="btn" id="btn-park" title="Park the rotor">Park</button>
         <button class="btn" id="btn-log" title="Server log (live)">Server Log</button>
 
         <div id="config-wrapper">
@@ -657,9 +660,23 @@
                   the long way instead.
                 </p>
               </div>
+              <div class="form-row" id="cfg-rotor-after-los-wrap">
+                <label for="cfg-rotor-after-los">After LOS</label>
+                <select id="cfg-rotor-after-los" class="cfg-select">
+                  <option value="none">Do nothing</option>
+                  <option value="park">Park</option>
+                </select>
+                <p class="form-hint">
+                  When the selected sat drops below Min EL: <b>Do nothing</b>
+                  holds the LOS azimuth; <b>Park</b> sends the rotor to Park
+                  AZ/EL (if Antenna is on) and re-engages 5 min before the
+                  next AOS. Combine with the top-bar <b>Auto Select</b> button
+                  to also switch to the favorite with the soonest AOS.
+                </p>
+              </div>
               <p class="form-hint">
-                Min EL applies to tracking and pass AOS/LOS. After LOS, hold
-                min-EL az; Antenna on → preposition 5 min before next AOS.
+                Min EL applies to tracking and pass AOS/LOS. Antenna on →
+                preposition 5 min before next AOS.
               </p>
             </div>
             <div class="form-section cfg-group" id="cfg-rotor-device-group">
@@ -767,6 +784,21 @@
                   <option value="adif">ADIF file (on this server)</option>
                   <option value="udp">UDP (WSJT-X protocol)</option>
                 </select>
+              </div>
+
+              <div class="form-row">
+                <label class="cfg-check-label" for="cfg-log-amsat-heard">
+                  <input type="checkbox" id="cfg-log-amsat-heard" checked />
+                  Also send AMSAT 'Heard' report when logging a QSO
+                </label>
+                <p class="form-hint">
+                  Same report as the sidebar AMSAT <b>Heard</b> button (your
+                  callsign/grid, UTC time of the QSO), for the logged
+                  satellite. Sent at most once per pass, also counting a
+                  Heard you already sent with the button. Applies to the Log
+                  button and to WSJT-X QSOs logged for the selected
+                  satellite. Never delays the log.
+                </p>
               </div>
 
               <div id="cfg-log-adif-block" hidden>
@@ -980,19 +1012,21 @@
       <div id="left-column">
         <div id="map-container">
           <div id="map"></div>
+          <div id="rtc-clock" title="Click for UTC / local time" role="button" tabindex="0"></div>
           <div id="radar">
-            <canvas id="radar-canvas" width="220" height="220"></canvas>
+            <canvas id="radar-canvas" width="110" height="110"></canvas>
             <div class="rotor-gauge-wrap">
               <div class="rotor-gauge-label">Rotor AZ</div>
-              <canvas id="rotor-az-canvas" width="220" height="220"></canvas>
+              <canvas id="rotor-az-canvas" width="110" height="110"></canvas>
             </div>
             <div class="rotor-gauge-wrap">
               <div class="rotor-gauge-label">Rotor EL</div>
-              <canvas id="rotor-el-canvas" width="220" height="220"></canvas>
+              <canvas id="rotor-el-canvas" width="110" height="110"></canvas>
             </div>
           </div>
         </div>
         <div id="pass-profile">
+          <div id="profile-resize" title="Drag to resize the elevation chart" role="separator" aria-orientation="horizontal"></div>
           <canvas id="profile-canvas"></canvas>
         </div>
       </div>
@@ -1186,30 +1220,6 @@
           </div>
         </section>
 
-        <section class="panel-section">
-          <h3>Controls</h3>
-          <div class="toggle-row">
-            <span class="toggle-label">Radio</span>
-            <label class="switch">
-              <input type="checkbox" id="toggle-radio" />
-              <span class="slider"></span>
-            </label>
-          </div>
-
-          <div class="toggle-row">
-            <span class="toggle-label">Antenna (Rotor)</span>
-            <label class="switch">
-              <input type="checkbox" id="toggle-antenna" />
-              <span class="slider"></span>
-            </label>
-          </div>
-          <div class="form-row" style="margin-top: 0.5rem">
-            <button type="button" class="btn" id="btn-park" style="width: 100%">
-              Park
-            </button>
-          </div>
-        </section>
-
         <section class="panel-section collapsible" data-collapse-key="sat-status">
           <h3 class="collapse-head">Satellite Status</h3>
           <div class="collapse-body">
@@ -1298,9 +1308,12 @@
     ></script>
 
     <script src="js/maidenhead.js"></script>
+    <script src="js/sun.js"></script>
     <script src="js/map.js"></script>
+    <script src="js/gauge-canvas.js"></script>
     <script src="js/radar.js"></script>
     <script src="js/rotor-gauges.js"></script>
+    <script src="js/sat-colors.js"></script>
     <script src="js/profile.js"></script>
     <script src="js/config-defaults.js"></script>
     <script src="js/config-form.js"></script>
@@ -1323,6 +1336,8 @@
     <script src="js/decode-overlay.js"></script>
     <script src="js/schedule.js"></script>
     <script src="js/fav-overlay.js"></script>
+    <script src="js/globe-view.js"></script>
+    <script src="js/pass-preview.js"></script>
     <script src="js/log-viewer.js"></script>
     <script src="js/amsat-report.js"></script>
     <script src="js/app.js"></script>

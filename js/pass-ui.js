@@ -17,6 +17,76 @@ function formatPassTime(iso) {
   return d.toLocaleTimeString([], opts) + " MT";
 }
 
+/** Short clock for chart hover / preview labels; follows the AOS/LOS UTC|local toggle. */
+function formatClockShort(t) {
+  const d = new Date(t);
+  if (timeMode === "utc") return d.toISOString().substr(11, 5) + " UTC";
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) + " MT";
+}
+/** Chart axis hour label (no zone suffix). */
+function formatAxisHour(t) {
+  const d = new Date(t);
+  const h = timeMode === "utc" ? d.getUTCHours() : d.getHours();
+  return String(h).padStart(2, "0") + (timeMode === "utc" ? "Z" : "");
+}
+function isUtcTimeMode() { return timeMode === "utc"; }
+
+/* ---- Sat-dot label (map + globe): name + AOS/LOS countdown, El / Range / Alt ---- */
+/** "12m 34s", "45s", "1h 05m" for the dot label countdown. */
+function formatCountdownShort(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return h + "h " + String(m).padStart(2, "0") + "m";
+  if (m > 0) return m + "m " + String(s).padStart(2, "0") + "s";
+  return s + "s";
+}
+
+/**
+ * Two-line label for a sat dot from data already on the client:
+ *  - st.passes (selected sat, "state" msg; computed with the rotor min-EL cutoff)
+ *  - or st.nextPass {aos, los} (favorites payload, lib/fav-passes.js)
+ *  - st.look {el, rangeKm}, st.position.heightKm (live).
+ * In a pass (aos <= now < los): stacked NAME / LOS 00:05:10 / 14:17 UTC / El 34° / Rng 1234 km / Alt 568 km.
+ * Otherwise:                    stacked NAME / AOS 00:12:34 / 14:05 UTC / Rng / Alt.
+ * Returns { l1, l2, up } (l2 may be "").
+ */
+/** "01:00:01" (HH:MM:SS) countdown for the sat-dot label. */
+function formatCountdownClock(sec) {
+  sec = Math.max(0, Math.floor(sec || 0));
+  const p = (n) => String(n).padStart(2, "0");
+  return p(Math.floor(sec / 3600)) + ":" + p(Math.floor((sec % 3600) / 60)) + ":" + p(sec % 60);
+}
+function satDotLabelLines(st, now) {
+  if (!st) return null;
+  now = now != null ? now : Date.now();
+  const name = st.display || st.sat || st.key || "";
+  const clock = (t) => formatPassTime(t); // HH:MM:SS UTC|MT, to the second
+  const hKm = st.position && Number.isFinite(st.position.heightKm) ? st.position.heightKm : null;
+  const lk = st.look || {};
+  const alt = hKm != null ? "Alt " + Math.round(hKm) + " km" : "";
+  const rng = Number.isFinite(lk.rangeKm) ? "Rng " + Math.round(lk.rangeKm) + " km" : "";
+  const el = Number.isFinite(lk.el) ? "El " + Math.round(lk.el) + "\u00B0" : "";
+  const list = Array.isArray(st.passes) && st.passes.length ? st.passes : (st.nextPass ? [st.nextPass] : []);
+  let pass = null;
+  for (const p of list) {
+    if (!p || !p.aos || !p.los) continue;
+    if (new Date(p.los).getTime() > now) { pass = p; break; }
+  }
+  // Stacked: name / AOS|LOS countdown / clock / [El] / Rng / Alt
+  const out = (lines, up) => {
+    lines = lines.filter(Boolean);
+    return { lines, l1: lines[0] || name, l2: lines.slice(1).join("\n"), up };
+  };
+  if (!pass) return out([name, el, rng, alt], false);
+  const aosMs = new Date(pass.aos).getTime();
+  const losMs = new Date(pass.los).getTime();
+  if (aosMs <= now)
+    return out([name, "LOS " + formatCountdownClock((losMs - now) / 1000), clock(losMs), el, rng, alt], true);
+  return out([name, "AOS " + formatCountdownClock((aosMs - now) / 1000), clock(aosMs), el, rng, alt], false);
+}
+
 function renderPassTimes() {
   if (!lastPass) return;
   const aosEl = document.getElementById("pass-aos");
@@ -30,6 +100,7 @@ function toggleTimeMode() {
   localStorage.setItem("satTrackerTimeMode", timeMode);
   renderPassTimes();
   if (typeof renderPassPanel === "function") renderPassPanel();
+  window.dispatchEvent(new Event("time-mode-change"));
 }
 
 function formatCountdown(sec) {
@@ -38,16 +109,8 @@ function formatCountdown(sec) {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
-  if (h > 0) {
-    return (
-      String(h).padStart(2, "0") +
-      ":" +
-      String(m).padStart(2, "0") +
-      ":" +
-      String(s).padStart(2, "0")
-    );
-  }
-  return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+  // Always HH:MM:SS (matches the sat-dot label).
+  return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
 }
 
 function tickCountdown() {
@@ -69,7 +132,7 @@ function tickCountdown() {
     const secToLos = (losMs - now) / 1000;
 
     if (secToAos > 0) {
-      if (labelEl) labelEl.textContent = "Next AOS in";
+      if (labelEl) labelEl.textContent = "Next AOS";
       countdownEl.textContent = formatCountdown(secToAos);
       if (dot) {
         if (secToAos <= 5 * 60) dot.className = "status-dot red";
@@ -80,7 +143,7 @@ function tickCountdown() {
     }
 
     if (secToLos > 0) {
-      if (labelEl) labelEl.textContent = "LOS in";
+      if (labelEl) labelEl.textContent = "LOS";
       countdownEl.textContent = formatCountdown(secToLos);
       if (dot) dot.className = "status-dot green";
       return;
@@ -96,7 +159,7 @@ function tickCountdown() {
     return;
   }
 
-  if (labelEl) labelEl.textContent = "Next AOS in";
+  if (labelEl) labelEl.textContent = "Next AOS";
   countdownEl.textContent = "-";
   if (dot) dot.className = "status-dot";
 }
@@ -108,6 +171,7 @@ function startCountdownTimer() {
 }
 
 function updateSidebar(state) {
+  updateAfterLosIndicator(state);
   if (typeof updatePassPanelFromState === "function") {
     updatePassPanelFromState(state);
   }
@@ -213,4 +277,98 @@ if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", initTleSourceUi);
 } else {
   initTleSourceUi();
+}
+
+/* ---- Real-time clock (lower left of the map/globe); click toggles UTC / local ---- */
+(function initRtcClock() {
+  function tick() {
+    const el = document.getElementById("rtc-clock");
+    if (!el) return;
+    const d = new Date();
+    el.textContent = timeMode === "utc"
+      ? d.toISOString().substr(11, 8) + " UTC"
+      : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) + " MT";
+  }
+  function start() {
+    const el = document.getElementById("rtc-clock");
+    if (!el) return;
+    el.addEventListener("click", (e) => { e.stopPropagation(); toggleTimeMode(); });
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleTimeMode(); } });
+    ["pointerdown", "mousedown", "dblclick", "wheel"].forEach((ev) => el.addEventListener(ev, (e) => e.stopPropagation()));
+    window.addEventListener("time-mode-change", tick);
+    tick();
+    setInterval(tick, 1000);
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+  else start();
+})();
+
+/* ---- After-LOS indicator (top bar, next to the AOS/LOS countdown) ---- */
+const AFTER_LOS_FALLBACK_TEXT = {
+  "antenna-off": "antenna off — rotor will not move",
+  "no-favorites": "no favorites — will do nothing",
+  "not-favorite": "selected sat is not a favorite — will do nothing",
+  "no-upcoming-pass": "no favorite has an upcoming pass — will do nothing",
+};
+function updateAfterLosIndicator(state) {
+  const el = document.getElementById("after-los-ind");
+  if (!el) return;
+  const a = state && state.afterLos;
+  if (a && typeof updateAutoSelectUi === "function") updateAutoSelectUi(a.autoSelect === true);
+  const wantPark = !!a && a.mode === "park";
+  const wantAuto = !!a && a.autoSelect === true;
+  if (!wantPark && !wantAuto) {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  el.classList.toggle("armed", !!a.inPass);
+  const parkDead = wantPark && !!a.parkFallback;
+  const autoDead = wantAuto && !a.target && a.fallback !== "pending";
+  // Dim only when nothing will actually happen at LOS.
+  el.classList.toggle("none", (!wantPark || parkDead) && (!wantAuto || autoDead));
+  const parts = [];
+  const tips = [];
+  if (wantPark) {
+    parts.push("Park");
+    tips.push("park rotor" + (parkDead ? " (" + AFTER_LOS_FALLBACK_TEXT[a.parkFallback] + ")" : ""));
+  }
+  if (wantAuto) {
+    if (a.target) {
+      const sec = (a.target.aos - Date.now()) / 1000;
+      const when = sec <= 0 ? "already up" : "AOS in " + formatCountdownShort(sec);
+      parts.push("Auto: " + a.target.display);
+      tips.push(
+        "auto select " + a.target.display + " (" + when + ", " + formatClockShort(a.target.aos) +
+          (a.target.maxEl != null ? ", max " + Math.round(a.target.maxEl) + "°" : "") + ")",
+      );
+    } else if (a.fallback === "pending") {
+      parts.push("Auto");
+      tips.push("auto select the favorite with the soonest AOS (picked once the pass is near)");
+    } else {
+      parts.push("Auto: —");
+      tips.push("auto select — " + (AFTER_LOS_FALLBACK_TEXT[a.fallback] || "nothing to select"));
+    }
+  }
+  el.textContent = "→ " + parts.join(" · ");
+  el.title =
+    "After LOS" + (a.losMs ? " at LOS " + formatClockShort(a.losMs) : "") + ": " + tips.join("; then ");
+}
+
+/** Short toast when the server ran the After-LOS action(s). */
+function showAfterLosToast(evt) {
+  if (!evt) return;
+  const parts = [];
+  if (evt.park) parts.push("parked");
+  if (evt.target) parts.push("auto-selected " + (evt.display || evt.target));
+  if (!parts.length) return;
+  const old = document.getElementById("after-los-toast");
+  if (old) old.remove();
+  const t = document.createElement("div");
+  t.id = "after-los-toast";
+  t.className = "app-toast";
+  t.setAttribute("role", "status");
+  t.textContent = "After LOS: " + parts.join(", ");
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 5000);
 }
