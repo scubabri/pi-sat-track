@@ -27,23 +27,32 @@
 }
 
 /* ========== RADAR + ROTOR GAUGES ========== */
+/* Anchored to the bottom of the map area (which shrinks as the elevation
+   chart grows); JS switches to a row (.gauges-row) when the column won't fit. */
 #radar {
   position: absolute;
-  top: 12px;
+  bottom: 12px;
   left: 12px;
   z-index: 500;
   pointer-events: none;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 10px;
+  gap: 6px;
+}
+#radar.gauges-compact .rotor-gauge-wrap {
+  display: none;
+}
+#radar.gauges-row {
+  flex-direction: row;
+  align-items: flex-end;
 }
 
 #radar-canvas,
 #rotor-az-canvas {
   display: block;
-  width: 220px;
-  height: 220px;
+  width: 110px; /* JS sets the exact size (gauge-canvas.js) */
+  height: 110px;
   border-radius: 50%;
   background: rgba(13, 17, 23, 0.75);
   border: 1px solid var(--border);
@@ -51,8 +60,8 @@
 
 #rotor-el-canvas {
   display: block;
-  width: 220px;
-  height: 220px;
+  width: 110px;
+  height: 110px;
   border-radius: 0;
   background: transparent;
   border: none;
@@ -60,7 +69,7 @@
 
 .rotor-gauge-wrap {
   position: relative;
-  width: 220px;
+  width: auto;
 }
 
 .rotor-gauge-label {
@@ -69,19 +78,20 @@
   left: 50%;
   transform: translateX(-50%);
   z-index: 1;
-  font-size: 0.65rem;
+  font-size: 0.55rem;
   text-transform: uppercase;
-  letter-spacing: 0.45px;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
   color: var(--text-dim);
   background: rgba(13, 17, 23, 0.85);
-  padding: 1px 8px;
-  border-radius: 4px;
+  padding: 0 5px;
+  border-radius: 3px;
   pointer-events: none;
 }
 
 /* EL semicircle sits lower in the 220 canvas — tuck label down a bit */
 .rotor-gauge-wrap:has(#rotor-el-canvas) .rotor-gauge-label {
-  top: 14px;
+  top: 6px;
 }
 
 #pass-profile {
