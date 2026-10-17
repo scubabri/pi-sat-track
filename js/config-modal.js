@@ -19,8 +19,18 @@
     try { cfg = typeof loadConfig === "function" ? loadConfig() : {}; } catch (e) {}
     set("cfg-sum-profile", txt(document.getElementById("cfg-profile")));
     set("cfg-sum-grid", cfg.grid || document.getElementById("cfg-grid")?.value);
-    const ulType = txt(document.getElementById("cfg-ul-type"));
-    const dlType = txt(document.getElementById("cfg-dl-type"));
+    // Serial connections use make/model; the TCP "Radio / software" select is stale then.
+    const radioName = (side) => {
+      const tr = document.getElementById("cfg-" + side + "-transport");
+      if (tr && tr.value === "serial") {
+        const make = txt(document.getElementById("cfg-" + side + "-serial-make"));
+        const model = txt(document.getElementById("cfg-" + side + "-serial-model"));
+        return model ? (make && !model.startsWith(make) ? make + " " + model : model) : make;
+      }
+      return txt(document.getElementById("cfg-" + side + "-type"));
+    };
+    const ulType = radioName("ul");
+    const dlType = radioName("dl");
     const single = document.getElementById("cfg-single-radio")?.checked;
     set("cfg-sum-radio", single || !dlType || ulType === dlType ? ulType : ulType + " / " + dlType);
     set("cfg-sum-rotor", txt(document.getElementById("cfg-rotor-type")));
