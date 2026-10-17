@@ -27,11 +27,11 @@
 }
 
 /* ========== RADAR + ROTOR GAUGES ========== */
-/* Anchored to the bottom of the map area (which shrinks as the elevation
-   chart grows); JS switches to a row (.gauges-row) when the column won't fit. */
+/* Top-left of the map (zoom/locate controls are top-right), stacked
+   vertically; gauge-canvas.js shrinks them if the map area gets too short. */
 #radar {
   position: absolute;
-  bottom: 12px;
+  top: 12px;
   left: 12px;
   z-index: 500;
   pointer-events: none;
@@ -39,13 +39,6 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
-}
-#radar.gauges-compact .rotor-gauge-wrap {
-  display: none;
-}
-#radar.gauges-row {
-  flex-direction: row;
-  align-items: flex-end;
 }
 
 #radar-canvas,

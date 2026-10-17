@@ -7,9 +7,16 @@
 const GAUGE_LOGICAL = 220;
 const GAUGE_FONT_BOOST = 1.7; // logical font px multiplier (11px -> ~9.4 CSS px at 110)
 
-function gaugeCssPx() {
+let gaugeFitPx = null; // set by the fit logic below when the map area is short
+
+function gaugeBasePx() {
   const w = window.innerWidth || 1280;
   return w < 600 ? 84 : w < 1000 ? 96 : 110;
+}
+
+function gaugeCssPx() {
+  const b = gaugeBasePx();
+  return gaugeFitPx ? Math.min(b, gaugeFitPx) : b;
 }
 
 /** Size canvas backing store for current CSS size + DPR; returns ctx with logical transform. */
@@ -48,18 +55,26 @@ function gaugeFont(px, family, bold) {
   check();
 })();
 
-/** Column if it fits in the map area, else a row (tall chart / short screens). */
+/**
+ * Gauges stack vertically at the map's top-left. If the stack can't fit the
+ * map height (tall elevation chart / short screen), shrink them (min 56 px)
+ * instead of changing the layout.
+ */
 (function () {
+  const MIN_PX = 56;
   function fit() {
     const box = document.getElementById("radar");
     const host = document.getElementById("map-container");
     if (!box || !host) return;
-    box.classList.remove("gauges-row", "gauges-compact");
-    if (box.getBoundingClientRect().height + 24 <= host.clientHeight) return;
-    box.classList.add("gauges-row");
-    const r = box.getBoundingClientRect();
-    // Neither fits (narrow phone map): keep only the sky radar.
-    if (r.width + 60 > host.clientWidth || r.height + 24 > host.clientHeight) box.classList.add("gauges-compact");
+    const n = box.querySelectorAll("canvas").length || 3;
+    const cur = gaugeCssPx();
+    const extra = box.getBoundingClientRect().height - n * cur; // gaps + labels
+    const room = host.clientHeight - 24 - Math.max(0, extra);
+    const want = Math.max(MIN_PX, Math.floor(room / n));
+    const next = want >= gaugeBasePx() ? null : want;
+    if (next === gaugeFitPx) return;
+    gaugeFitPx = next;
+    if (typeof reinitGaugeCanvases === "function") reinitGaugeCanvases();
   }
   function init() {
     const host = document.getElementById("map-container");
