@@ -497,7 +497,6 @@ function drawFavProfile() {
   const t0 = now;
   const t1 = now + 24 * 3600000;
   const sats = data.sats.slice().sort((a, b) => (a.key === data.current) - (b.key === data.current));
-  const cur = sats.find((s) => s.key === data.current) || null;
   const colorOf = (s) => (s.key === data.current ? SAT_SELECTED_COLOR : favColor(s.key));
 
   // Legend width: longest name.
@@ -549,14 +548,8 @@ function drawFavProfile() {
     }
   }
 
-  // Watermark: selected sat.
-  if (cur) {
-    ctx.fillStyle = "rgba(88, 166, 255, 0.12)";
-    ctx.font = "bold 28px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(cur.display || cur.key, padL + plotW / 2, padT + plotH / 2);
-  }
+  // No sat-name watermark in favorites mode (legend names each sat); the
+  // single-sat chart keeps its watermark.
 
   // Arcs: favorites first (thin), selected last (thick, on top).
   const labels = [];

@@ -28,6 +28,14 @@ function setCenterChoice(choice) {
   });
 }
 
+const MAP_VIEW_KEY = "mapViewPos";
+function savedMapView() {
+  try {
+    const v = JSON.parse(localStorage.getItem(MAP_VIEW_KEY) || "null");
+    return v && Number.isFinite(v.lat) && Number.isFinite(v.lng) && Number.isFinite(v.zoom) ? v : null;
+  } catch (_) { return null; }
+}
+
 function centerMidAtlantic() {
   if (typeof window.globeCenterOn === "function" && window.globeCenterOn(MID_ATLANTIC_VIEW.lat, MID_ATLANTIC_VIEW.lon)) return;
   if (!map) return;
@@ -45,12 +53,28 @@ function initMap() {
     wheelDebounceTime: 40,
     maxZoom: 8,
     zoomControl: false,
-  }).setView(
-    getCenterChoice() === "atlantic"
-      ? [MID_ATLANTIC_VIEW.lat, MID_ATLANTIC_VIEW.lon]
-      : [20, 0],
-    getCenterChoice() === "atlantic" ? MID_ATLANTIC_VIEW.zoom : 2,
-  );
+  });
+  const sv = savedMapView();
+  if (sv) map.setView([sv.lat, sv.lng], sv.zoom);
+  else
+    map.setView(
+      getCenterChoice() === "atlantic"
+        ? [MID_ATLANTIC_VIEW.lat, MID_ATLANTIC_VIEW.lon]
+        : [20, 0],
+      getCenterChoice() === "atlantic" ? MID_ATLANTIC_VIEW.zoom : 2,
+    );
+  // Remember center + zoom (and the grid it was for) across reloads.
+  let mvTimer = null;
+  map.on("moveend zoomend", () => {
+    clearTimeout(mvTimer);
+    mvTimer = setTimeout(() => {
+      try {
+        const c = map.getCenter();
+        const cfg = typeof loadConfig === "function" ? loadConfig() : null;
+        localStorage.setItem(MAP_VIEW_KEY, JSON.stringify({ lat: c.lat, lng: c.lng, zoom: map.getZoom(), grid: (cfg && cfg.grid) || "" }));
+      } catch (_) {}
+    }, 500);
+  });
 
   L.control.zoom({ position: "topright" }).addTo(map);
 
@@ -262,6 +286,11 @@ function centerOnGrid(grid, keepZoom) {
 
   // Load/config-driven recenter: respect a stored mid-Atlantic choice
   if (!keepZoom && getCenterChoice() === "atlantic") return;
+  // Load/config-driven recenter: keep the restored view unless the grid changed.
+  if (!keepZoom) {
+    const sv = savedMapView();
+    if (sv && String(sv.grid || "").toUpperCase() === String(grid).toUpperCase()) return;
+  }
 
   if (keepZoom) {
     map.panTo([pos.lat, pos.lon]);

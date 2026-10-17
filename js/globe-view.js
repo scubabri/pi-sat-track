@@ -10,6 +10,7 @@
  */
 (function () {
   const LS_KEY = "mapView";
+  const POV_KEY = "globePov";
   const RE_KM = 6371;
   const VENDOR = "js/vendor/globe/";
   let mode = localStorage.getItem(LS_KEY) === "globe" ? "globe" : "map";
@@ -113,7 +114,24 @@
       const fit = () => { if (el && G && mode === "globe") G.width(el.clientWidth).height(el.clientHeight); };
       if (typeof ResizeObserver === "function") new ResizeObserver(fit).observe(host);
       fit();
-      placeStation(true);
+      let saved = null;
+      try { saved = JSON.parse(localStorage.getItem(POV_KEY) || "null"); } catch (_) {}
+      const ok = saved && Number.isFinite(saved.lat) && Number.isFinite(saved.lng) && Number.isFinite(saved.altitude);
+      placeStation(!ok);
+      if (ok) G.pointOfView({ lat: saved.lat, lng: saved.lng, altitude: Math.min(8, Math.max(0.3, saved.altitude)) }, 0);
+      // Remember where the globe is pointed (drag, zoom, center buttons, snaps).
+      let povTimer = null;
+      const savePov = () => {
+        clearTimeout(povTimer);
+        povTimer = setTimeout(() => {
+          try { localStorage.setItem(POV_KEY, JSON.stringify(G.pointOfView())); } catch (_) {}
+        }, 500);
+      };
+      try { G.controls().addEventListener("change", savePov); } catch (_) {}
+      G.__savePov = savePov;
+      window.addEventListener("pagehide", () => {
+        if (mode === "globe") try { localStorage.setItem(POV_KEY, JSON.stringify(G.pointOfView())); } catch (_) {}
+      });
       return G;
     });
     loading.catch(() => { loading = null; });
@@ -125,6 +143,7 @@
     if (mode !== "globe" || !G || !Number.isFinite(lat) || !Number.isFinite(lng)) return false;
     const pov = G.pointOfView();
     G.pointOfView({ lat, lng, altitude: (pov && pov.altitude) || 2.2 }, 800);
+    setTimeout(() => G.__savePov && G.__savePov(), 900);
     return true;
   };
 
