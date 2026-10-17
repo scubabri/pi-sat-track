@@ -58,25 +58,27 @@ function satDotLabelLines(st, now) {
   const name = st.display || st.sat || st.key || "";
   const clock = (t) => (typeof formatClockShort === "function" ? formatClockShort(t) : new Date(t).toISOString().substr(11, 5) + " UTC");
   const hKm = st.position && Number.isFinite(st.position.heightKm) ? st.position.heightKm : null;
+  const lk = st.look || {};
   const alt = hKm != null ? "Alt " + Math.round(hKm) + " km" : "";
+  const rng = Number.isFinite(lk.rangeKm) ? "Rng " + Math.round(lk.rangeKm) + " km" : "";
+  const el = Number.isFinite(lk.el) ? "El " + Math.round(lk.el) + "\u00B0" : "";
   const list = Array.isArray(st.passes) && st.passes.length ? st.passes : (st.nextPass ? [st.nextPass] : []);
   let pass = null;
   for (const p of list) {
     if (!p || !p.aos || !p.los) continue;
     if (new Date(p.los).getTime() > now) { pass = p; break; }
   }
-  if (!pass) return { l1: name, l2: alt, up: false };
+  // Stacked: name / AOS|LOS countdown / clock / [El] / Rng / Alt
+  const out = (lines, up) => {
+    lines = lines.filter(Boolean);
+    return { lines, l1: lines[0] || name, l2: lines.slice(1).join("\n"), up };
+  };
+  if (!pass) return out([name, rng, alt], false);
   const aosMs = new Date(pass.aos).getTime();
   const losMs = new Date(pass.los).getTime();
-  if (aosMs <= now) {
-    const parts = [];
-    const lk = st.look || {};
-    if (Number.isFinite(lk.el)) parts.push("El " + Math.round(lk.el) + "\u00B0");
-    if (Number.isFinite(lk.rangeKm)) parts.push("Rng " + Math.round(lk.rangeKm) + " km");
-    if (alt) parts.push(alt);
-    return { l1: name + " \u00B7 LOS in " + formatCountdownShort((losMs - now) / 1000) + " \u00B7 " + clock(losMs), l2: parts.join(" \u00B7 "), up: true };
-  }
-  return { l1: name + " \u00B7 AOS in " + formatCountdownShort((aosMs - now) / 1000) + " \u00B7 " + clock(aosMs), l2: alt, up: false };
+  if (aosMs <= now)
+    return out([name, "LOS in " + formatCountdownShort((losMs - now) / 1000), clock(losMs), el, rng, alt], true);
+  return out([name, "AOS in " + formatCountdownShort((aosMs - now) / 1000), clock(aosMs), rng, alt], false);
 }
 
 function renderPassTimes() {

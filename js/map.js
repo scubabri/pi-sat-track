@@ -325,7 +325,8 @@ function selSatLabelHtml(state, pT) {
   if (pT) return escHtmlMap(name + " @ " + (typeof formatClockShort === "function" ? formatClockShort(pT) : new Date(pT).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })));
   const L = typeof satDotLabelLines === "function" ? satDotLabelLines(state) : null;
   if (!L) return escHtmlMap(name);
-  return escHtmlMap(L.l1) + (L.l2 ? '<br><span class="sel-sat-l2">' + escHtmlMap(L.l2) + "</span>" : "");
+  const rest = (L.lines || [L.l1, L.l2]).slice(1).filter(Boolean);
+  return escHtmlMap(L.l1) + (rest.length ? '<br><span class="sel-sat-l2">' + rest.map(escHtmlMap).join("<br>") + "</span>" : "");
 }
 
 function setSelSatLabel(label) {
