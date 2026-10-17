@@ -14,6 +14,8 @@ const band = (hz) => (hz >= 300e6 ? "70cm" : "2m");
  * Fake rigctld fronting a TS-2000. `w` behaves like Hamlib send_cmd for Kenwood:
  * sets get no reply, each query reply is printed followed by '\0', nak = "?;".
  * MAIN/SUB bands are fixed per layout: FA writes on the wrong band nak; TS1 swaps.
+ * satMem {fa, fb}: like the real radio, SAT keeps its own MAIN/SUB frequencies —
+ * SA1 (from off) recalls them, SA0 stores them and brings VFO A/B back.
  */
 function startFake(opts) {
   const o = opts || {};
@@ -28,6 +30,7 @@ function startFake(opts) {
     tn: "08",
     to: "0",
     hamlibF: [],
+    satMem: o.satMem ? { ...o.satMem } : null,
   };
   const satOn = () => st.sa[0] === "1";
   const p4 = () => st.sa[3];
@@ -35,7 +38,14 @@ function startFake(opts) {
     if (/^SA$/.test(c)) return "SA" + st.sa + ";";
     let m;
     if ((m = c.match(/^SA(\d{7})$/))) {
+      const was = satOn();
       st.sa = m[1];
+      if (st.satMem && was !== satOn()) {
+        const vfo = { fa: st.fa, fb: st.fb };
+        st.fa = st.satMem.fa;
+        st.fb = st.satMem.fb;
+        st.satMem = vfo; // the other set is parked
+      }
       return null;
     }
     if ((m = c.match(/^F([AB])(\d{11})$/))) {
@@ -49,6 +59,7 @@ function startFake(opts) {
     if (c === "FA") return "FA" + String(st.fa).padStart(11, "0") + ";";
     if (c === "FB") return "FB" + String(st.fb).padStart(11, "0") + ";";
     if (c === "TS1") {
+      if (st.noSwap) return null;
       const t = st.fa;
       st.fa = st.fb;
       st.fb = t;
@@ -143,12 +154,21 @@ function loadRigctl(port, model) {
     "RS-44": { modes: [{ mode: "SSB", uplink: "145.935-145.995", downlink: "435.610-435.670" }] },
     "AO-91": { modes: [{ mode: "FM", uplink: "435.250", downlink: "145.960" }] },
     ISS: { modes: [{ mode: "FM APRS", uplink: "145.825", downlink: "145.825" }] },
+    // Live ISS list order: 0 = 9k6 (V/U, DL 70cm), 1/2 = same-band, 3 = FM (U/V, DL 2m)
+    ISS4: {
+      modes: [
+        { mode: "FSK 9k6", uplink: "145.990", downlink: "437.800" },
+        { mode: "FM APRS", uplink: "145.825", downlink: "145.825" },
+        { mode: "FM APRS", uplink: "437.825", downlink: "437.825" },
+        { mode: "FM", uplink: "435.050", downlink: "145.800" },
+      ],
+    },
     "GMSK-SAT": { modes: [{ mode: "GMSK", uplink: "", downlink: "436.500" }] },
   });
   return require(rigPath);
 }
 
-async function withRig(fakeOpts, sat, fn, model) {
+async function withRig(fakeOpts, sat, fn, model, ctx) {
   const fake = await startFake(fakeOpts);
   const logs = [];
   const ol = console.log;
@@ -158,7 +178,8 @@ async function withRig(fakeOpts, sat, fn, model) {
   let rig;
   try {
     rig = loadRigctl(fake.port, model);
-    rig.init({ getContext: () => ({ currentSatKey: sat, currentModeIndex: 0 }) });
+    const c = ctx || { currentSatKey: sat, currentModeIndex: 0 };
+    rig.init({ getContext: () => c });
     await fn(rig, fake, logs);
   } catch (e) {
     ol(logs.join("\n"));
@@ -221,6 +242,7 @@ test("RS-44 linear: SAT via w, FA=DL FB=UL, modes, no SATMODE spam, restore SA",
     assert.ok(!fake.st.cmds.some((c) => /^(F|V|M) /.test(c)), "no Hamlib F/V/M in SAT");
     assert.ok(!fake.st.w.some((c) => /TS1/.test(c)), "no swap needed");
     assert.ok(!logs.some((l) => /RPRT -11/.test(l)), "no -11 spam");
+    await sleep(1000); // past the SAT-entry settle window (no absorb right after SA1)
     // Dial absorb (linear, unlocked): move MAIN by +1 kHz
     fake.st.fa += 1000;
     const fa = fake.st.fa;
@@ -337,4 +359,92 @@ test("bare '2000' model no longer matches TS-2000 / dual-SAT", async () => {
     assert.ok(!fake.st.cmds.some((c) => /^w |^U SATMODE/.test(c)));
     // 2014 (Hamlib model id) does match
   }, "FT-2000");
+});
+
+test("ISS mode 0 (DL 70cm) → same-band split → mode 3 (DL 2m): MAIN moved to 2m, no bogus absorb, no nak spam", async () => {
+  const ctx = { currentSatKey: "ISS4", currentModeIndex: 0 };
+  // Radio arrives in SAT with MAIN 70cm / SUB 2m (live: SA1010000)
+  await withRig({ sa: "1010000", fa: 437800000, fb: 145990000, satMem: { fa: 145000000, fb: 145000000 } }, "ISS4", async (rig, fake, logs) => {
+    rig.applyDefaultLock(false);
+    rig.setRadio(true);
+    await sleep(150);
+    // mode 0: 9k6, V/U — DL 437.800 on MAIN
+    await ticks(rig, 4, 145990000, 437810000);
+    assert.strictEqual(band(fake.st.fa), "70cm");
+    assert.ok(Math.abs(fake.st.fa - 437810000) < 100, "mode 0 FA=DL " + fake.st.fa);
+    assert.ok(!fake.st.w.some((c) => /TS1/.test(c)), "mode 0: no swap");
+    // mode 1: same-band 145.825 → SAT off, Hamlib split
+    ctx.currentModeIndex = 1;
+    rig.applyDefaultLock(true);
+    await ticks(rig, 3, 145825000, 145824329);
+    assert.strictEqual(fake.st.sa[0], "0", "SAT off for same-band");
+    // mode 2: 437.825 same-band
+    ctx.currentModeIndex = 2;
+    await ticks(rig, 3, 437825000, 437831600);
+    // mode 3: FM U/V — DL 145.800 must land on MAIN (SA1 recalls 70cm MAIN)
+    ctx.currentModeIndex = 3;
+    rig.applyDefaultLock(false); // worst case: UI left the dial unlocked
+    rig.applyDefaultCtcss(67.0, null);
+    const wBefore = fake.st.w.length;
+    await ticks(rig, 8, 435022443, 145800000);
+    const w3 = fake.st.w.slice(wBefore);
+    assert.strictEqual(fake.st.sa[0], "1", "SAT on again");
+    assert.ok(w3.includes("TS1;TS0;FA;FB;"), "TF-SET swap on mode change: " + w3.join(" | "));
+    assert.strictEqual(band(fake.st.fa), "2m", "MAIN on 2m (DL) " + fake.st.fa);
+    assert.strictEqual(band(fake.st.fb), "70cm", "SUB on 70cm (UL) " + fake.st.fb);
+    assert.ok(Math.abs(fake.st.fa - 145800000) < 50, "FA=DL 145.800 (no -21.6 kHz offset) " + fake.st.fa);
+    assert.ok(Math.abs(fake.st.fb - 435022443) < 50, "FB=UL " + fake.st.fb);
+    assert.strictEqual(rig.getRadioState().manualDlOffset, 0, "manualDl not poisoned");
+    assert.ok(!logs.some((l) => /dial absorb/.test(l)), "no dial absorb: " + logs.filter((l) => /absorb/.test(l)).join(" / "));
+    assert.ok(logs.filter((l) => /FA\/FB.*(nak|rejected)/.test(l)).length <= 1, "at most one nak warning");
+    assert.strictEqual(fake.st.mdMain, "4", "MAIN FM");
+    assert.strictEqual(fake.st.tn, "01", "CTCSS 67");
+    // modes 6/7-like DL-only then back to mode 3: bands verified again, still right
+    ctx.currentModeIndex = 1;
+    await ticks(rig, 2, 145825000, 145825000);
+    ctx.currentModeIndex = 3;
+    await ticks(rig, 5, 435022443, 145800000);
+    assert.strictEqual(band(fake.st.fa), "2m", "MAIN still 2m after re-entry " + fake.st.fa);
+    assert.ok(Math.abs(fake.st.fa - 145800000) < 50, "FA=DL after re-entry " + fake.st.fa);
+    assert.ok(!logs.some((l) => /dial absorb/.test(l)), "no absorb after re-entry");
+    // back to mode 0: 70cm DL again → swap back
+    ctx.currentModeIndex = 0;
+    await ticks(rig, 5, 145990000, 437810000);
+    assert.strictEqual(band(fake.st.fa), "70cm", "MAIN back on 70cm for mode 0 " + fake.st.fa);
+    assert.ok(Math.abs(fake.st.fb - 145990000) < 100, "SUB UL 2m " + fake.st.fb);
+  }, undefined, ctx);
+});
+
+test("bands that can't be swapped: one clear warning, Doppler paused, no nak flood", async () => {
+  await withRig({ sa: "1010000", fa: 437800000, fb: 145990000 }, "AO-91", async (rig, fake, logs) => {
+    // TF-SET does nothing on this "radio"
+    fake.st.noSwap = true;
+    rig.applyDefaultLock(true);
+    rig.setRadio(true);
+    await sleep(150);
+    await ticks(rig, 12, 435250000, 145960000);
+    const swaps = fake.st.w.filter((c) => /TS1/.test(c)).length;
+    assert.ok(swaps >= 1 && swaps <= 2, "TF-SET tried at most twice: " + swaps);
+    const warns = logs.filter((l) => /MAIN still on/.test(l));
+    assert.strictEqual(warns.length, 1, "one give-up warning: " + warns.join(" / "));
+    assert.ok(/TF-SET/.test(rig.getRadioState().toneError || ""), "status says press TF-SET");
+    const naks = logs.filter((l) => /nak|rejected/.test(l));
+    assert.ok(naks.length <= 1, "no nak spam: " + naks.join(" / "));
+    assert.strictEqual(fake.st.fa, 437800000, "MAIN untouched");
+  });
+});
+
+test("large MAIN readback jump (>10 kHz, same band) is not a dial turn", async () => {
+  await withRig({ sa: "0000000", fa: 435000000, fb: 145000000 }, "RS-44", async (rig, fake, logs) => {
+    rig.applyDefaultLock(false);
+    rig.setRadio(true);
+    await sleep(150);
+    await ticks(rig, 4, 145980000, 435616000);
+    await sleep(3000); // past settle
+    fake.st.fa -= 21596;
+    await ticks(rig, 2, 145980000, 435616000);
+    assert.ok(!logs.some((l) => /dial absorb/.test(l)), "not absorbed");
+    assert.strictEqual(rig.getRadioState().manualDlOffset, 0);
+    assert.ok(Math.abs(fake.st.fa - 435616000) < 100, "DL rewritten " + fake.st.fa);
+  });
 });
