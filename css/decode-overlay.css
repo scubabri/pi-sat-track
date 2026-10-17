@@ -156,3 +156,8 @@ body.globe-mode #map .leaflet-control-attribution { display: none; }
 /* Real-time clock, lower left of the map/globe */
 #rtc-clock { position: absolute; left: 12px; bottom: 8px; z-index: 1001; padding: 0; background: none; border: 0; color: rgba(230,237,243,0.3); font: 700 30px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 1px; text-shadow: 0 0 6px rgba(0,0,0,0.5); cursor: pointer; user-select: none; transition: color 0.15s; }
 #rtc-clock:hover { color: rgba(230,237,243,0.8); }
+
+/* Globe: Log-box callsign station (matches the map's yellow decode dot) */
+.globe-dx { width: 0; height: 0; overflow: visible; pointer-events: none; }
+.globe-dx-dot { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: #ffd34d; border: 1px solid #0b1e2d; }
+.globe-label.globe-dx-label { position: absolute; left: 8px; top: 0; transform: translateY(-50%); color: #ffd34d; white-space: nowrap; }

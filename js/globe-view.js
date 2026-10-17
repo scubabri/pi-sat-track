@@ -99,6 +99,12 @@
             e.className = "globe-dot";
             e.title = d.display || d.key;
             e.addEventListener("click", (ev) => { ev.stopPropagation(); pick(d); });
+          } else if (d.kind === "dx") {
+            // Callsign typed in the Log box: yellow dot + "CALL GRID" (like the map).
+            e.className = "globe-dx";
+            e.innerHTML = '<span class="globe-dx-dot"></span><span class="globe-label globe-dx-label"></span>';
+            e.lastChild.textContent = d.text;
+            return e;
           } else if (d.kind === "sat") {
             // globe.gl owns the element's inline transform (centers it on the point),
             // so the label sits in a zero-size anchor and is offset to the right of the dot.
@@ -226,6 +232,22 @@
     }
   }
 
+  /** DX station from the Log box callsign lookup (window.qsoDxGrid). */
+  function dxItems() {
+    const q = window.qsoDxGrid;
+    if (!q || !q.grid || typeof maidenheadToLatLon !== "function") return null;
+    const ll = maidenheadToLatLon(q.grid);
+    if (!ll) return null;
+    const out = { mk: { kind: "dx", lat: ll.lat, lng: ll.lon, alt: 0.006, text: q.call + " " + q.grid }, path: null };
+    if (stLabel.lat || stLabel.lng) {
+      const pts = typeof window.qsoGcPoints === "function"
+        ? window.qsoGcPoints({ lat: stLabel.lat, lon: stLabel.lng }, { lat: ll.lat, lon: ll.lon }, 64)
+        : [[stLabel.lat, stLabel.lng], [ll.lat, ll.lon]];
+      out.path = { key: "__dx", footprint: true, color: "#ffd34d", w: 0.6, pts: pts.map((q2) => [q2[0], q2[1], 0.003]) };
+    }
+    return out;
+  }
+
   /** Orbits changed (sat / favorites / TLE / overlay): rebuild paths. */
   function renderPaths() {
     if (!G || !orbits) return;
@@ -244,6 +266,8 @@
       });
     }
     if (footprint.pts.length > 1) paths.push(footprint);
+    const dx = dxItems();
+    if (dx && dx.path) paths.push(dx.path);
     G.pathsData(paths);
   }
 
@@ -272,6 +296,7 @@
   }
   setInterval(tickSelLabel, 1000);
   window.addEventListener("time-mode-change", () => applyState(true));
+  document.addEventListener("qso-dx-change", () => applyState(true));
 
   /** Live positions (moved in place), footprint and labels. */
   function applyState(force) {
@@ -320,10 +345,12 @@
     pts.forEach(styleDot);
     const extra = [];
     if (pT && lastState.position) { ghost.lat = lastState.position.lat; ghost.lng = lastState.position.lon; ghost.alt = (lastState.position.heightKm || 0) / RE_KM; extra.push(ghost); }
+    const dx = dxItems();
+    if (dx) extra.push(dx.mk);
     G.htmlElementsData([...pts.values(), stLabel].concat(st.position ? [selLabel] : [], extra));
     // footprint moves with the sat: refresh paths cheaply (same orbit arrays)
     if (orbits) renderPaths();
-    else G.pathsData(footprint.pts.length > 1 ? [footprint] : []);
+    else G.pathsData((footprint.pts.length > 1 ? [footprint] : []).concat(dx && dx.path ? [dx.path] : []));
   }
 
   function onVisibility() {
