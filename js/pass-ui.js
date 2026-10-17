@@ -31,6 +31,54 @@ function formatAxisHour(t) {
 }
 function isUtcTimeMode() { return timeMode === "utc"; }
 
+/* ---- Sat-dot label (map + globe): name + AOS/LOS countdown, El / Range / Alt ---- */
+/** "12m 34s", "45s", "1h 05m" for the dot label countdown. */
+function formatCountdownShort(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return h + "h " + String(m).padStart(2, "0") + "m";
+  if (m > 0) return m + "m " + String(s).padStart(2, "0") + "s";
+  return s + "s";
+}
+
+/**
+ * Two-line label for a sat dot from data already on the client:
+ *  - st.passes (selected sat, "state" msg; computed with the rotor min-EL cutoff)
+ *  - or st.nextPass {aos, los} (favorites payload, lib/fav-passes.js)
+ *  - st.look {el, rangeKm}, st.position.heightKm (live).
+ * In a pass (aos <= now < los): "NAME · LOS in 5m 10s · 14:17 UTC" / "El 34° · Rng 1234 km · Alt 568 km".
+ * Otherwise:                    "NAME · AOS in 12m 34s · 14:05 UTC" / "Alt 568 km".
+ * Returns { l1, l2, up } (l2 may be "").
+ */
+function satDotLabelLines(st, now) {
+  if (!st) return null;
+  now = now != null ? now : Date.now();
+  const name = st.display || st.sat || st.key || "";
+  const clock = (t) => (typeof formatClockShort === "function" ? formatClockShort(t) : new Date(t).toISOString().substr(11, 5) + " UTC");
+  const hKm = st.position && Number.isFinite(st.position.heightKm) ? st.position.heightKm : null;
+  const alt = hKm != null ? "Alt " + Math.round(hKm) + " km" : "";
+  const list = Array.isArray(st.passes) && st.passes.length ? st.passes : (st.nextPass ? [st.nextPass] : []);
+  let pass = null;
+  for (const p of list) {
+    if (!p || !p.aos || !p.los) continue;
+    if (new Date(p.los).getTime() > now) { pass = p; break; }
+  }
+  if (!pass) return { l1: name, l2: alt, up: false };
+  const aosMs = new Date(pass.aos).getTime();
+  const losMs = new Date(pass.los).getTime();
+  if (aosMs <= now) {
+    const parts = [];
+    const lk = st.look || {};
+    if (Number.isFinite(lk.el)) parts.push("El " + Math.round(lk.el) + "\u00B0");
+    if (Number.isFinite(lk.rangeKm)) parts.push("Rng " + Math.round(lk.rangeKm) + " km");
+    if (alt) parts.push(alt);
+    return { l1: name + " \u00B7 LOS in " + formatCountdownShort((losMs - now) / 1000) + " \u00B7 " + clock(losMs), l2: parts.join(" \u00B7 "), up: true };
+  }
+  return { l1: name + " \u00B7 AOS in " + formatCountdownShort((aosMs - now) / 1000) + " \u00B7 " + clock(aosMs), l2: alt, up: false };
+}
+
 function renderPassTimes() {
   if (!lastPass) return;
   const aosEl = document.getElementById("pass-aos");

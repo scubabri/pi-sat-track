@@ -305,6 +305,44 @@ function centerOnGrid(grid, keepZoom) {
   }
 }
 
+function escHtmlMap(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+}
+
+/**
+ * Selected-sat dot label. Pass preview (pT) keeps the old "NAME @ HH:MM" text;
+ * live: line 1 = name + AOS/LOS countdown + clock, line 2 = El / Range / Alt.
+ */
+function selSatLabelHtml(state, pT) {
+  const name = state.display || state.sat || "";
+  if (pT) return escHtmlMap(name + " @ " + (typeof formatClockShort === "function" ? formatClockShort(pT) : new Date(pT).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })));
+  const L = typeof satDotLabelLines === "function" ? satDotLabelLines(state) : null;
+  if (!L) return escHtmlMap(name);
+  return escHtmlMap(L.l1) + (L.l2 ? '<br><span class="sel-sat-l2">' + escHtmlMap(L.l2) + "</span>" : "");
+}
+
+function setSelSatLabel(label) {
+  if (!satMarker || !label || satMarker.__label === label) return;
+  if (satMarker.getTooltip()) satMarker.setTooltipContent(label);
+  else
+    satMarker.bindTooltip(label, {
+      permanent: true,
+      direction: "right",
+      offset: [9, 0],
+      className: "decode-label sel-sat-label",
+    });
+  satMarker.__label = label;
+}
+
+// Tick the AOS/LOS countdown each second between state messages; redraw on UTC/MT toggle.
+function refreshSelSatLabel() {
+  if (!satMarker || !lastMapState || !map || !map.hasLayer(satMarker)) return;
+  const pv = window.passPreview && window.passPreview.posOf(lastMapState.sat);
+  setSelSatLabel(selSatLabelHtml(lastMapState, pv && window.passPreview.get()));
+}
+setInterval(refreshSelSatLabel, 1000);
+window.addEventListener("time-mode-change", refreshSelSatLabel);
+
 function updateMapTracking(state) {
   if (!map || !state) return;
   // Layers belong to one sat: a state for a different sat starts fresh.
@@ -341,18 +379,9 @@ function updateMapTracking(state) {
         if (!map.hasLayer(satMarker)) satMarker.addTo(map);
       }
       const pT = pv && window.passPreview.get();
-      const label = (state.display || state.sat || "") + (pT ? " @ " + (typeof formatClockShort === "function" ? formatClockShort(pT) : new Date(pT).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })) : "");
+      const label = selSatLabelHtml(state, pT);
       satMarker.setStyle(pv ? { fillColor: "#e3b341", color: "#fff" } : { fillColor: "#58a6ff", color: "#fff" });
-      if (label && satMarker.__label !== label) {
-        satMarker.unbindTooltip();
-        satMarker.bindTooltip(label, {
-          permanent: true,
-          direction: "right",
-          offset: [9, 0],
-          className: "decode-label sel-sat-label",
-        });
-        satMarker.__label = label;
-      }
+      setSelSatLabel(label);
 
       const hKm = state.position.heightKm;
       const rM = footprintRadiusM(hKm);

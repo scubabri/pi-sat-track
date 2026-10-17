@@ -127,6 +127,11 @@
   pointer-events: auto;
 }
 .globe-label-station { color: #79c0ff; font-weight: 500; }
+/* Selected-sat 2-line label (name + AOS/LOS, then El / Range / Alt) */
+.globe-sel-anchor { width: 0; height: 0; overflow: visible; pointer-events: none; }
+.globe-label.globe-sel-label { position: absolute; left: 9px; top: 0; transform: translateY(-50%); }
+.globe-label.globe-label-2l { white-space: pre; line-height: 1.35; }
+.leaflet-tooltip.decode-label.sel-sat-label .sel-sat-l2 { font-size: 11px; font-weight: 600; color: #e6edf3; }
 .globe-toast {
   position: fixed;
   left: 50%;

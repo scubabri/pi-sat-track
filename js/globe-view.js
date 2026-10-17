@@ -99,6 +99,16 @@
             e.className = "globe-dot";
             e.title = d.display || d.key;
             e.addEventListener("click", (ev) => { ev.stopPropagation(); pick(d); });
+          } else if (d.kind === "sat") {
+            // globe.gl owns the element's inline transform (centers it on the point),
+            // so the label sits in a zero-size anchor and is offset to the right of the dot.
+            e.className = "globe-sel-anchor";
+            const t = document.createElement("div");
+            t.className = "globe-label globe-sel-label";
+            e.appendChild(t);
+            d.el = t;
+            paintSelLabel();
+            return e;
           } else {
             e.className = "globe-label" + (d.kind === "station" ? " globe-label-station" : "");
             e.textContent = d.text;
@@ -237,6 +247,32 @@
     G.pathsData(paths);
   }
 
+  /**
+   * Selected-sat label. Pass preview keeps the old "NAME · ALT km @ HH:MM" text;
+   * live: line 1 = name + AOS/LOS countdown + clock, line 2 = El / Range / Alt
+   * (satDotLabelLines in pass-ui.js). Two lines are joined with "\n" (white-space: pre).
+   */
+  function selLabelText(st, pT) {
+    if (pT) return (st.display || st.sat) + " \u00B7 " + Math.round(st.position.heightKm || 0) + " km" + " @ " + (typeof formatClockShort === "function" ? formatClockShort(pT) : new Date(pT).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+    const L = typeof satDotLabelLines === "function" ? satDotLabelLines(st) : null;
+    if (!L) return (st.display || st.sat) + " \u00B7 " + Math.round(st.position.heightKm || 0) + " km";
+    return L.l2 ? L.l1 + "\n" + L.l2 : L.l1;
+  }
+  function paintSelLabel() {
+    if (!selLabel.el) return;
+    if (selLabel.el.textContent !== selLabel.text) selLabel.el.textContent = selLabel.text;
+    selLabel.el.classList.toggle("globe-label-2l", selLabel.text.indexOf("\n") >= 0);
+  }
+  // Countdown ticks each second between (2 s-throttled) state applies; redraw on UTC/MT toggle.
+  function tickSelLabel() {
+    if (!G || mode !== "globe" || !lastState || !lastState.position) return;
+    if (previewT() != null) return; // preview label is static; applyState handles it
+    selLabel.text = selLabelText(lastState, null);
+    paintSelLabel();
+  }
+  setInterval(tickSelLabel, 1000);
+  window.addEventListener("time-mode-change", () => applyState(true));
+
   /** Live positions (moved in place), footprint and labels. */
   function applyState(force) {
     if (!G || mode !== "globe" || !lastState) return;
@@ -258,9 +294,9 @@
       p.color = selColor(); p.sel = true; p.display = st.display || st.sat;
       keep.add(st.sat);
       selLabel.lat = p.lat; selLabel.lng = p.lng; selLabel.alt = p.alt;
-      selLabel.text = (st.display || st.sat) + " \u00B7 " + Math.round(st.position.heightKm || 0) + " km" + (pT ? " @ " + (typeof formatClockShort === "function" ? formatClockShort(pT) : new Date(pT).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })) : "");
+      selLabel.text = selLabelText(st, pT);
       if (pT) p.color = "#e3b341";
-      if (selLabel.el) selLabel.el.textContent = selLabel.text;
+      paintSelLabel();
       footprint.pts = footprintPts(p.lat, p.lng, st.position.heightKm || 0);
       if (snapKey && snapKey === st.sat) {
         snapKey = null;

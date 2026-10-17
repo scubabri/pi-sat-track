@@ -560,8 +560,8 @@ function drawFavProfile() {
     return;
   }
   const now = Date.now();
-  const t0 = now;
-  const t1 = now + 24 * 3600000;
+  const t0 = now - 2 * 3600000; // 2 h of recent past so "now" sits in from the edge
+  const t1 = now + 22 * 3600000;
   const sats = data.sats.slice().sort((a, b) => (a.key === data.current) - (b.key === data.current));
   const colorOf = (s) => (s.key === data.current ? SAT_SELECTED_COLOR : favColor(s.key));
 
@@ -689,6 +689,9 @@ function drawFavProfile() {
 
   // "Now" marker at the left edge.
   const xn = X(now) + 1;
+  // Recent past: dim it so the future reads as the main part of the chart.
+  ctx.fillStyle = "rgba(13,17,23,0.45)";
+  ctx.fillRect(padL, padT, xn - padL, plotH);
   ctx.strokeStyle = "#f85149";
   ctx.lineWidth = 1;
   ctx.setLineDash([4, 4]);
@@ -713,7 +716,7 @@ function drawFavProfile() {
     const y = 2 + i * rowH + rowH / 2;
     if (y > h) return;
     const sel = s.key === data.current;
-    const n = (s.passes || []).filter((p) => p.los >= t0).length;
+    const n = (s.passes || []).filter((p) => p.los >= now).length;
     const dim = hk && hk !== s.key;
     ctx.globalAlpha = dim ? 0.4 : 1;
     ctx.fillStyle = colorOf(s);
