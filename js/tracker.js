@@ -316,9 +316,9 @@ function applyFreqAndLook(msg) {
 
   if (ulEl && ulDop != null) ulEl.title = "Doppler " + fmtDopplerKHz(ulDop);
   if (dlEl && dlDop != null) dlEl.title = "Doppler " + fmtDopplerKHz(dlDop);
-  // Out-of-band indicator (visual only; see js/dl-band.js).
+  // Out-of-band indicator (visual only; displayed DL vs passband, see js/dl-band.js).
   if (dlEl) {
-    const ob = typeof dlOutOfBand === "function" ? dlOutOfBand({ passbandDl: msg.passbandDl, dlHz, dlDopplerHz: dlDop }) : null;
+    const ob = typeof dlOutOfBand === "function" ? dlOutOfBand({ passbandDl: msg.passbandDl, dlHz }) : null;
     const red = !!(ob && ob.oob);
     dlEl.classList.toggle("oob", red);
     if (red) dlEl.title = ob.text;
