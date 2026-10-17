@@ -111,7 +111,7 @@
       } else { it.dot.setLatLng(ll); if (it.hit) it.hit.setLatLng(ll); }
       const rM = typeof footprintRadiusM === "function" ? footprintRadiusM(p.heightKm) : 0;
       if (rM > 0) {
-        if (!it.circle) { it.circle = L.circle(ll, { radius: rM, color: it.color, weight: 1.25, opacity: 0.7, fillColor: it.color, fillOpacity: 0.04, interactive: false }).addTo(layer); applyHighlight(); }
+        if (!it.circle) { it.circle = L.circle(ll, { radius: rM, color: it.color, weight: 1, opacity: 0.4, fillColor: it.color, fillOpacity: 0.03, interactive: false }).addTo(layer); applyHighlight(); }
         else { it.circle.setLatLng(ll); it.circle.setRadius(rM); }
       }
     }

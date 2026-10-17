@@ -307,11 +307,11 @@ function updateMapTracking(state) {
         if (!footprintCircle) {
           footprintCircle = L.circle([lat, lon], {
             radius: rM,
-            color: "#1f6feb",
-            weight: 1.5,
-            opacity: 0.9,
-            fillColor: "#1f6feb",
-            fillOpacity: 0.08,
+            color: "#58a6ff",
+            weight: 1,
+            opacity: 0.55,
+            fillColor: "#58a6ff",
+            fillOpacity: 0.06,
             interactive: false,
           }).addTo(map);
         } else {
