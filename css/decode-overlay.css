@@ -182,3 +182,9 @@ body.globe-mode #map .leaflet-control-attribution { display: none; }
 .globe-heard-dot { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; box-sizing: border-box; border-radius: 50%; background: #ffd34d; border: 1px solid #0b1e2d; pointer-events: auto; cursor: default; }
 .globe-heard-label { position: absolute; left: 8px; top: 0; transform: translateY(-50%); padding: 0 3px; font: 600 11px/1.3 system-ui, sans-serif; color: #f2f2f2; background: rgba(10, 18, 28, 0.62); border-radius: 3px; white-space: nowrap; pointer-events: none; }
 .globe-heard-label .dc-grid { margin-left: 3px; font-size: 9px; font-weight: 400; color: #b9c6d2; }
+
+/* Globe home station: "+" at the grid point (like the map's observer marker),
+   "⌂ CALL" to its right. Zero-size anchor so the point is exactly the "+". */
+.globe-station { width: 0; height: 0; overflow: visible; pointer-events: none; }
+.globe-station-mark { position: absolute; left: -7px; top: -9px; width: 14px; height: 18px; line-height: 18px; text-align: center; color: #58a6ff; font: 700 18px/18px sans-serif; text-shadow: 0 0 4px #000; pointer-events: none; }
+.globe-label.globe-label-station { position: absolute; left: 10px; top: 0; transform: translateY(-50%); }
