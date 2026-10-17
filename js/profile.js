@@ -30,6 +30,7 @@ function initProfile() {
 
   initProfileResize();
   initFavProfileEvents();
+  initChartPreviewEvents();
   drawProfileEmpty();
 }
 
@@ -142,7 +143,10 @@ function snapshotSky(sky) {
   return out;
 }
 
+let lastLook = null;
 function redrawCurrent(look) {
+  if (look) lastLook = look;
+  else look = lastLook;
   if (favProfileMode()) {
     drawFavProfile();
     return;
@@ -269,6 +273,33 @@ function drawFixedProfile(sky, maxElHint, name, look) {
     profileCtx.textBaseline = "middle";
     profileCtx.fillText(name, padL + plotW / 2, padT + plotH / 2);
   }
+
+  // Hover cursor + preview line (time axis = AOS..LOS, same as the now dot).
+  const aosMs = new Date(lockedAos).getTime();
+  const losMs = new Date(lockedLos).getTime();
+  if (Number.isFinite(aosMs) && losMs > aosMs) {
+    const T = (x) => aosMs + ((x - padL) / plotW) * (losMs - aosMs);
+    const Xt = (t) => padL + ((t - aosMs) / (losMs - aosMs)) * plotW;
+    const prog = look && typeof look.progress === "number" ? look.progress : null;
+    chartGeom = {
+      mode: "single", padL, padT, plotW, plotH, T, X: Xt, tMin: aosMs, tMax: losMs,
+      nowX: prog != null && prog >= 0 && prog <= 1 ? padL + prog * plotW : null,
+    };
+    const sample = (t) => {
+      const f = (t - aosMs) / (losMs - aosMs);
+      if (f < 0 || f > 1) return [];
+      const idxF = f * (sky.length - 1);
+      const i0 = Math.floor(idxF);
+      const i1 = Math.min(sky.length - 1, i0 + 1);
+      const fr = idxF - i0;
+      const el = sky[i0].el * (1 - fr) + sky[i1].el * fr;
+      let daz = sky[i1].az - sky[i0].az;
+      daz = ((daz + 540) % 360) - 180;
+      const az = (sky[i0].az + daz * fr + 360) % 360;
+      return [{ key: lockedSat, display: name || lockedSat, el, az, y: yAt(el), col: "#58a6ff", sel: true }];
+    };
+    drawChartOverlays(profileCtx, chartGeom, sample);
+  } else chartGeom = null;
 }
 
 function updateProfile(state) {
@@ -397,6 +428,7 @@ function initProfileResize() {
 let favProfileData = null;
 let favProfileHover = null; // sat key highlighted (legend / arc hover)
 let favProfileHits = { legend: [], arcs: [] };
+let favHitAt = null; // (mouse event) -> { key, display, legend? } | null
 
 function favProfileMode() {
   return typeof window.isFavOverlayOn === "function" && window.isFavOverlayOn();
@@ -453,6 +485,7 @@ function initFavProfileEvents() {
     }
     return best ? { key: best.key, display: best.display } : null;
   };
+  favHitAt = hitAt;
   cv.addEventListener("mousemove", (e) => {
     if (!favProfileMode()) return;
     const h = hitAt(e);
@@ -465,12 +498,14 @@ function initFavProfileEvents() {
     if (favProfileHover) { favProfileHover = null; if (favProfileMode()) drawFavProfile(); }
   });
   cv.addEventListener("click", (e) => {
-    if (!favProfileMode()) return;
+    if (!favProfileMode() || chartDragged) return; // end of a preview-line drag
     const h = hitAt(e);
     if (!h) { if (favProfileHover) { favProfileHover = null; drawFavProfile(); } return; }
     if (h.legend) { favProfileHover = favProfileHover === h.key ? null : h.key; drawFavProfile(); return; } // touch: tap toggles
-    if (favProfileData && h.key !== favProfileData.current && typeof selectSatellite === "function")
-      selectSatellite(h.key, h.display);
+    // Another sat's arc: select it and spin the globe to it. The selected sat's
+    // arc (like blank chart) sets the pass preview instead (initChartPreviewEvents).
+    if (!favProfileData || h.key === favProfileData.current) return;
+    if (typeof selectSatellite === "function") selectSatellite(h.key, h.display);
     if (typeof window.globeSnapTo === "function") window.globeSnapTo(h.key);
   });
 }
@@ -655,4 +690,186 @@ function drawFavProfile() {
     favProfileHits.legend.push({ key: s.key, display: s.display, x: lx, y: y - rowH / 2, w: legW, h: rowH });
   });
   ctx.globalAlpha = 1;
+
+  // Hover cursor + preview line.
+  chartGeom = { mode: "fav", padL, padT, plotW, plotH, T: (x) => t0 + ((x - padL) / plotW) * (t1 - t0), X, tMin: t0, tMax: t1, nowX: xn };
+  const sample = (t) => {
+    const out = [];
+    for (const s of sats) {
+      for (const p of s.passes || []) {
+        if (!p.pts || p.pts.length < 2 || t < p.pts[0][0] || t > p.pts[p.pts.length - 1][0]) continue;
+        let i = 1;
+        while (i < p.pts.length - 1 && p.pts[i][0] < t) i++;
+        const a = p.pts[i - 1], b = p.pts[i];
+        const fr = b[0] > a[0] ? (t - a[0]) / (b[0] - a[0]) : 0;
+        const el = a[1] + (b[1] - a[1]) * fr;
+        // az: 0-deg crossing points carry no az; borrow the neighbour's.
+        const aaz = a[2] != null ? a[2] : b[2], baz = b[2] != null ? b[2] : a[2];
+        let az = null;
+        if (aaz != null) { let d = baz - aaz; d = ((d + 540) % 360) - 180; az = (aaz + d * fr + 360) % 360; }
+        out.push({ key: s.key, display: s.display || s.key, el, az, y: Y(el), col: colorOf(s), sel: s.key === data.current });
+        break;
+      }
+    }
+    return out;
+  };
+  drawChartOverlays(ctx, chartGeom, sample);
+}
+
+/* ============ Hover time cursor + pass preview (amber) line ============
+ * Hover: thin cursor line with the local time on top and, for each sat up at
+ * that moment (nearest arc first, max 3), elevation + azimuth interpolated
+ * from the chart's own samples. Preview: drag the red now line / amber line
+ * or click blank chart (or the selected sat's arc) to set T; Esc, double-click
+ * or the map badge's "Back to now" clears it (js/pass-preview.js). */
+let chartGeom = null; // layout of the last drawn chart (either mode)
+let chartHover = null; // {x, y} css px in canvas
+let chartDragged = false; // a preview-line drag just ended (swallow its click)
+const PREVIEW_COL = "#e3b341";
+function fmtClock(t) {
+  return new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+function pill(ctx, x, y, text, opt) {
+  ctx.font = opt.font || "bold 10px sans-serif";
+  const tw = ctx.measureText(text).width;
+  const w = tw + 10 + (opt.swatch ? 10 : 0);
+  const h = 15;
+  let px = opt.align === "left" ? x : opt.align === "right" ? x - w : x - w / 2;
+  px = Math.max(opt.minX != null ? opt.minX : 0, Math.min((opt.maxX != null ? opt.maxX : 1e9) - w, px));
+  ctx.fillStyle = opt.bg || "rgba(13,17,23,0.92)";
+  ctx.strokeStyle = opt.border || "#484f58";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(px + 0.5, y + 0.5, w, h, 3); else ctx.rect(px + 0.5, y + 0.5, w, h);
+  ctx.fill();
+  ctx.stroke();
+  if (opt.swatch) {
+    ctx.fillStyle = opt.swatch;
+    ctx.beginPath();
+    ctx.arc(px + 8, y + h / 2 + 0.5, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = opt.color || "#e6edf3";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, px + 5 + (opt.swatch ? 10 : 0), y + h / 2 + 1);
+  return { x: px, w, h };
+}
+function ringDot(ctx, x, y, col, r) {
+  ctx.beginPath();
+  ctx.fillStyle = col;
+  ctx.strokeStyle = "#0d1117";
+  ctx.lineWidth = 2;
+  ctx.arc(x, y, r || 4, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fill();
+}
+function drawChartOverlays(ctx, g, sample) {
+  const x0 = g.padL, x1 = g.padL + g.plotW;
+  const top = g.padT, bot = g.padT + g.plotH;
+  const pT = typeof window.passPreview === "object" ? window.passPreview.get() : null;
+  // Preview line (amber, solid) — the red now line stays where it is.
+  if (pT != null && pT >= g.tMin && pT <= g.tMax) {
+    const xp = g.X(pT);
+    ctx.save();
+    ctx.strokeStyle = PREVIEW_COL;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(xp, top);
+    ctx.lineTo(xp, bot);
+    ctx.stroke();
+    // drag grip
+    ctx.fillStyle = PREVIEW_COL;
+    ctx.beginPath();
+    ctx.moveTo(xp - 5, bot); ctx.lineTo(xp + 5, bot); ctx.lineTo(xp, bot - 6); ctx.closePath();
+    ctx.fill();
+    sample(pT).forEach((s) => ringDot(ctx, xp, s.y, s.sel ? PREVIEW_COL : s.col, s.sel ? 4.5 : 3));
+    if (!chartHover || Math.abs(chartHover.x - xp) > 60)
+      pill(ctx, xp, 0, "Preview " + fmtClock(pT), { color: "#0d1117", bg: PREVIEW_COL, border: PREVIEW_COL, minX: x0, maxX: x1 });
+    ctx.restore();
+  }
+  // Hover cursor.
+  if (chartHover && chartHover.x >= x0 && chartHover.x <= x1) {
+    const x = chartHover.x;
+    const t = g.T(x);
+    ctx.save();
+    ctx.strokeStyle = "rgba(230,237,243,0.6)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(Math.round(x) + 0.5, top);
+    ctx.lineTo(Math.round(x) + 0.5, bot);
+    ctx.stroke();
+    pill(ctx, x, 0, fmtClock(t), { minX: x0, maxX: x1 });
+    let up = sample(t);
+    // nearest arc to the mouse first (or the arc the legend/arc hover picked)
+    up.sort((a, b) => (b.key === favProfileHover) - (a.key === favProfileHover) || Math.abs(a.y - chartHover.y) - Math.abs(b.y - chartHover.y));
+    up = up.slice(0, 3);
+    up.forEach((s, i) => ringDot(ctx, x, s.y, s.col, i === 0 ? 4.5 : 3.2));
+    const right = x + 150 < x1;
+    up.forEach((s, i) => {
+      const txt = s.display + "  " + Math.round(s.el) + "\u00B0" + (s.az != null ? " \u00B7 az " + Math.round(s.az) + "\u00B0" : "");
+      pill(ctx, right ? x + 7 : x - 7, top + 8 + i * 17, txt, {
+        align: right ? "left" : "right", swatch: s.col, minX: x0, maxX: x1,
+        font: (i === 0 ? "bold " : "") + "10px sans-serif", color: i === 0 ? "#e6edf3" : "#c9d1d9",
+      });
+    });
+    ctx.restore();
+  }
+}
+function previewClampT(t) {
+  if (!chartGeom) return null;
+  const lo = Math.max(chartGeom.tMin, chartGeom.mode === "fav" ? Date.now() : chartGeom.tMin);
+  return Math.max(lo, Math.min(chartGeom.tMax, t));
+}
+function initChartPreviewEvents() {
+  const cv = profileCanvas;
+  if (!cv || cv.__previewEvents) return;
+  cv.__previewEvents = true;
+  let drag = false;
+  const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  const nearLine = (x) => {
+    if (!chartGeom) return false;
+    const pT = window.passPreview && window.passPreview.get();
+    if (pT != null && Math.abs(chartGeom.X(pT) - x) < 6) return true;
+    return chartGeom.nowX != null && Math.abs(chartGeom.nowX - x) < 6;
+  };
+  cv.addEventListener("pointermove", (e) => {
+    const p = pos(e);
+    chartHover = p;
+    if (drag && chartGeom) {
+      chartDragged = true;
+      window.passPreview.set(previewClampT(chartGeom.T(p.x)), { drag: true });
+      return;
+    }
+    if (nearLine(p.x)) cv.style.cursor = "ew-resize";
+    else if (cv.style.cursor === "ew-resize") cv.style.cursor = "";
+    redrawCurrent();
+  });
+  cv.addEventListener("pointerleave", () => { chartHover = null; if (!drag) redrawCurrent(); });
+  cv.addEventListener("pointerdown", (e) => {
+    const p = pos(e);
+    if (!nearLine(p.x)) return;
+    drag = true; chartDragged = false;
+    try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  const end = () => {
+    if (drag && chartDragged) window.passPreview.settle();
+    drag = false;
+  };
+  cv.addEventListener("pointerup", end);
+  cv.addEventListener("pointercancel", end);
+  cv.addEventListener("click", (e) => {
+    if (chartDragged) { chartDragged = false; return; }
+    if (!chartGeom) return;
+    const p = pos(e);
+    if (p.x < chartGeom.padL || p.x > chartGeom.padL + chartGeom.plotW) return;
+    // Fav mode: legend rows and other sats' arcs keep their own click (select + snap).
+    if (chartGeom.mode === "fav" && favHitAt) {
+      const h = favHitAt(e);
+      if (h && (h.legend || !favProfileData || h.key !== favProfileData.current)) return;
+    }
+    window.passPreview.set(previewClampT(chartGeom.T(p.x)));
+  });
+  cv.addEventListener("dblclick", () => window.passPreview.clear());
+  document.addEventListener("pass-preview-change", () => redrawCurrent());
 }

@@ -89,9 +89,17 @@
     applyHighlight();
   }
 
+  let lastSt = null;
+  document.addEventListener("pass-preview-change", () => { if (lastSt) updatePositions(lastSt); });
   function updatePositions(st) {
+    lastSt = st;
     if (!on || !ensureLayer()) return;
-    const favs = st.favorites || [];
+    // Pass preview: favorites drawn at the preview time.
+    const pp = window.passPreview;
+    const favs = (st.favorites || []).map((f) => {
+      const pv = f && pp && pp.posOf(f.key);
+      return pv ? Object.assign({}, f, { position: pv.position }) : f;
+    });
     const trackKeys = new Set(tracks.map((t) => t.key));
     for (const f of favs) {
       if (!f || f.key === currentKey || !trackKeys.has(f.key) || !f.position) continue;

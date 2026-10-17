@@ -604,6 +604,11 @@ wss.on("connection", (ws, req) => {
         if (fp) broadcast(fp);
         return;
       }
+      if (msg.type === "globe-orbits-get" && Number.isFinite(msg.t)) {
+        // Pass preview: orbits starting at the preview time (not cached).
+        ws.send(JSON.stringify(Object.assign({ sig: state.favProfileSig(), preview: true }, state.computeGlobeOrbits(new Date(msg.t), 100))));
+        return;
+      }
       if (msg.type === "globe-orbits-get") {
         // 3D globe: cached; recomputed on sat / favorites / TLE change or after 10 min.
         const sig = state.favProfileSig();
@@ -613,6 +618,11 @@ wss.on("connection", (ws, req) => {
           c.sig = sig;
         }
         ws.send(JSON.stringify(Object.assign({ sig: c.sig }, c.data)));
+        return;
+      }
+      if (msg.type === "preview-get" && Number.isFinite(msg.t)) {
+        // Pass preview at time T (selected + shown favorites).
+        ws.send(JSON.stringify(state.computePreview(msg.t)));
         return;
       }
       if (msg.type === "fav-profile-get") {

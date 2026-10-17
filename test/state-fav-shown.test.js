@@ -53,3 +53,27 @@ test("globe orbits: one period, ~100 pts, honors shown", () => {
   assert.deepStrictEqual(state.computeGlobeOrbits(new Date(), 50).sats.map((x) => x.key), ["SO-50"]);
   state.setFavOverlayShown(null);
 });
+
+test("pass preview: positions + look angles at T for selected + shown favorites", () => {
+  const { groundPoint, lookAngles } = require("../lib/orbit");
+  state.setFavorites(["ISS", "SO-50"]);
+  state.setFavOverlayShown(null);
+  state.setObserver(40.6, -112.46, 1300);
+  const T = Date.UTC(2026, 9, 7, 15, 30);
+  const pv = state.computePreview(T);
+  assert.strictEqual(pv.type, "preview");
+  assert.strictEqual(pv.t, T);
+  assert.deepStrictEqual(pv.sats.map((s) => s.key).sort(), ["ISS", "SO-50"]);
+  const iss = pv.sats.find((s) => s.key === "ISS");
+  const g = groundPoint(recs[25544], new Date(T));
+  assert(Math.abs(iss.position.lat - g.lat) < 1e-9 && Math.abs(iss.position.lon - g.lon) < 1e-9);
+  assert(iss.position.heightKm > 300 && iss.position.heightKm < 500);
+  const l = lookAngles(recs[25544], state.getObserver(), new Date(T));
+  assert(iss.look && Math.abs(iss.look.el - l.el) < 1e-9 && Math.abs(iss.look.az - l.az) < 1e-9);
+  // a different T moves the sat
+  const later = state.computePreview(T + 10 * 60000).sats.find((s) => s.key === "ISS");
+  assert(Math.abs(later.position.lon - iss.position.lon) > 1 || Math.abs(later.position.lat - iss.position.lat) > 1);
+  state.setFavOverlayShown(["SO-50"]);
+  assert.deepStrictEqual(state.computePreview(T).sats.map((s) => s.key), ["SO-50"]);
+  state.setFavOverlayShown(null);
+});

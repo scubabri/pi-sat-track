@@ -2,6 +2,8 @@ let map = null;
 let satMarker = null;
 let observerMarker = null;
 let footprintCircle = null;
+let nowGhost = null; // live position while a pass preview is shown
+let lastMapState = null;
 let trailPolylines = [];
 let forwardPolylines = [];
 let passPolylines = [];
@@ -254,6 +256,10 @@ function clearMapTracking() {
     map.removeLayer(satMarker);
     satMarker = null;
   }
+  if (nowGhost && map) {
+    map.removeLayer(nowGhost);
+    nowGhost = null;
+  }
   if (footprintCircle && map) {
     map.removeLayer(footprintCircle);
     footprintCircle = null;
@@ -306,6 +312,17 @@ function updateMapTracking(state) {
     clearMapTracking();
   }
 
+  lastMapState = state;
+  // Pass preview: draw the selected sat at the preview time instead of now,
+  // with a hollow red "now" ghost at the live position.
+  const pv = window.passPreview && window.passPreview.posOf(state.sat);
+  const livePos = state.position;
+  if (pv) state = Object.assign({}, state, { position: pv.position });
+  if (pv && livePos && Number.isFinite(livePos.lat)) {
+    if (!nowGhost) nowGhost = L.circleMarker([livePos.lat, livePos.lon], { radius: 5, color: "#f85149", weight: 1.5, dashArray: "2 2", fillColor: "#f85149", fillOpacity: 0.15, interactive: false }).addTo(map);
+    else { nowGhost.setLatLng([livePos.lat, livePos.lon]); if (!map.hasLayer(nowGhost)) nowGhost.addTo(map); }
+  } else if (nowGhost && map.hasLayer(nowGhost)) map.removeLayer(nowGhost);
+
   if (state.position) {
     const lat = state.position.lat;
     const lon = state.position.lon;
@@ -323,7 +340,9 @@ function updateMapTracking(state) {
         satMarker.setLatLng([lat, lon]);
         if (!map.hasLayer(satMarker)) satMarker.addTo(map);
       }
-      const label = state.display || state.sat || "";
+      const pT = pv && window.passPreview.get();
+      const label = (state.display || state.sat || "") + (pT ? " @ " + new Date(pT).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
+      satMarker.setStyle(pv ? { fillColor: "#e3b341", color: "#fff" } : { fillColor: "#58a6ff", color: "#fff" });
       if (label && satMarker.__label !== label) {
         satMarker.unbindTooltip();
         satMarker.bindTooltip(label, {
@@ -386,3 +405,8 @@ function updateMapTracking(state) {
     clearPolylineArray(forwardPolylines);
   }
 }
+
+// Pass preview started / moved / ended: redraw from the last live state now.
+document.addEventListener("pass-preview-change", function () {
+  if (lastMapState) updateMapTracking(lastMapState);
+});

@@ -76,3 +76,18 @@ test("cost: 25 sats x 24 h @ 60 s is quick", () => {
   assert(ms < 5000, "took " + ms + " ms");
   console.log("25 sats x 24h:", ms, "ms");
 });
+
+test("samples carry azimuth (0..359) agreeing with lookAngles; horizon points have none", () => {
+  const ps = computePassSeries(ISS, obs, start, 24, 60);
+  for (const p of ps) {
+    for (let i = 1; i < p.pts.length - 1; i++) {
+      const [t, , az] = p.pts[i];
+      assert(Number.isInteger(az) && az >= 0 && az < 360, "az " + az);
+      const l = lookAngles(ISS, obs, new Date(t));
+      let d = Math.abs(((l.az % 360) + 360) % 360 - az);
+      d = Math.min(d, 360 - d);
+      assert(d <= 0.5 + 1e-9, "az matches lookAngles");
+    }
+    assert.strictEqual(p.pts[0].length, 2, "interpolated AOS point has no az");
+  }
+});

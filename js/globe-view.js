@@ -24,6 +24,7 @@
   let orbitTimer = null;
   const pts = new Map(); // key -> point datum (stable identity: moved in place)
   const selLabel = { kind: "sat", lat: 0, lng: 0, alt: 0, text: "" };
+  const ghost = { kind: "ghost", lat: 0, lng: 0, alt: 0 }; // live position while a pass preview is shown
   const stLabel = { kind: "station", lat: 0, lng: 0, alt: 0.01, text: "\u2302 Station" };
   const footprint = { key: "__fp", footprint: true, color: "rgba(88,166,255,0.95)", w: 1.1, pts: [] };
   // Shaded footprint interior (polygon layer), same ring as the outline.
@@ -90,7 +91,10 @@
         .htmlLat("lat").htmlLng("lng").htmlAltitude("alt")
         .htmlElement((d) => {
           const e = document.createElement("div");
-          if (d.kind === "dot") {
+          if (d.kind === "ghost") {
+            e.className = "globe-ghost";
+            e.title = "now";
+          } else if (d.kind === "dot") {
             e.className = "globe-dot";
             e.title = d.display || d.key;
             e.addEventListener("click", (ev) => { ev.stopPropagation(); pick(d); });
@@ -172,9 +176,13 @@
     if (pov && G) G.pointOfView({ lat: ll.lat, lng: ll.lon, altitude: 2.2 }, 0);
   }
 
+  function previewT() { return window.passPreview ? window.passPreview.get() : null; }
   function requestOrbits() {
     const s = sock();
-    if (s && mode === "globe") s.send(JSON.stringify({ type: "globe-orbits-get" }));
+    if (!s || mode !== "globe") return;
+    const t = previewT();
+    // While previewing, orbits start at the preview time so dots sit on them.
+    s.send(JSON.stringify(t != null ? { type: "globe-orbits-get", t: Math.round(t) } : { type: "globe-orbits-get" }));
   }
 
   /** Visible-horizon circle around the sub-satellite point (same math as the map). */
@@ -234,7 +242,14 @@
     const now = Date.now();
     if (!force && now - lastApply < 2000) return;
     lastApply = now;
-    const st = lastState;
+    // Pass preview: draw the selected sat + favorites at the preview time.
+    const pp = window.passPreview;
+    const pvSel = pp && lastState && pp.posOf(lastState.sat);
+    const pT = pvSel ? pp.get() : null;
+    const st = !pp || !pp.get() ? lastState : Object.assign({}, lastState, {
+      position: pvSel ? pvSel.position : lastState.position,
+      favorites: (lastState.favorites || []).map((f) => { const v = f && pp.posOf(f.key); return v ? Object.assign({}, f, { position: v.position }) : f; }),
+    });
     const keep = new Set();
     if (st.position && Number.isFinite(st.position.lat)) {
       const p = point(st.sat);
@@ -242,7 +257,8 @@
       p.color = selColor(); p.sel = true; p.display = st.display || st.sat;
       keep.add(st.sat);
       selLabel.lat = p.lat; selLabel.lng = p.lng; selLabel.alt = p.alt;
-      selLabel.text = (st.display || st.sat) + " \u00B7 " + Math.round(st.position.heightKm || 0) + " km";
+      selLabel.text = (st.display || st.sat) + " \u00B7 " + Math.round(st.position.heightKm || 0) + " km" + (pT ? " @ " + new Date(pT).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
+      if (pT) p.color = "#e3b341";
       if (selLabel.el) selLabel.el.textContent = selLabel.text;
       footprint.pts = footprintPts(p.lat, p.lng, st.position.heightKm || 0);
       if (snapKey && snapKey === st.sat) {
@@ -265,7 +281,9 @@
     }
     for (const k of [...pts.keys()]) if (!keep.has(k)) pts.delete(k);
     pts.forEach(styleDot);
-    G.htmlElementsData([...pts.values(), stLabel].concat(st.position ? [selLabel] : []));
+    const extra = [];
+    if (pT && lastState.position) { ghost.lat = lastState.position.lat; ghost.lng = lastState.position.lon; ghost.alt = (lastState.position.heightKm || 0) / RE_KM; extra.push(ghost); }
+    G.htmlElementsData([...pts.values(), stLabel].concat(st.position ? [selLabel] : [], extra));
     // footprint moves with the sat: refresh paths cheaply (same orbit arrays)
     if (orbits) renderPaths();
     else G.pathsData(footprint.pts.length > 1 ? [footprint] : []);
@@ -345,6 +363,7 @@
       try {
         const msg = JSON.parse(d);
         if (msg.type === "globe-orbits") {
+          if (!!msg.preview !== (previewT() != null)) return; // stale (preview started / ended)
           orbits = msg;
           renderPaths();
         } else if (msg.type === "state") {
@@ -359,7 +378,14 @@
     else ws.addEventListener("open", requestOrbits);
   }
 
+  let pvOrbitTimer = null;
+  function onPreviewChange() {
+    applyState(true);
+    clearTimeout(pvOrbitTimer);
+    pvOrbitTimer = setTimeout(requestOrbits, 250); // coalesce drags
+  }
   function init() {
+    document.addEventListener("pass-preview-change", onPreviewChange);
     setInterval(patchWs, 500);
     const t = setInterval(() => { if (addButton()) clearInterval(t); }, 300);
     document.addEventListener("visibilitychange", onVisibility);
