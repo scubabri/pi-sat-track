@@ -235,6 +235,7 @@ function applyProfileToRuntime(prof) {
   if (typeof state.setOffsetsProfile === "function")
     state.setOffsetsProfile(profiles.getActiveName());
   state.setFavorites(Array.isArray(prof.favorites) ? prof.favorites : []);
+  state.setFavOverlayShown(prof.favOverlay ? prof.favOverlay.shown : null);
   const cfg = prof.config && typeof prof.config === "object" ? prof.config : {};
   if (Object.keys(cfg).length) {
     const flags = config.applyEndpoints(cfg);
@@ -541,7 +542,8 @@ wss.on("connection", (ws, req) => {
 
       if (msg.type === "favorites" && Array.isArray(msg.keys)) {
         state.setFavorites(msg.keys);
-        profiles.updateActive({ favorites: msg.keys });
+        const pf = profiles.updateActive({ favorites: msg.keys });
+        state.setFavOverlayShown(pf.favOverlay ? pf.favOverlay.shown : null);
         broadcastProfiles();
         const tk = state.computeTick();
         if (tk) broadcast(tk);
@@ -589,6 +591,19 @@ wss.on("connection", (ws, req) => {
           });
       }
 
+      if (msg.type === "fav-overlay-set") {
+        // Map Favorites overlay state saved in the active profile.
+        const patch = {};
+        if (msg.on !== undefined) patch.on = !!msg.on;
+        if (msg.shown === null || Array.isArray(msg.shown)) patch.shown = msg.shown;
+        const pf = profiles.updateActive({ favOverlay: patch });
+        state.setFavOverlayShown(pf.favOverlay ? pf.favOverlay.shown : null);
+        broadcastProfiles();
+        broadcastFavTracks(true);
+        const fp = favProfileCached(false);
+        if (fp) broadcast(fp);
+        return;
+      }
       if (msg.type === "fav-profile-get") {
         const fp = favProfileCached();
         if (fp) ws.send(JSON.stringify(fp));
@@ -1092,6 +1107,8 @@ wss.on("connection", (ws, req) => {
         }
         if (Array.isArray(patch.favorites)) {
           state.setFavorites(patch.favorites);
+          const pf = profiles.getActive();
+          state.setFavOverlayShown(pf.favOverlay ? pf.favOverlay.shown : null);
         }
         broadcastProfiles();
         broadcast({

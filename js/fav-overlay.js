@@ -2,11 +2,16 @@
  * Favorites orbit overlay: ground track, footprint and labelled dot for every
  * favorite sat (selected sat excluded; map.js draws it bright on top).
  * Tracks: server "fav-tracks" (60 s). Positions: favorites[] in "state" (1 s).
- * Toggle sits above Sked Finder in the map control bar; state in localStorage.
+ * Toggle sits above Sked Finder in the map control bar. On/off and the shown
+ * subset are saved in the active station profile (server "profiles" payload,
+ * favOverlay {on, shown|null}); localStorage is only a startup cache.
  */
 (function () {
   const LS_KEY = "favOverlayOn";
   let on = localStorage.getItem(LS_KEY) === "1";
+  let shown = null; // null = all favorites
+  let profileName = "";
+  let picker = null;
   let layer = null;
   let btn = null;
   let tracks = [];
@@ -204,16 +209,13 @@
     btn.href = "#";
     btn.className = "decode-toggle-btn fav-overlay-btn";
     btn.setAttribute("role", "button");
-    btn.textContent = "Favorites";
+    btn.innerHTML = 'Favorites<span class="fav-pick-caret" title="Choose which favorites are shown">\u25BE</span>';
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      on = !on;
-      localStorage.setItem(LS_KEY, on ? "1" : "0");
-      syncBtn();
-      ensureLayer();
-      if (on) { drawTracks(); request(); }
-      document.dispatchEvent(new CustomEvent("fav-overlay-change", { detail: { on } }));
+      if (e.target && e.target.closest && e.target.closest(".fav-pick-caret")) { togglePicker(); return; }
+      setOn(!on);
+      sendSet({ on });
     });
     bar.insertBefore(btn, sked);
     syncBtn();
@@ -229,6 +231,8 @@
           tracks = msg.tracks || [];
           currentKey = msg.current || currentKey;
           drawTracks();
+        } else if (msg.type === "profiles") {
+          applyProfile(msg);
         } else if (msg.type === "state") {
           if (msg.sat && msg.sat !== currentKey) { currentKey = msg.sat; drop(currentKey); }
           updatePositions(msg);
@@ -240,7 +244,88 @@
     else ws.addEventListener("open", request);
   }
 
+  function sendSet(o) { const s = sock(); if (s) s.send(JSON.stringify(Object.assign({ type: "fav-overlay-set" }, o))); }
+
+  function fireChange() {
+    document.dispatchEvent(new CustomEvent("fav-overlay-change", { detail: { on, shown } }));
+  }
+
+  function setOn(v) {
+    const changed = v !== on;
+    on = v;
+    localStorage.setItem(LS_KEY, on ? "1" : "0");
+    syncBtn();
+    ensureLayer();
+    if (on) { drawTracks(); request(); }
+    if (changed) fireChange();
+  }
+
+  /** Server "profiles" payload: favOverlay is the source of truth. */
+  function applyProfile(msg) {
+    const prevName = profileName;
+    profileName = msg.active || "";
+    const fo = msg.favOverlay;
+    if (!fo) {
+      // First time for this profile: migrate this browser's cached toggle once.
+      sendSet({ on, shown: null });
+      renderPicker();
+      return;
+    }
+    const nextShown = Array.isArray(fo.shown) ? fo.shown.slice() : null;
+    const shownChanged = JSON.stringify(nextShown) !== JSON.stringify(shown);
+    shown = nextShown;
+    try { localStorage.setItem(LS_KEY + "Shown", JSON.stringify(shown)); } catch (_) {}
+    if (!!fo.on !== on) setOn(!!fo.on);
+    else if (shownChanged || prevName !== profileName) { request(); fireChange(); }
+    renderPicker();
+  }
+
+  /* ---------- picker: which favorites the overlay shows (per profile) ---------- */
+  function favList() { return typeof loadFavorites === "function" ? loadFavorites() : []; }
+  function togglePicker() {
+    if (!picker) {
+      picker = document.createElement("div");
+      picker.className = "fav-picker";
+      picker.hidden = true;
+      ["click", "dblclick", "mousedown", "wheel", "touchstart", "pointerdown"].forEach((ev) =>
+        picker.addEventListener(ev, (e) => e.stopPropagation()));
+      (document.getElementById("map-container") || document.body).appendChild(picker);
+      document.addEventListener("click", (e) => {
+        if (picker && !picker.hidden && !picker.contains(e.target) && !(btn && btn.contains(e.target))) picker.hidden = true;
+      });
+    }
+    picker.hidden = !picker.hidden;
+    renderPicker();
+  }
+  function renderPicker() {
+    if (!picker || picker.hidden) return;
+    const favs = favList();
+    const set = shown ? new Set(shown) : null;
+    const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    picker.innerHTML =
+      '<div class="fav-picker-head"><span>Map favorites</span><span class="fav-picker-profile" title="Saved with this station profile">' + esc(profileName || "—") + "</span></div>" +
+      (favs.length
+        ? favs.map((k) => '<label class="fav-picker-row"><input type="checkbox" data-key="' + esc(k) + '"' + (!set || set.has(k) ? " checked" : "") +
+            '><span class="fav-picker-sw" style="background:' + colorFor(k) + '"></span>' + esc(k) + "</label>").join("")
+        : '<div class="fav-picker-empty">No favorites yet — star sats in the list</div>') +
+      '<div class="fav-picker-foot"><a href="#" data-act="all">All</a><a href="#" data-act="none">None</a><span>Saved with profile</span></div>';
+    picker.querySelectorAll("input[data-key]").forEach((cb) => cb.addEventListener("change", () => {
+      const keys = [...picker.querySelectorAll("input[data-key]")].filter((c) => c.checked).map((c) => c.dataset.key);
+      const all = keys.length === favs.length;
+      shown = all ? null : keys;
+      sendSet({ shown, on: true });
+    }));
+    picker.querySelectorAll("a[data-act]").forEach((a) => a.addEventListener("click", (e) => {
+      e.preventDefault();
+      shown = a.dataset.act === "all" ? null : [];
+      sendSet({ shown, on: true });
+      renderPicker();
+    }));
+  }
+
   window.isFavOverlayOn = () => on;
+  /** Keys the overlay shows right now (null = all favorites). */
+  window.favOverlayShown = () => (shown ? shown.slice() : null);
 
   function init() {
     setInterval(patchWs, 500);
