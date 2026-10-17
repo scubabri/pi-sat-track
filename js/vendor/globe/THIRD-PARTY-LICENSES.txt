@@ -1,5 +1,6 @@
 Third-party licenses for js/vendor/globe/globe.gl.min.js (globe.gl 2.46.2 UMD bundle and the packages it bundles).
 earth-2k.jpg: NASA Blue Marble imagery (public domain, NASA Visible Earth), resized to 2048x1024 (via three-globe example texture).
+night-sky.jpg: star-field background from the three-globe example textures (MIT, three-globe 2.45.6), resized to 2048x1024.
 
 ================ globe.gl (2.46.2)
 MIT License

@@ -75,7 +75,8 @@
       }
       ["pointerdown", "mousedown", "touchstart", "dblclick", "contextmenu"].forEach((ev) => el.addEventListener(ev, (e) => e.stopPropagation()));
       G = Globe({ rendererConfig: { antialias: false, alpha: false, powerPreference: "low-power" } })(el)
-        .backgroundColor("#0a1628")
+        .backgroundColor("#000000")
+        .backgroundImageUrl(VENDOR + "night-sky.jpg")
         .showAtmosphere(false)
         .globeImageUrl(VENDOR + "earth-2k.jpg")
         .pathPoints("pts")
