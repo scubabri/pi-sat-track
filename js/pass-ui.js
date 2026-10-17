@@ -48,8 +48,8 @@ function formatCountdownShort(sec) {
  *  - st.passes (selected sat, "state" msg; computed with the rotor min-EL cutoff)
  *  - or st.nextPass {aos, los} (favorites payload, lib/fav-passes.js)
  *  - st.look {el, rangeKm}, st.position.heightKm (live).
- * In a pass (aos <= now < los): "NAME · LOS in 5m 10s · 14:17 UTC" / "El 34° · Rng 1234 km · Alt 568 km".
- * Otherwise:                    "NAME · AOS in 12m 34s · 14:05 UTC" / "Alt 568 km".
+ * In a pass (aos <= now < los): stacked NAME / LOS 00:05:10 / 14:17 UTC / El 34° / Rng 1234 km / Alt 568 km.
+ * Otherwise:                    stacked NAME / AOS 00:12:34 / 14:05 UTC / Rng / Alt.
  * Returns { l1, l2, up } (l2 may be "").
  */
 /** "01:00:01" (HH:MM:SS) countdown for the sat-dot label. */
@@ -109,16 +109,8 @@ function formatCountdown(sec) {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
-  if (h > 0) {
-    return (
-      String(h).padStart(2, "0") +
-      ":" +
-      String(m).padStart(2, "0") +
-      ":" +
-      String(s).padStart(2, "0")
-    );
-  }
-  return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+  // Always HH:MM:SS (matches the sat-dot label).
+  return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
 }
 
 function tickCountdown() {
@@ -140,7 +132,7 @@ function tickCountdown() {
     const secToLos = (losMs - now) / 1000;
 
     if (secToAos > 0) {
-      if (labelEl) labelEl.textContent = "Next AOS in";
+      if (labelEl) labelEl.textContent = "Next AOS";
       countdownEl.textContent = formatCountdown(secToAos);
       if (dot) {
         if (secToAos <= 5 * 60) dot.className = "status-dot red";
@@ -151,7 +143,7 @@ function tickCountdown() {
     }
 
     if (secToLos > 0) {
-      if (labelEl) labelEl.textContent = "LOS in";
+      if (labelEl) labelEl.textContent = "LOS";
       countdownEl.textContent = formatCountdown(secToLos);
       if (dot) dot.className = "status-dot green";
       return;
@@ -167,7 +159,7 @@ function tickCountdown() {
     return;
   }
 
-  if (labelEl) labelEl.textContent = "Next AOS in";
+  if (labelEl) labelEl.textContent = "Next AOS";
   countdownEl.textContent = "-";
   if (dot) dot.className = "status-dot";
 }
