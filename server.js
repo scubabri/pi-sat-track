@@ -236,6 +236,7 @@ function applyProfileToRuntime(prof) {
     state.setOffsetsProfile(profiles.getActiveName());
   state.setFavorites(Array.isArray(prof.favorites) ? prof.favorites : []);
   state.setFavOverlayShown(prof.favOverlay ? prof.favOverlay.shown : null);
+  state.setAutoSelect(prof.autoSelect === true);
   const cfg = prof.config && typeof prof.config === "object" ? prof.config : {};
   if (Object.keys(cfg).length) {
     const flags = config.applyEndpoints(cfg);
@@ -593,6 +594,17 @@ wss.on("connection", (ws, req) => {
         selectSat(msg.key).catch((err) => {
           ws.send(JSON.stringify({ type: "error", message: err.message }));
         });
+      }
+
+      if (msg.type === "auto-select-set") {
+        // Top-bar Auto Select button: saved per profile, synced to all clients.
+        const pf = profiles.updateActive({ autoSelect: msg.on === true });
+        state.setAutoSelect(pf.autoSelect === true);
+        console.log("Auto Select", pf.autoSelect ? "ON" : "OFF");
+        broadcastProfiles();
+        const st = state.computeState();
+        if (st) broadcast(st);
+        return;
       }
 
       if (msg.type === "fav-overlay-set") {
@@ -1158,8 +1170,9 @@ setInterval(() => {
   if (t) broadcast(t);
 }, TICK_MS);
 
-// After-LOS action (Configure → Rotor → After LOS): park / auto select once
-// the selected sat's pass ends. Real time only (client preview never fires it).
+// After-LOS actions once the selected sat's pass ends: Park (Configure → Rotor
+// → After LOS) and/or Auto Select (top-bar button). Real time only (client
+// preview never fires them).
 const afterLosWatch = require("./lib/after-los").createWatcher({
   log: (m) => console.log(m),
   park: () => rotor.afterLosPark(),

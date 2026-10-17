@@ -314,50 +314,61 @@ function updateAfterLosIndicator(state) {
   const el = document.getElementById("after-los-ind");
   if (!el) return;
   const a = state && state.afterLos;
-  if (!a || a.mode === "none") {
+  if (a && typeof updateAutoSelectUi === "function") updateAutoSelectUi(a.autoSelect === true);
+  const wantPark = !!a && a.mode === "park";
+  const wantAuto = !!a && a.autoSelect === true;
+  if (!wantPark && !wantAuto) {
     el.hidden = true;
     return;
   }
   el.hidden = false;
   el.classList.toggle("armed", !!a.inPass);
-  el.classList.toggle("none", !!a.fallback);
-  const losTxt = a.losMs ? " at LOS " + formatClockShort(a.losMs) : " at LOS";
-  if (a.mode === "park") {
-    el.textContent = "→ Park";
-    el.title =
-      "After LOS" + losTxt + ": park rotor" +
-      (a.fallback ? " (" + AFTER_LOS_FALLBACK_TEXT[a.fallback] + ")" : "");
-    return;
+  const parkDead = wantPark && !!a.parkFallback;
+  const autoDead = wantAuto && !a.target && a.fallback !== "pending";
+  // Dim only when nothing will actually happen at LOS.
+  el.classList.toggle("none", (!wantPark || parkDead) && (!wantAuto || autoDead));
+  const parts = [];
+  const tips = [];
+  if (wantPark) {
+    parts.push("Park");
+    tips.push("park rotor" + (parkDead ? " (" + AFTER_LOS_FALLBACK_TEXT[a.parkFallback] + ")" : ""));
   }
-  // auto
-  if (a.target) {
-    const sec = (a.target.aos - Date.now()) / 1000;
-    const when = sec <= 0 ? "already up" : "AOS in " + formatCountdownShort(sec);
-    el.textContent = "→ Auto: " + a.target.display;
-    el.title =
-      "After LOS" + losTxt + ": auto select " + a.target.display +
-      " (" + when + ", " + formatClockShort(a.target.aos) +
-      (a.target.maxEl != null ? ", max " + Math.round(a.target.maxEl) + "°" : "") + ")";
-  } else {
-    el.textContent = "→ Auto: —";
-    el.title = "After LOS: auto select — " + (AFTER_LOS_FALLBACK_TEXT[a.fallback] || "nothing to select");
+  if (wantAuto) {
+    if (a.target) {
+      const sec = (a.target.aos - Date.now()) / 1000;
+      const when = sec <= 0 ? "already up" : "AOS in " + formatCountdownShort(sec);
+      parts.push("Auto: " + a.target.display);
+      tips.push(
+        "auto select " + a.target.display + " (" + when + ", " + formatClockShort(a.target.aos) +
+          (a.target.maxEl != null ? ", max " + Math.round(a.target.maxEl) + "°" : "") + ")",
+      );
+    } else if (a.fallback === "pending") {
+      parts.push("Auto");
+      tips.push("auto select the favorite with the soonest AOS (picked once the pass is near)");
+    } else {
+      parts.push("Auto: —");
+      tips.push("auto select — " + (AFTER_LOS_FALLBACK_TEXT[a.fallback] || "nothing to select"));
+    }
   }
+  el.textContent = "→ " + parts.join(" · ");
+  el.title =
+    "After LOS" + (a.losMs ? " at LOS " + formatClockShort(a.losMs) : "") + ": " + tips.join("; then ");
 }
 
-/** Short toast when the server ran the After-LOS action. */
+/** Short toast when the server ran the After-LOS action(s). */
 function showAfterLosToast(evt) {
   if (!evt) return;
-  let text = "";
-  if (evt.action === "park") text = "After LOS: parked";
-  else if (evt.action === "auto") text = "After LOS: auto-selected " + (evt.display || evt.target || "");
-  if (!text) return;
+  const parts = [];
+  if (evt.park) parts.push("parked");
+  if (evt.target) parts.push("auto-selected " + (evt.display || evt.target));
+  if (!parts.length) return;
   const old = document.getElementById("after-los-toast");
   if (old) old.remove();
   const t = document.createElement("div");
   t.id = "after-los-toast";
   t.className = "app-toast";
   t.setAttribute("role", "status");
-  t.textContent = text;
+  t.textContent = "After LOS: " + parts.join(", ");
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 5000);
 }

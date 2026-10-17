@@ -70,6 +70,7 @@
       </div>
 
       <div id="top-controls">
+        <button class="btn" id="btn-auto-select" title="Auto Select: at LOS, select the favorite with the soonest AOS">Auto Select</button>
         <button class="btn" id="btn-radio">Radio</button>
         <button class="btn" id="btn-antenna">Antenna</button>
         <button class="btn" id="btn-park" title="Park the rotor">Park</button>
@@ -664,15 +665,13 @@
                 <select id="cfg-rotor-after-los" class="cfg-select">
                   <option value="none">Do nothing</option>
                   <option value="park">Park</option>
-                  <option value="auto">Auto select</option>
                 </select>
                 <p class="form-hint">
                   When the selected sat drops below Min EL: <b>Do nothing</b>
                   holds the LOS azimuth; <b>Park</b> sends the rotor to Park
-                  AZ/EL; <b>Auto select</b> switches to the favorite with the
-                  soonest AOS above Min EL (falls back to do nothing if none).
-                  Park / Auto select still preposition 5 min before the next
-                  AOS.
+                  AZ/EL (if Antenna is on) and re-engages 5 min before the
+                  next AOS. Combine with the top-bar <b>Auto Select</b> button
+                  to also switch to the favorite with the soonest AOS.
                 </p>
               </div>
               <p class="form-hint">

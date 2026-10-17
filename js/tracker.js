@@ -148,6 +148,22 @@ function updateRadioUi(on, connected) {
   }
 }
 
+/** Top-bar Auto Select button (per profile; independent of Radio/Antenna). */
+let autoSelectOn = false;
+function updateAutoSelectUi(on) {
+  autoSelectOn = !!on;
+  const btn = document.getElementById("btn-auto-select");
+  if (!btn) return;
+  btn.classList.toggle("active", autoSelectOn);
+  btn.textContent = autoSelectOn ? "Auto Select ON" : "Auto Select";
+}
+
+function sendAutoSelect(on) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  updateAutoSelectUi(on); // optimistic; server broadcast confirms
+  ws.send(JSON.stringify({ type: "auto-select-set", on: !!on }));
+}
+
 function updateAntennaUi(on, azConnected, elConnected) {
   antennaOn = !!on;
   if (!antennaOn) parking = false;
@@ -474,6 +490,7 @@ function connectTracker() {
         if (typeof applyProfilesMessage === "function") {
           applyProfilesMessage(msg);
         }
+        updateAutoSelectUi(msg.autoSelect === true);
         return;
       }
 
@@ -784,6 +801,14 @@ function initRadioControls() {
     antToggle.addEventListener("change", () => {
       console.log("toggle-antenna change", antToggle.checked);
       sendAntenna(antToggle.checked);
+    });
+  }
+
+  const autoBtn = document.getElementById("btn-auto-select");
+  if (autoBtn) {
+    autoBtn.addEventListener("click", () => {
+      console.log("btn-auto-select click, currently", autoSelectOn);
+      sendAutoSelect(!autoSelectOn);
     });
   }
 
