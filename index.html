@@ -786,6 +786,21 @@
                 </select>
               </div>
 
+              <div class="form-row">
+                <label class="cfg-check-label" for="cfg-log-amsat-heard">
+                  <input type="checkbox" id="cfg-log-amsat-heard" checked />
+                  Also send AMSAT 'Heard' report when logging a QSO
+                </label>
+                <p class="form-hint">
+                  Same report as the sidebar AMSAT <b>Heard</b> button (your
+                  callsign/grid, UTC time of the QSO), for the logged
+                  satellite. Sent at most once per pass, also counting a
+                  Heard you already sent with the button. Applies to the Log
+                  button and to WSJT-X QSOs logged for the selected
+                  satellite. Never delays the log.
+                </p>
+              </div>
+
               <div id="cfg-log-adif-block" hidden>
                 <div class="form-row">
                   <label for="cfg-log-adif-path">ADIF file path</label>

@@ -323,6 +323,10 @@ body {
   pointer-events: none;
 }
 
+.app-toast.app-toast-err {
+  border-color: var(--red);
+}
+
 .status-dot {
   width: 8px;
   height: 8px;

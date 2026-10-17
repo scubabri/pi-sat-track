@@ -460,6 +460,11 @@ function connectTracker() {
         return;
       }
 
+      if (msg.type === "amsat-auto") {
+        if (typeof window.onAmsatAuto === "function") window.onAmsatAuto(msg);
+        return;
+      }
+
       if (msg.type === "after-los") {
         if (typeof showAfterLosToast === "function") showAfterLosToast(msg);
         return;

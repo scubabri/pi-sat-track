@@ -562,6 +562,10 @@ function readFormConfig() {
       const m = val("cfg-log-method") || "off";
       return ["off", "adif", "udp"].indexOf(m) >= 0 ? m : "off";
     })(),
+    logAmsatHeard: (function () {
+      const el = document.getElementById("cfg-log-amsat-heard");
+      return el ? !!el.checked : true;
+    })(),
     logAdifPath:
       val("cfg-log-adif-path").trim() || "~/.rpitrack/pi-sat-track.adi",
     logUdpHost: val("cfg-log-udp-host").trim() || "127.0.0.1",
@@ -743,6 +747,8 @@ function fillForm(cfg) {
   if (stopS) stopS.checked = stop === "south";
   updateRotorFormVisibility();
   setVal("cfg-log-method", d.logMethod || "off");
+  const amsatHeard = document.getElementById("cfg-log-amsat-heard");
+  if (amsatHeard) amsatHeard.checked = d.logAmsatHeard !== false;
   setVal("cfg-log-adif-path", d.logAdifPath || "~/.rpitrack/pi-sat-track.adi");
   setVal("cfg-log-udp-host", d.logUdpHost || "127.0.0.1");
   setVal("cfg-log-udp-port", d.logUdpPort != null ? d.logUdpPort : 2237);

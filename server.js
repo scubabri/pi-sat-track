@@ -125,6 +125,21 @@ const decodeStore = wsjtxDecodes.createStore({
   onChange: () => broadcast(decodeStore.payload()),
 });
 
+/** Auto AMSAT "Heard" when a QSO is logged (Configure → Logging; default on). */
+const amsatAuto = require("./lib/amsat-auto").createAutoHeard({
+  amsat: amsatReport,
+  getPassWindow: (key, date) => state.getPassWindow(key, date),
+  log: (m) => console.log(m),
+  notify: (evt) => broadcast(Object.assign({ type: "amsat-auto" }, evt)),
+});
+/** Fire-and-forget after a successful log; never blocks or fails the log. */
+function autoAmsatHeard(ctx, station, time, source) {
+  if (!config.LOG_AMSAT_HEARD || !ctx) return;
+  setImmediate(() => {
+    amsatAuto.fromQso({ ctx, station, time, source }).catch(() => {});
+  });
+}
+
 /** WSJT-X listener: enrich with sat info and re-send via the logging output. */
 const wsjtx = wsjtxListener.createListener({
   onQso: (q) => {
@@ -163,6 +178,8 @@ const wsjtx = wsjtxListener.createListener({
         );
         broadcast(out);
         broadcastWsjtxStatus(); // refresh forwarded count in config
+        // Only sat QSOs (enriched with the selected sat) get an AMSAT Heard.
+        if (r.ok && e.enriched) autoAmsatHeard(ctx, stationFromProfile(), rec.time, "wsjtx");
       })
       .catch((err) => console.warn("WSJT-X forward:", err.message));
   },
@@ -364,6 +381,11 @@ const server = http.createServer((req, res) => {
           reports: amsatReport.REPORTS.map((v) => ({ value: v, label: amsatReport.REPORT_LABELS[v] })),
           utc: amsatReport.utcParts(new Date()),
           station: stationFromProfile(),
+          heardThisPass: (() => {
+            const h = ctx && ctx.satKey ? amsatAuto.heardThisPass(ctx.satKey) : null;
+            return h && !h.pending ? { at: h.at, satName: h.satName, source: h.source } : null;
+          })(),
+          autoHeard: !!config.LOG_AMSAT_HEARD,
         });
       })
       .catch((e) => json(502, { error: e.message }));
@@ -387,12 +409,13 @@ const server = http.createServer((req, res) => {
       } catch (_) {
         return json(400, { error: "invalid JSON" });
       }
+      const btnCtx = state.getLogContext();
       amsatReport
         .getSatNames()
         .then((list) =>
           amsatReport.fillReport(r, {
             names: list.names,
-            ctx: state.getLogContext(),
+            ctx: btnCtx,
             station: stationFromProfile({ callsign: r.fallbackCallsign, grid: r.fallbackGrid }),
           }),
         )
@@ -404,6 +427,8 @@ const server = http.createServer((req, res) => {
         })
         .then((out) => {
           console.log("AMSAT report: " + out.message);
+          if (out.report === "Heard" && btnCtx && btnCtx.satKey)
+            amsatAuto.noteSent(btnCtx.satKey, { satName: out.satName, source: "button" });
           json(200, out);
         })
         .catch((e) => {
@@ -825,6 +850,7 @@ wss.on("connection", (ws, req) => {
           rotorAfterLos: msg.rotorAfterLos,
           rotorAzStop: msg.rotorAzStop,
           logMethod: msg.logMethod,
+          logAmsatHeard: typeof msg.logAmsatHeard === "boolean" ? msg.logAmsatHeard : undefined,
           logAdifPath: msg.logAdifPath,
           logUdpHost: msg.logUdpHost,
           logUdpPort: msg.logUdpPort,
@@ -864,8 +890,11 @@ wss.on("connection", (ws, req) => {
           callsign: msg.stationCallsign,
           grid: msg.stationGrid,
         });
+        const qsoTime = new Date();
+        const logCtx = state.getLogContext();
         logbook
           .logQso({
+            now: qsoTime,
             call: msg.call,
             dxGrid: (() => {
               if (schedule.isGrid(String(msg.dxGrid || ""))) return String(msg.dxGrid);
@@ -873,7 +902,7 @@ wss.on("connection", (ws, req) => {
               const h = decodeStore.list().find((s) => s.call === cs);
               return h && h.grid ? h.grid : "";
             })(),
-            ctx: state.getLogContext(),
+            ctx: logCtx,
             station,
             cfg: logOutputCfg(),
           })
@@ -898,6 +927,7 @@ wss.on("connection", (ws, req) => {
                 Object.assign({ type: "log-result", reqId: msg.reqId || null }, r),
               ),
             );
+            if (r.ok) autoAmsatHeard(logCtx, station, qsoTime, "log");
           })
           .catch((e) => {
             ws.send(
