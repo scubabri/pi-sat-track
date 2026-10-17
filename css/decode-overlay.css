@@ -154,5 +154,5 @@ body.globe-mode #map .leaflet-control-attribution { display: none; }
 .leaflet-tooltip.station-label::before { display: none; }
 
 /* Real-time clock, lower left of the map/globe */
-#rtc-clock { position: absolute; left: 12px; bottom: 8px; z-index: 1001; padding: 0; background: none; border: 0; color: rgba(230,237,243,0.45); font: 700 30px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 1px; text-shadow: 0 0 6px rgba(0,0,0,0.5); cursor: pointer; user-select: none; transition: color 0.15s; }
+#rtc-clock { position: absolute; left: 12px; bottom: 8px; z-index: 1001; padding: 0; background: none; border: 0; color: rgba(230,237,243,0.3); font: 700 30px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 1px; text-shadow: 0 0 6px rgba(0,0,0,0.5); cursor: pointer; user-select: none; transition: color 0.15s; }
 #rtc-clock:hover { color: rgba(230,237,243,0.8); }
