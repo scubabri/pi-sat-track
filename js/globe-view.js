@@ -24,7 +24,7 @@
   const pts = new Map(); // key -> point datum (stable identity: moved in place)
   const selLabel = { kind: "sat", lat: 0, lng: 0, alt: 0, text: "" };
   const stLabel = { kind: "station", lat: 0, lng: 0, alt: 0.01, text: "\u2302 Station" };
-  const footprint = { key: "__fp", footprint: true, color: "rgba(88,166,255,0.55)", w: 0.25, pts: [] };
+  const footprint = { key: "__fp", footprint: true, color: "rgba(31,111,235,0.9)", w: 0.35, pts: [] };
 
   function sock() { return typeof ws !== "undefined" && ws && ws.readyState === 1 ? ws : null; }
   function selColor() { return typeof SAT_SELECTED_COLOR !== "undefined" ? SAT_SELECTED_COLOR : "#58a6ff"; }
