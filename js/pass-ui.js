@@ -62,7 +62,7 @@ function satDotLabelLines(st, now) {
   if (!st) return null;
   now = now != null ? now : Date.now();
   const name = st.display || st.sat || st.key || "";
-  const clock = (t) => (typeof formatClockShort === "function" ? formatClockShort(t) : new Date(t).toISOString().substr(11, 5) + " UTC");
+  const clock = (t) => formatPassTime(t); // HH:MM:SS UTC|MT, to the second
   const hKm = st.position && Number.isFinite(st.position.heightKm) ? st.position.heightKm : null;
   const lk = st.look || {};
   const alt = hKm != null ? "Alt " + Math.round(hKm) + " km" : "";
