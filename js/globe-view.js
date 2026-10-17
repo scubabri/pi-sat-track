@@ -27,7 +27,13 @@
   const pts = new Map(); // key -> point datum (stable identity: moved in place)
   const selLabel = { kind: "sat", lat: 0, lng: 0, alt: 0, text: "" };
   const ghost = { kind: "ghost", lat: 0, lng: 0, alt: 0 }; // live position while a pass preview is shown
-  const stLabel = { kind: "station", lat: 0, lng: 0, alt: 0.01, text: "\u2302 Station" };
+  // Home station: "+" at the grid point with the label to its right (like the
+  // map's observer marker). Same altitude as the Log-box DX dot and its
+  // great-circle line, so the line meets both markers exactly.
+  const MARK_ALT = 0.006; // above the footprint fill (polygonAltitude 0.004)
+  const stLabel = { kind: "station", lat: 0, lng: 0, alt: MARK_ALT, text: "\u2302 Station" };
+  const dxMark = { kind: "dx", lat: 0, lng: 0, alt: MARK_ALT, text: "" };
+  const dxPath = { key: "__dx", footprint: true, color: "#ffd34d", w: 0.6, pts: [] };
   const footprint = { key: "__fp", footprint: true, color: "rgba(88,166,255,0.95)", w: 1.1, pts: [] };
   // Shaded footprint interior (polygon layer), same ring as the outline.
   const fpShade = { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [[]] } };
@@ -118,6 +124,7 @@
             e.className = "globe-dx";
             e.innerHTML = '<span class="globe-dx-dot"></span><span class="globe-label globe-dx-label"></span>';
             e.lastChild.textContent = d.text;
+            d.el = e;
             return e;
           } else if (d.kind === "heard") {
             // WSJT-X heard station: same yellow dot + "CALL grid" chip as the map overlay.
@@ -141,7 +148,14 @@
             paintSelLabel();
             return e;
           } else {
-            e.className = "globe-label" + (d.kind === "station" ? " globe-label-station" : "");
+            if (d.kind === "station") {
+              e.className = "globe-station";
+              e.innerHTML = '<span class="globe-station-mark">+</span><span class="globe-label globe-label-station"></span>';
+              d.el = e;
+              styleDot(d);
+              return e;
+            }
+            e.className = "globe-label";
             e.textContent = d.text;
           }
           d.el = e;
@@ -184,6 +198,31 @@
     return loading;
   }
 
+  /**
+   * Great-circle polyline a -> b as globe.gl path points [lat, lng, alt]:
+   * exact endpoints, ~0.5 deg steps (min 64 segments), constant altitude.
+   */
+  window.globeGcLine = function (a, b, alt) {
+    const rad = Math.PI / 180;
+    const p1 = [a.lat * rad, a.lon * rad], p2 = [b.lat * rad, b.lon * rad];
+    const d = 2 * Math.asin(Math.min(1, Math.sqrt(Math.sin((p2[0] - p1[0]) / 2) ** 2 +
+      Math.cos(p1[0]) * Math.cos(p2[0]) * Math.sin((p2[1] - p1[1]) / 2) ** 2)));
+    if (!(d > 1e-9)) return [[a.lat, a.lon, alt], [b.lat, b.lon, alt]];
+    const n = Math.max(64, Math.ceil(d / rad / 0.5));
+    const out = [];
+    for (let i = 0; i <= n; i++) {
+      const f = i / n;
+      const A = Math.sin((1 - f) * d) / Math.sin(d), B = Math.sin(f * d) / Math.sin(d);
+      const x = A * Math.cos(p1[0]) * Math.cos(p1[1]) + B * Math.cos(p2[0]) * Math.cos(p2[1]);
+      const y = A * Math.cos(p1[0]) * Math.sin(p1[1]) + B * Math.cos(p2[0]) * Math.sin(p2[1]);
+      const z = A * Math.sin(p1[0]) + B * Math.sin(p2[0]);
+      out.push([Math.atan2(z, Math.sqrt(x * x + y * y)) / rad, Math.atan2(y, x) / rad, alt]);
+    }
+    out[0] = [a.lat, a.lon, alt];
+    out[n] = [b.lat, b.lon, alt];
+    return out;
+  };
+
   /** Map center buttons call this while the globe is showing. Returns true if handled. */
   window.globeCenterOn = function (lat, lng) {
     if (mode !== "globe" || !G || !Number.isFinite(lat) || !Number.isFinite(lng)) return false;
@@ -215,6 +254,7 @@
     stLabel.lat = ll.lat;
     stLabel.lng = ll.lon;
     stLabel.text = "\u2302 " + (cfg.callsign || cfg.grid);
+    styleDot(stLabel);
     if (pov && G) G.pointOfView({ lat: ll.lat, lng: ll.lon, altitude: 2.2 }, 0);
   }
 
@@ -320,22 +360,36 @@
       d.el.style.cssText = "width:" + px + "px;height:" + px + "px;margin:-" + px / 2 + "px 0 0 -" + px / 2 + "px;background:" + d.color + ";";
       if (d === hoverDot && d.sel) hoverOff(d); // became the selected sat: it has its own label
     } else if (d.kind === "station") {
-      d.el.textContent = d.text;
+      const t = d.el.lastChild;
+      if (t && t.textContent !== d.text) t.textContent = d.text;
+    } else if (d.kind === "dx") {
+      const t = d.el.lastChild;
+      if (t && t.textContent !== d.text) t.textContent = d.text;
     }
   }
 
-  /** DX station from the Log box callsign lookup (window.qsoDxGrid). */
+  /**
+   * DX station from the Log box callsign lookup (window.qsoDxGrid): yellow dot
+   * + great-circle line from the home marker. Both ends use the exact marker
+   * lat/lng/alt; ~1 point per 0.5 deg of arc (min 64) so it hugs the surface.
+   * Stable objects (moved in place), recomputed only when an end moves.
+   */
+  let dxSig = "";
   function dxItems() {
     const q = window.qsoDxGrid;
     if (!q || !q.grid || typeof maidenheadToLatLon !== "function") return null;
     const ll = maidenheadToLatLon(q.grid);
     if (!ll) return null;
-    const out = { mk: { kind: "dx", lat: ll.lat, lng: ll.lon, alt: 0.006, text: q.call + " " + q.grid }, path: null };
+    dxMark.lat = ll.lat; dxMark.lng = ll.lon; dxMark.text = q.call + " " + q.grid;
+    styleDot(dxMark);
+    const out = { mk: dxMark, path: null };
     if (stLabel.lat || stLabel.lng) {
-      const pts = typeof window.qsoGcPoints === "function"
-        ? window.qsoGcPoints({ lat: stLabel.lat, lon: stLabel.lng }, { lat: ll.lat, lon: ll.lon }, 64)
-        : [[stLabel.lat, stLabel.lng], [ll.lat, ll.lon]];
-      out.path = { key: "__dx", footprint: true, color: "#ffd34d", w: 0.6, pts: pts.map((q2) => [q2[0], q2[1], 0.003]) };
+      const sig = [stLabel.lat, stLabel.lng, ll.lat, ll.lon].join(",");
+      if (sig !== dxSig) {
+        dxSig = sig;
+        dxPath.pts = window.globeGcLine({ lat: stLabel.lat, lon: stLabel.lng }, { lat: ll.lat, lon: ll.lon }, MARK_ALT);
+      }
+      out.path = dxPath;
     }
     return out;
   }
@@ -483,6 +537,7 @@
     const now = Date.now();
     if (!force && now - lastApply < 2000) return;
     lastApply = now;
+    placeStation(false); // follows profile / grid changes (label + DX line start)
     // Pass preview: draw the selected sat + favorites at the preview time.
     const pp = window.passPreview;
     const pvSel = pp && lastState && pp.posOf(lastState.sat);
