@@ -24,7 +24,9 @@
   const pts = new Map(); // key -> point datum (stable identity: moved in place)
   const selLabel = { kind: "sat", lat: 0, lng: 0, alt: 0, text: "" };
   const stLabel = { kind: "station", lat: 0, lng: 0, alt: 0.01, text: "\u2302 Station" };
-  const footprint = { key: "__fp", footprint: true, color: "rgba(31,111,235,0.9)", w: 0.35, pts: [] };
+  const footprint = { key: "__fp", footprint: true, color: "rgba(88,166,255,0.95)", w: 1.1, pts: [] };
+  // Shaded footprint interior (polygon layer), same ring as the outline.
+  const fpShade = { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [[]] } };
 
   function sock() { return typeof ws !== "undefined" && ws && ws.readyState === 1 ? ws : null; }
   function selColor() { return typeof SAT_SELECTED_COLOR !== "undefined" ? SAT_SELECTED_COLOR : "#58a6ff"; }
@@ -100,6 +102,12 @@
           return e;
         })
         .htmlTransitionDuration(0)
+        .polygonGeoJsonGeometry("geometry")
+        .polygonCapColor(() => "rgba(88,166,255,0.22)")
+        .polygonSideColor(() => "rgba(0,0,0,0)")
+        .polygonStrokeColor(() => false)
+        .polygonAltitude(0.004)
+        .polygonsTransitionDuration(0)
         .onPathClick(pick);
       try { G.renderer().setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5)); } catch (_) {}
       const fit = () => { if (el && G && mode === "globe") G.width(el.clientWidth).height(el.clientHeight); };
@@ -144,7 +152,7 @@
       const az = (i / 90) * 2 * Math.PI;
       const l2 = Math.asin(Math.sin(la) * Math.cos(lam) + Math.cos(la) * Math.sin(lam) * Math.cos(az));
       const o2 = lo + Math.atan2(Math.sin(az) * Math.sin(lam) * Math.cos(la), Math.cos(lam) - Math.sin(la) * Math.sin(l2));
-      out.push([(l2 * 180) / Math.PI, ((((o2 * 180) / Math.PI) + 540) % 360) - 180, 0.002]);
+      out.push([(l2 * 180) / Math.PI, ((((o2 * 180) / Math.PI) + 540) % 360) - 180, 0.005]);
     }
     return out;
   }
@@ -202,6 +210,8 @@
       selLabel.text = (st.display || st.sat) + " \u00B7 " + Math.round(st.position.heightKm || 0) + " km";
       if (selLabel.el) selLabel.el.textContent = selLabel.text;
       footprint.pts = footprintPts(p.lat, p.lng, st.position.heightKm || 0);
+      fpShade.geometry.coordinates = [footprint.pts.map((q) => [q[1], q[0]])];
+      G.polygonsData([fpShade]);
     }
     if (favOn()) {
       const shown = typeof window.favOverlayShown === "function" ? window.favOverlayShown() : null;
