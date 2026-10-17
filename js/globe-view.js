@@ -6,7 +6,9 @@
  * (one period per sat, ~100 [lat, lon, km] points, cached server-side) plus
  * live positions from the regular 1 s "state" message (applied every 2 s).
  * Favorites follow the map Favorites overlay (on/off + shown subset) and the
- * shared colors in js/sat-colors.js. Rendering pauses while hidden.
+ * shared colors in js/sat-colors.js. WSJT-X heard stations follow the map's
+ * "WSJT Heard" overlay (js/decode-overlay.js: same list, toggle, fading and
+ * expiry). Rendering pauses while hidden.
  */
 (function () {
   const LS_KEY = "mapView";
@@ -116,6 +118,13 @@
             e.className = "globe-dx";
             e.innerHTML = '<span class="globe-dx-dot"></span><span class="globe-label globe-dx-label"></span>';
             e.lastChild.textContent = d.text;
+            return e;
+          } else if (d.kind === "heard") {
+            // WSJT-X heard station: same yellow dot + "CALL grid" chip as the map overlay.
+            e.className = "globe-heard";
+            e.innerHTML = '<div class="globe-heard-in"><span class="globe-heard-dot"></span><span class="globe-heard-label"><span class="dc-call"></span><span class="dc-grid"></span></span></div>';
+            d.el = e;
+            paintHeard(d);
             return e;
           } else if (d.kind === "sun") {
             e.className = "globe-sun";
@@ -326,6 +335,39 @@
     return out;
   }
 
+  /**
+   * WSJT-X heard stations (window.decodeOverlay from js/decode-overlay.js).
+   * One stable datum per callsign (moved / restyled in place); the list is
+   * empty while the map's "WSJT Heard" toggle is off.
+   */
+  const heard = new Map();
+  function paintHeard(d) {
+    const e = d.el;
+    if (!e) return;
+    const inner = e.firstChild;
+    if (!inner) return;
+    inner.style.opacity = String(d.opacity);
+    const call = inner.querySelector(".dc-call"), grid = inner.querySelector(".dc-grid");
+    if (call.textContent !== d.call) call.textContent = d.call;
+    if (grid.textContent !== d.grid) grid.textContent = d.grid;
+    const dot = inner.firstChild;
+    if (dot.title !== d.tip) { dot.title = d.tip; dot.setAttribute("aria-label", d.tip); }
+  }
+  function heardItems() {
+    const dov = window.decodeOverlay;
+    const list = dov && typeof dov.items === "function" ? dov.items() : [];
+    const seen = new Set();
+    for (const s of list) {
+      let d = heard.get(s.call);
+      if (!d) { d = { kind: "heard", key: "__heard:" + s.call, alt: 0.006 }; heard.set(s.call, d); }
+      d.call = s.call; d.grid = s.grid; d.lat = s.lat; d.lng = s.lon; d.opacity = s.opacity; d.tip = s.tip;
+      seen.add(s.call);
+      paintHeard(d);
+    }
+    for (const k of [...heard.keys()]) if (!seen.has(k)) heard.delete(k);
+    return [...heard.values()];
+  }
+
   /** Orbits changed (sat / favorites / TLE / overlay): rebuild paths. */
   function renderPaths() {
     if (!G || !orbits) return;
@@ -428,6 +470,7 @@
   setInterval(tickSelLabel, 1000);
   window.addEventListener("time-mode-change", () => { applyState(true); if (hoverDot) paintHover(); });
   document.addEventListener("qso-dx-change", () => applyState(true));
+  document.addEventListener("decode-overlay-change", () => applyState(true));
 
   /** Live positions (moved in place), footprint and labels. */
   function applyState(force) {
@@ -480,7 +523,7 @@
     const dx = dxItems();
     if (dx) extra.push(dx.mk);
     if (sunMark.lat || sunMark.lng) extra.push(sunMark);
-    G.htmlElementsData([...pts.values(), stLabel].concat(st.position ? [selLabel] : [], extra));
+    G.htmlElementsData(heardItems().concat([...pts.values(), stLabel]).concat(st.position ? [selLabel] : [], extra));
     // footprint moves with the sat: refresh paths cheaply (same orbit arrays)
     if (orbits) renderPaths();
     else G.pathsData((footprint.pts.length > 1 ? [footprint] : []).concat(terminatorPath.pts.length > 1 ? [terminatorPath] : [], dx && dx.path ? [dx.path] : []));

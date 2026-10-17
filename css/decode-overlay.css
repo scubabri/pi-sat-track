@@ -174,3 +174,11 @@ body.globe-mode #map .leaflet-control-attribution { display: none; }
 .globe-sun { width: 0; height: 0; overflow: visible; pointer-events: none; }
 .globe-sun-dot { position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border-radius: 50%; background: #ffd34d; border: 2px solid #ff9f1c; box-sizing: border-box; box-shadow: 0 0 6px rgba(255, 179, 71, 0.8); }
 .globe-label.globe-sun-label { position: absolute; left: 10px; top: 0; transform: translateY(-50%); color: #ffd34d; white-space: nowrap; pointer-events: none; }
+
+/* Globe: WSJT-X heard stations (js/globe-view.js), same look as the map's
+   .decode-dot circleMarker + .decode-label chip; opacity fades with age. */
+.globe-heard { width: 0; height: 0; overflow: visible; pointer-events: none; }
+.globe-heard-in { position: absolute; left: 0; top: 0; }
+.globe-heard-dot { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; box-sizing: border-box; border-radius: 50%; background: #ffd34d; border: 1px solid #0b1e2d; pointer-events: auto; cursor: default; }
+.globe-heard-label { position: absolute; left: 8px; top: 0; transform: translateY(-50%); padding: 0 3px; font: 600 11px/1.3 system-ui, sans-serif; color: #f2f2f2; background: rgba(10, 18, 28, 0.62); border-radius: 3px; white-space: nowrap; pointer-events: none; }
+.globe-heard-label .dc-grid { margin-left: 3px; font-size: 9px; font-weight: 400; color: #b9c6d2; }
