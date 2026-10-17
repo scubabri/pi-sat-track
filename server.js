@@ -1206,12 +1206,21 @@ setInterval(() => {
 (async () => {
   await catalog.refreshCatalog();
   await catalog.refreshStatus();
-  const key = catalog.pickDefaultKey();
-  if (key) {
+  // Start on the active profile's last selected sat; fall back to the default (RS-44).
+  const defKey = catalog.pickDefaultKey();
+  const last = (profiles.getActive() || {}).lastSat;
+  const cat = catalog.getCatalog() || {};
+  const keys = [];
+  if (last && cat[last]) keys.push(last);
+  else if (last) console.warn("Last sat " + last + " not in catalog; using default");
+  if (defKey && keys.indexOf(defKey) < 0) keys.push(defKey);
+  for (const key of keys) {
     try {
       await state.loadSatellite(key);
+      console.log("Startup sat: " + key + (key === last ? " (last selected)" : " (default)"));
+      break;
     } catch (err) {
-      console.warn("Default sat load failed (" + key + "):", err.message);
+      console.warn("Startup sat load failed (" + key + "):", err.message);
     }
   }
   server.listen(PORT, "0.0.0.0", () => {

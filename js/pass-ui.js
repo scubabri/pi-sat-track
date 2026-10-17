@@ -79,12 +79,12 @@ function satDotLabelLines(st, now) {
     lines = lines.filter(Boolean);
     return { lines, l1: lines[0] || name, l2: lines.slice(1).join("\n"), up };
   };
-  if (!pass) return out([name, rng, alt], false);
+  if (!pass) return out([name, el, rng, alt], false);
   const aosMs = new Date(pass.aos).getTime();
   const losMs = new Date(pass.los).getTime();
   if (aosMs <= now)
     return out([name, "LOS " + formatCountdownClock((losMs - now) / 1000), clock(losMs), el, rng, alt], true);
-  return out([name, "AOS " + formatCountdownClock((aosMs - now) / 1000), clock(aosMs), rng, alt], false);
+  return out([name, "AOS " + formatCountdownClock((aosMs - now) / 1000), clock(aosMs), el, rng, alt], false);
 }
 
 function renderPassTimes() {
