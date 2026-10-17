@@ -457,7 +457,7 @@ function initFavProfileEvents() {
     if (!favProfileMode()) return;
     const h = hitAt(e);
     const k = h ? h.key : null;
-    cv.style.cursor = h && !h.legend && favProfileData && k !== favProfileData.current ? "pointer" : "";
+    cv.style.cursor = h && !h.legend ? "pointer" : "";
     if (k !== favProfileHover) { favProfileHover = k; drawFavProfile(); }
   });
   cv.addEventListener("mouseleave", () => {
@@ -471,6 +471,7 @@ function initFavProfileEvents() {
     if (h.legend) { favProfileHover = favProfileHover === h.key ? null : h.key; drawFavProfile(); return; } // touch: tap toggles
     if (favProfileData && h.key !== favProfileData.current && typeof selectSatellite === "function")
       selectSatellite(h.key, h.display);
+    if (typeof window.globeSnapTo === "function") window.globeSnapTo(h.key);
   });
 }
 

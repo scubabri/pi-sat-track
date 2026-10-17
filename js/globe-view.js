@@ -128,6 +128,14 @@
     return true;
   };
 
+  /** Profile chart click: once that sat's position arrives, spin the globe to it. */
+  let snapKey = null;
+  window.globeSnapTo = function (key) {
+    if (mode !== "globe" || !key) return;
+    snapKey = key;
+    applyState(true);
+  };
+
   function pick(d) {
     if (!d || !d.key || d.footprint || d.kind === "station") return;
     if (lastState && d.key === lastState.sat) return;
@@ -218,6 +226,10 @@
       selLabel.text = (st.display || st.sat) + " \u00B7 " + Math.round(st.position.heightKm || 0) + " km";
       if (selLabel.el) selLabel.el.textContent = selLabel.text;
       footprint.pts = footprintPts(p.lat, p.lng, st.position.heightKm || 0);
+      if (snapKey && snapKey === st.sat) {
+        snapKey = null;
+        window.globeCenterOn(p.lat, p.lng);
+      }
       fpShade.geometry.coordinates = [footprint.pts.map((q) => [q[1], q[0]])];
       G.polygonsData([fpShade]);
     }
