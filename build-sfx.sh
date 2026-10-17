@@ -69,6 +69,10 @@ tar -czf "${PAYLOAD}" \
   --exclude='build-sfx.sh' \
   --exclude='*.run' \
   --exclude='build-sfx.meta' \
+  --exclude="${BASE}/test" \
+  --exclude="${BASE}/.gitignore" \
+  --exclude="${BASE}/create_dist.sh" \
+  --exclude='server.log*' \
   --transform "s,^${BASE},pi-sat-track," \
   -C "${PARENT}" "${BASE}"
 
