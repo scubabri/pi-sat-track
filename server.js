@@ -276,6 +276,9 @@ profiles.load();
 if (typeof state.setOffsetsProfile === "function")
   state.setOffsetsProfile(profiles.getActiveName());
 applyProfileToRuntime(profiles.getActive());
+// Only now (active profile applied) may the profile's radio connect. Drivers
+// for other radio types stay closed — no Flex API / serial / rigctl probes.
+radios.start();
 
 /** In-memory NORAD → SatNOGS sat_id cache (process lifetime). */
 const satnogsCache = new Map();

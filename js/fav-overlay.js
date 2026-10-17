@@ -16,6 +16,7 @@
   let btn = null;
   let tracks = [];
   let currentKey = null;
+  let fullKey = null; // favorite whose label is expanded (hover)
   const items = new Map(); // key -> { color, lines:[], dot, circle }
   const colorFor = (key) => (typeof favColor === "function" ? favColor(key) : "#b07cc6");
 
@@ -53,6 +54,7 @@
       if (it.hit) layer.removeLayer(it.hit);
     }
     items.delete(key);
+    if (fullKey === key) fullKey = null;
     if (hoverKey === key) hoverKey = null;
     if (pinKey === key) pinKey = null;
   }
@@ -178,7 +180,62 @@
     }
     // Selected sat always stays on top and unchanged.
     bringSelectedToFront();
+    paintHoverLabel();
   }
+
+  /* ---------- hover: full stacked label (same as the selected sat) ---------- */
+  // The hovered (or tapped) favorite's name label is expanded in place to the
+  // selected-sat content (selSatLabelHtml → satDotLabelLines on the favorites
+  // snapshot: name, AOS/LOS countdown + clock, El, Rng, Alt) and ticks each
+  // second; it reverts to the plain name when the hover ends. Only one label
+  // is ever live, so this stays cheap on a Pi.
+  function favSnap(key) {
+    const list = (lastSt && lastSt.favorites) || [];
+    for (const f of list) if (f && f.key === key) return f;
+    return null;
+  }
+  function fullHtml(key) {
+    const f = favSnap(key);
+    if (!f || typeof selSatLabelHtml !== "function") return null;
+    const pp = window.passPreview;
+    const pv = pp && pp.posOf && pp.posOf(key);
+    return pv && pp.get && pp.get() != null
+      ? selSatLabelHtml(Object.assign({}, f, { position: pv.position || f.position }), pp.get())
+      : selSatLabelHtml(f, null);
+  }
+  function labelTip(key) {
+    const it = items.get(key);
+    const tt = it && it.hit && it.hit.getTooltip && it.hit.getTooltip();
+    return tt || null;
+  }
+  function paintHoverLabel() {
+    const want = hoverKey || pinKey;
+    if (fullKey && fullKey !== want) {
+      const tt = labelTip(fullKey);
+      if (tt) {
+        const f = favSnap(fullKey);
+        const name = (f && (f.display || f.key)) || fullKey;
+        tt.setContent(String(name).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])));
+        tt.__full = null;
+        const el = tt.getElement && tt.getElement();
+        if (el) el.classList.remove("fav-full");
+      }
+      fullKey = null;
+    }
+    if (!want) return;
+    const tt = labelTip(want);
+    const html = tt && fullHtml(want);
+    if (!html) return;
+    if (tt.__full !== html) {
+      tt.setContent(html);
+      tt.__full = html;
+    }
+    const el = tt.getElement && tt.getElement();
+    if (el) el.classList.add("fav-full");
+    fullKey = want;
+  }
+  setInterval(() => { if (hoverKey || pinKey) paintHoverLabel(); }, 1000);
+  window.addEventListener("time-mode-change", () => { if (hoverKey || pinKey) paintHoverLabel(); });
 
   // Tap on empty map clears a touch highlight.
   function hookMapClear() {
