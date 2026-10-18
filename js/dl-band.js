@@ -1,14 +1,20 @@
 /**
- * Downlink out-of-band indicator (visual only: the sidebar DL readout turns red).
+ * Downlink out-of-band indicator (visual only), two levels on the sidebar DL readout:
+ *   red    (level "oob")  satellite-frame DL outside the passband;
+ *   yellow (level "warn") station/displayed DL (Doppler included) outside the
+ *                         passband while the satellite-frame DL is inside.
+ *   Red takes priority.
  *
  * dlPassbandHz(field): the selected mode's catalog downlink -> {loHz, hiHz, single}.
  *   Uses the primary entry (text before the first "/"), the same one the tracker
  *   tunes. "29.400-29.500" (either order) is the transponder passband; a single
  *   frequency ("145.960") is a channel of +/- DL_SINGLE_TOL_HZ (10 kHz). Unparseable -> null.
- * dlOutOfBand({passbandDl, dlHz, dlDopplerHz}): compares the satellite-frame DL
- *   (displayed dlHz minus the Doppler correction the tracker applied, i.e. catalog
- *   centre + manual/fine offsets) against that passband, so Doppler on a pass can
- *   never trip it by itself. -> {oob, loHz, hiHz, satHz, text} or null if unknown.
+ * dlOutOfBand({passbandDl, dlHz, dlDopplerHz}): satellite-frame DL = displayed dlHz
+ *   minus the Doppler correction the tracker applied (catalog centre + manual/fine
+ *   offsets), so Doppler alone can never turn it red; the displayed dlHz is checked
+ *   too for the yellow warning. Edges inclusive.
+ *   -> {level: "oob"|"warn"|null, oob, warn, satOut, stationOut, loHz, hiHz, satHz,
+ *       stationHz, text} or null if unknown. text is "" when level is null.
  */
 (function (root) {
   const DL_SINGLE_TOL_HZ = 10000;
@@ -39,8 +45,15 @@
     if (!pb) return null;
     const dop = Number.isFinite(msg.dlDopplerHz) ? msg.dlDopplerHz : 0;
     const satHz = msg.dlHz - dop;
-    const oob = satHz < pb.loHz - 0.5 || satHz > pb.hiHz + 0.5;
-    return { oob, loHz: pb.loHz, hiHz: pb.hiHz, satHz, text: "Out of band: DL passband " + fmtMHz(pb.loHz) + "\u2013" + fmtMHz(pb.hiHz) + " MHz" };
+    const stationHz = msg.dlHz;
+    const out = (hz) => hz < pb.loHz - 0.5 || hz > pb.hiHz + 0.5;
+    const satOut = out(satHz);
+    const stationOut = out(stationHz);
+    const level = satOut ? "oob" : stationOut ? "warn" : null;
+    const band = fmtMHz(pb.loHz) + "\u2013" + fmtMHz(pb.hiHz) + " MHz";
+    const text = level === "oob" ? "Out of band at satellite: DL passband " + band
+      : level === "warn" ? "Station frequency outside DL passband " + band + " (satellite in band)" : "";
+    return { level, oob: level === "oob", warn: level === "warn", satOut, stationOut, loHz: pb.loHz, hiHz: pb.hiHz, satHz, stationHz, text };
   }
 
   const api = { dlPassbandHz, dlOutOfBand, DL_SINGLE_TOL_HZ };
