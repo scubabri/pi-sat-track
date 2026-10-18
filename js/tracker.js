@@ -316,13 +316,15 @@ function applyFreqAndLook(msg) {
 
   if (ulEl && ulDop != null) ulEl.title = "Doppler " + fmtDopplerKHz(ulDop);
   if (dlEl && dlDop != null) dlEl.title = "Doppler " + fmtDopplerKHz(dlDop);
-  // Out-of-band indicator (visual only; see js/dl-band.js).
+  // Out-of-band indicator (visual only; see js/dl-band.js): red = satellite-frame
+  // DL out of the passband, yellow = only the station (displayed) DL is out.
   if (dlEl) {
     const ob = typeof dlOutOfBand === "function" ? dlOutOfBand({ passbandDl: msg.passbandDl, dlHz, dlDopplerHz: dlDop }) : null;
-    const red = !!(ob && ob.oob);
-    dlEl.classList.toggle("oob", red);
-    if (red) dlEl.title = ob.text;
-    else if (dlDop == null && dlEl.title.indexOf("Out of band") === 0) dlEl.title = "";
+    const lvl = ob ? ob.level : null;
+    dlEl.classList.toggle("oob", lvl === "oob");
+    dlEl.classList.toggle("oob-warn", lvl === "warn");
+    if (lvl) dlEl.title = ob.text;
+    else if (dlDop == null && /^(Out of band|Station frequency outside)/.test(dlEl.title)) dlEl.title = "";
   }
 
   if (pbUl) pbUl.textContent = msg.passbandUl || "-";

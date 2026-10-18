@@ -79,9 +79,13 @@
 .freq-value.downlink {
   color: var(--downlink);
 }
-/* DL outside the selected mode's catalog passband (js/dl-band.js) */
+/* DL vs the selected mode's catalog passband (js/dl-band.js):
+   red = satellite-frame DL out of band; yellow = only the station (displayed) DL is out */
 .freq-value.downlink.oob {
   color: #f85149;
+}
+.freq-value.downlink.oob-warn {
+  color: #d29922;
 }
 
 .freq-doppler {
