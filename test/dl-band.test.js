@@ -1,4 +1,5 @@
-// Downlink out-of-band check (js/dl-band.js): passband parsing + satellite-frame compare.
+// Downlink out-of-band check (js/dl-band.js): passband parsing + two-level compare
+// (red: satellite-frame DL out; yellow: only the station/displayed DL out).
 // Run: node test/dl-band.test.js
 const assert = require("assert");
 const { dlPassbandHz, dlOutOfBand, DL_SINGLE_TOL_HZ } = require("../js/dl-band");
@@ -12,52 +13,75 @@ assert.deepStrictEqual(dlPassbandHz("145.825/437.120"), { loHz: 145815000, hiHz:
 assert.strictEqual(DL_SINGLE_TOL_HZ, 10000);
 for (const bad of [null, undefined, "", "-", "  ", "abc"]) assert.strictEqual(dlPassbandHz(bad), null, String(bad));
 
-// ---- linear transponder
-const lin = (dlHz, dop) => dlOutOfBand({ passbandDl: "435.130-435.150", dlHz, dlDopplerHz: dop });
-assert.strictEqual(lin(435140000, 0).oob, false);
-assert.strictEqual(lin(435130000, 0).oob, false); // edges inclusive
-assert.strictEqual(lin(435150000, 0).oob, false);
-assert.strictEqual(lin(435150001, 0).oob, true);
-assert.strictEqual(lin(435129999, 0).oob, true);
-// Doppler-shifted readout of an in-band sat-frame freq is NOT flagged (+9 kHz Doppler at band edge)
-assert.strictEqual(lin(435159000, 9000).oob, false);
-assert.strictEqual(lin(435121000, -9000).oob, false);
-// but a tuned offset outside the band is, whatever the Doppler
-assert.strictEqual(lin(435165000, 9000).oob, true);
-assert.strictEqual(lin(435140000, 0).text, "Out of band: DL passband 435.130\u2013435.150 MHz");
-
-// ---- single-frequency FM: Doppler alone never flags (up to ~10 kHz at 70 cm)
-const fm = (dlHz, dop) => dlOutOfBand({ passbandDl: "145.960", dlHz, dlDopplerHz: dop });
-assert.strictEqual(fm(145960000 + 3300, 3300).oob, false);
-assert.strictEqual(fm(145960000 - 3300, -3300).oob, false);
-assert.strictEqual(fm(145969000, 0).oob, false);
-assert.strictEqual(fm(145971000, 0).oob, true); // manual offset +11 kHz
-assert.strictEqual(fm(145949000, null).oob, true); // no Doppler info -> treated as 0
-assert.strictEqual(fm(145960000, 0).text, "Out of band: DL passband 145.950\u2013145.970 MHz");
-const fm70 = dlOutOfBand({ passbandDl: "435.350", dlHz: 435350000 + 10200, dlDopplerHz: 10200 });
-assert.strictEqual(fm70.oob, false);
-
-// ---- RS-44 (catalog DL descending "435.670-435.610", either order): displayed
-// 435.614470 with -5.0 kHz Doppler -> sat frame 435.619470, in band.
-for (const pbDl of ["435.670-435.610", "435.610-435.670"]) {
-  const r = dlOutOfBand({ passbandDl: pbDl, dlHz: 435614470, dlDopplerHz: -5000 });
-  assert.strictEqual(r.oob, false, pbDl);
-  assert.strictEqual(r.satHz, 435619470);
-  assert.strictEqual(r.text, "Out of band: DL passband 435.610\u2013435.670 MHz");
-  // Doppler alone at the band edge never flags; an offset outside the band does.
-  assert.strictEqual(dlOutOfBand({ passbandDl: pbDl, dlHz: 435610000 - 9000, dlDopplerHz: -9000 }).oob, false);
-  assert.strictEqual(dlOutOfBand({ passbandDl: pbDl, dlHz: 435670000 + 9000, dlDopplerHz: 9000 }).oob, false);
-  assert.strictEqual(dlOutOfBand({ passbandDl: pbDl, dlHz: 435605000, dlDopplerHz: 0 }).oob, true);
+const RED = (pb) => "Out of band at satellite: DL passband " + pb + " MHz";
+const YEL = (pb) => "Station frequency outside DL passband " + pb + " MHz (satellite in band)";
+const chk = (passbandDl, dlHz, dlDopplerHz) => dlOutOfBand({ passbandDl, dlHz, dlDopplerHz });
+function expect(r, level, label) {
+  assert.ok(r, label);
+  assert.strictEqual(r.level, level, label + " level");
+  assert.strictEqual(r.oob, level === "oob", label + " oob");
+  assert.strictEqual(r.warn, level === "warn", label + " warn");
+  if (!level) assert.strictEqual(r.text, "", label + " text");
 }
 
-// ---- FO-29: displayed 435.794229 with Doppler -8.565 kHz -> sat frame ~435.802794,
-// in band 435.800-435.900 (the displayed value alone would be below the band).
+// ---- linear transponder 435.130-435.150
+const LIN = "435.130-435.150";
+expect(chk(LIN, 435140000, 0), null, "centre");
+expect(chk(LIN, 435130000, 0), null, "low edge inclusive");
+expect(chk(LIN, 435150000, 0), null, "high edge inclusive");
+expect(chk(LIN, 435150001, 0), "oob", "1 Hz above");
+expect(chk(LIN, 435129999, 0), "oob", "1 Hz below");
+assert.strictEqual(chk(LIN, 435129999, 0).text, RED("435.130\u2013435.150"));
+// Doppler alone never turns it red: sat frame in band, station out -> yellow
+expect(chk(LIN, 435159000, 9000), "warn", "+9 kHz Doppler at top edge");
+expect(chk(LIN, 435121000, -9000), "warn", "-9 kHz Doppler at bottom edge");
+assert.strictEqual(chk(LIN, 435159000, 9000).text, YEL("435.130\u2013435.150"));
+// tuned offset outside the band -> red, whatever the Doppler (both out)
+const both = chk(LIN, 435165000, 9000);
+expect(both, "oob", "both out");
+assert.ok(both.satOut && both.stationOut);
+// sat out but station in (Doppler pulls the readout back in) -> still red
+const satOnly = chk(LIN, 435145000, -9000);
+expect(satOnly, "oob", "sat out, station in");
+assert.ok(satOnly.satOut && !satOnly.stationOut);
+
+// ---- FO-29: displayed 435.794229, Doppler -8.565 kHz -> sat ~435.802794 in
+// 435.800-435.900, station below the band -> yellow
 {
-  const r = dlOutOfBand({ passbandDl: "435.800-435.900", dlHz: 435794229, dlDopplerHz: -8565 });
-  assert.strictEqual(r.oob, false);
+  const r = chk("435.800-435.900", 435794229, -8565);
+  expect(r, "warn", "FO-29");
   assert.strictEqual(r.satHz, 435802794);
-  assert.strictEqual(r.text, "Out of band: DL passband 435.800\u2013435.900 MHz");
+  assert.strictEqual(r.stationHz, 435794229);
+  assert.ok(!r.satOut && r.stationOut);
+  assert.strictEqual(r.text, YEL("435.800\u2013435.900"));
+  expect(chk("435.800-435.900", 435850000, -8565), null, "FO-29 both in");
 }
+
+// ---- RS-44 (catalog DL descending "435.670-435.610"; either order works)
+for (const pbDl of ["435.670-435.610", "435.610-435.670"]) {
+  // displayed 435.614470, Doppler +5.705 kHz -> sat 435.608765, below the band -> red
+  const r = chk(pbDl, 435614470, 5705);
+  expect(r, "oob", "RS-44 sat out " + pbDl);
+  assert.strictEqual(r.satHz, 435608765);
+  assert.ok(r.satOut && !r.stationOut);
+  assert.strictEqual(r.text, RED("435.610\u2013435.670"));
+  // same readout with -5 kHz Doppler -> sat 435.619470: both in
+  expect(chk(pbDl, 435614470, -5000), null, "RS-44 both in " + pbDl);
+  // both out -> red
+  expect(chk(pbDl, 435600000, 5705), "oob", "RS-44 both out " + pbDl);
+}
+
+// ---- single-frequency FM (145.960 +/- 10 kHz)
+const fm = (dlHz, dop) => chk("145.960", dlHz, dop);
+expect(fm(145960000 + 3300, 3300), null, "FM small Doppler");
+expect(fm(145960000 - 3300, -3300), null, "FM small -Doppler");
+expect(fm(145970000, 0), null, "FM edge");
+expect(fm(145971000, 0), "oob", "FM +11 kHz offset");
+expect(fm(145949000, null), "oob", "no Doppler info -> 0");
+assert.strictEqual(fm(145960000, 0).level, null);
+assert.strictEqual(fm(145971000, 0).text, RED("145.950\u2013145.970"));
+// 70 cm FM: Doppler alone past the +/-10 kHz channel -> yellow, never red
+expect(chk("435.350", 435350000 + 10200, 10200), "warn", "70cm FM Doppler 10.2 kHz");
 
 // ---- unknown inputs -> null (no indicator)
 assert.strictEqual(dlOutOfBand(null), null);
