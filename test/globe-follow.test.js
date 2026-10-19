@@ -13,7 +13,9 @@ test("follow uses rAF integrator, not a 1 Hz / setInterval camera pin", () => {
   assert.match(src, /Math\.exp\(-dt \/ 400\)/, "pull bled over ~1 s");
   assert.match(src, /followPos\(\)/, "applyState reads smoothed pos while following");
   assert.match(src, /follow\.key === st\.sat && !pT\) \? followPos\(\)/);
-  assert.match(src, /now - follow\.lastFp > 240/, "footprint throttled");
+  assert.match(src, /function ensureFpMesh\(/, "persistent footprint mesh");
+  assert.match(src, /orientFpMesh\(follow\.lat/, "footprint reoriented every follow frame");
+  assert.doesNotMatch(src, /lastFp/, "no 4 Hz footprint refresh");
 });
 
 test("wiring: chart snap starts follow; drag, center buttons, Map stop it", () => {
