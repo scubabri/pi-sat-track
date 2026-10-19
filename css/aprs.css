@@ -1,18 +1,21 @@
-/* APRS / KISS: map box (js/aprs-overlay.js), floating window (js/aprs-window.js),
+/* APRS / KISS: APRS button + window (js/aprs-overlay.js), floating window (js/aprs-window.js),
    map + globe heard markers, Configure → KISS / APRS status. */
 
-/* ---- map box: sits directly below the WSJT Heard / Clear Spots bar ---- */
-.leaflet-control.aprs-box {
-  clear: both;
-  width: 210px;
-  padding: 6px 7px 7px;
-  background: rgba(22, 27, 34, 0.94);
-  border: 1px solid #30363d !important;
-  border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
-  color: #e6edf3;
-  font: 12px/1.35 system-ui, sans-serif;
-}
+/* ---- "APRS" button in the decode button stack (below Clear Spots) ---- */
+.decode-toggle-control .aprs-open-btn { position: relative; display: flex !important; align-items: center; justify-content: center; gap: 5px; }
+/* highlighted while the APRS window is open (same as Sked Finder when its panel is open) */
+.leaflet-container .decode-toggle-control a.aprs-open-btn.active { color: #58a6ff !important; background: #1c2a3a !important; }
+.aprs-btn-dot { width: 7px; height: 7px; border-radius: 50%; background: #6e7681; flex-shrink: 0; }
+.aprs-btn-dot.kiss-connected { background: #3fb950; box-shadow: 0 0 4px #3fb950; }
+.aprs-btn-dot.kiss-connecting { background: #d29922; }
+.aprs-btn-dot.kiss-waiting { background: #f85149; }
+.decode-toggle-control .aprs-open-btn .aprs-unread { top: -4px; right: -4px; }
+
+/* ---- APRS (station) window: what used to be the map box ---- */
+.aprs-window.aprs-station-win { width: 250px; }
+.aprs-st { padding: 7px 8px 8px; }
+.aprs-box-sub { margin-top: 7px; font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.4px; }
+.aprs-hint { cursor: help; text-transform: none; }
 .aprs-box-head { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
 .aprs-box-title { font-weight: 800; letter-spacing: 0.5px; color: #39c5ff; }
 .aprs-kiss-dot { width: 8px; height: 8px; border-radius: 50%; background: #6e7681; flex-shrink: 0; }
@@ -21,7 +24,7 @@
 .aprs-kiss-dot.kiss-waiting { background: #f85149; }
 .aprs-kiss-text { font-size: 11px; color: #8b949e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .aprs-box-btns { display: flex; gap: 4px; margin-bottom: 6px; }
-.leaflet-container .aprs-box-btns a {
+.aprs-box-btns a {
   flex: 1;
   text-align: center;
   font: 700 11px/24px system-ui, sans-serif;
@@ -32,8 +35,8 @@
   text-decoration: none;
   position: relative;
 }
-.leaflet-container .aprs-box-btns a:hover { color: #58a6ff; background: #21262d; }
-.leaflet-container .aprs-box-btns a.active { color: #39c5ff; }
+.aprs-box-btns a:hover { color: #58a6ff; background: #21262d; }
+.aprs-box-btns a.active { color: #39c5ff; }
 .aprs-unread { position: absolute; top: -5px; right: -5px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: #f85149; color: #fff; font: 700 10px/15px system-ui, sans-serif; }
 .aprs-box-tx { display: flex; flex-direction: column; gap: 4px; }
 .aprs-f { display: flex; align-items: center; gap: 5px; margin: 0; }
@@ -139,7 +142,10 @@
 .aprs-m.sent .aprs-m-dir { color: #3fb950; }
 .aprs-m-t { font-family: ui-monospace, Menlo, Consolas, monospace; }
 .aprs-m-from, .aprs-m-to { font: 600 11px ui-monospace, Menlo, Consolas, monospace; color: #e6edf3; }
-.aprs-m-from[data-reply] { cursor: pointer; text-decoration: underline dotted; }
+.aprs-call { cursor: pointer; text-decoration: underline dotted; }
+.aprs-m-dst { font: 600 11px ui-monospace, Menlo, Consolas, monospace; color: #d2a8ff; }
+.aprs-m-for { font: 700 11px ui-monospace, Menlo, Consolas, monospace; color: #ffa657; }
+.aprs-m-hdr { color: #6e7681; }
 .aprs-m-via { font-family: ui-monospace, monospace; color: #6e7681; }
 .aprs-m-ok { color: #a371f7; font-weight: 700; }
 .aprs-m-text { margin-top: 2px; font-size: 12.5px; overflow-wrap: anywhere; }
@@ -154,14 +160,27 @@
 .aprs-win-send[hidden] { display: none; }
 .aprs-win-row { display: flex; gap: 6px; align-items: center; }
 .aprs-win-row label { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #8b949e; text-transform: uppercase; }
-.aprs-win-row label:first-child { flex: 1.2; }
-.aprs-win-row label:nth-child(2) { flex: 1; }
+.aprs-hdr-row label:first-child { flex: 1; }
+.aprs-hdr-row label:nth-child(2) { flex: 1.3; }
 .aprs-win-row input { flex: 1; min-width: 0; padding: 4px 6px; font: 12px ui-monospace, Menlo, Consolas, monospace; color: #e6edf3; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; text-transform: none; }
 .aprs-win-row input:focus { outline: none; border-color: #58a6ff; }
 .aprs-save-via { font-size: 10px; color: #58a6ff; white-space: nowrap; }
 .aprs-save-via[hidden] { display: none; }
 .aprs-win-row button { padding: 4px 14px; font: 700 12px system-ui, sans-serif; color: #0d1117; background: #39c5ff; border: 0; border-radius: 4px; cursor: pointer; }
 .aprs-win-row button:disabled { background: #30363d; color: #8b949e; cursor: not-allowed; }
+.aprs-mode-row { flex-wrap: wrap; gap: 4px; }
+.aprs-win-row.aprs-mode-row button { padding: 2px 8px; font: 600 11px system-ui, sans-serif; color: #8b949e; background: #0d1117; border: 1px solid #30363d; border-radius: 12px; }
+.aprs-win-row.aprs-mode-row button.active { color: #0d1117; background: #d2a8ff; border-color: #d2a8ff; }
+.aprs-win-row label.aprs-for { flex: 1; min-width: 120px; }
+.aprs-win-row label.aprs-for[hidden] { display: none; }
+.aprs-count { font: 10px ui-monospace, monospace; color: #6e7681; min-width: 42px; text-align: right; }
+.aprs-win-row input:disabled { opacity: 0.5; }
+.aprs-call-menu { position: fixed; z-index: 3300; min-width: 170px; padding: 4px; background: #161b22; border: 1px solid #30363d; border-radius: 6px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6); font: 12px system-ui, sans-serif; }
+.aprs-call-menu[hidden] { display: none; }
+.aprs-cm-h { padding: 2px 6px 4px; font: 700 11px ui-monospace, monospace; color: #39c5ff; border-bottom: 1px solid #30363d; margin-bottom: 2px; }
+.aprs-call-menu button { display: block; width: 100%; text-align: left; padding: 4px 6px; color: #e6edf3; background: transparent; border: 0; border-radius: 4px; cursor: pointer; }
+.aprs-call-menu button:hover { background: #21262d; color: #58a6ff; }
+.aprs-pop-act { display: flex; gap: 10px; }
 .aprs-win-why { font-size: 10.5px; color: #8b949e; overflow-wrap: anywhere; }
 .aprs-win-why.blocked { color: #d29922; }
 .aprs-win-why.ok { color: #3fb950; }
@@ -176,4 +195,38 @@
 /* .form-row-2 is display:grid; keep [hidden] rows hidden */
 #config-panel #cfg-kiss-serial-row[hidden],
 #config-panel #cfg-kiss-tcp-row[hidden],
-#config-panel #cfg-kiss-latlon-row[hidden] { display: none !important; }
+#config-panel #cfg-kiss-latlon-row[hidden],
+#config-panel #cfg-kiss-bt-hint[hidden] { display: none !important; }
+
+/* ---- symbol picker (Configure → KISS / APRS) ---- */
+#config-panel .aprs-sym-field { display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; min-height: 38px; padding: 4px 10px; text-align: left; color: var(--text, #e6edf3); background: var(--bg-elevated, #0d1117); border: 1px solid var(--border, #30363d); border-radius: 6px; cursor: pointer; font: inherit; }
+#config-panel .aprs-sym-field:hover { border-color: #58a6ff; }
+.aprs-sym-field .aprs-sym-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aprs-sym-field code { color: #8b949e; font-size: 11px; }
+.aprs-sym-caret { color: #8b949e; font-size: 11px; }
+#config-panel .aprs-sym-pop[hidden] { display: none !important; }
+#config-panel .aprs-sym-pop { display: flex; flex-direction: column; gap: 6px; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; }
+.aprs-sym-list { max-height: 300px; overflow-y: auto; padding-right: 4px; }
+.aprs-sym-sec { margin: 8px 0 4px; font-size: 10.5px; font-weight: 700; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+.aprs-sym-sec:first-child { margin-top: 0; }
+.aprs-sym-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 3px; }
+.aprs-sym-opt { display: flex; align-items: center; gap: 6px; padding: 3px 6px; text-align: left; font: 12px system-ui, sans-serif; color: #c9d1d9; background: #161b22; border: 1px solid transparent; border-radius: 5px; cursor: pointer; }
+.aprs-sym-opt span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aprs-sym-opt:hover { border-color: #30363d; background: #21262d; color: #fff; }
+.aprs-sym-opt.sel { border-color: #39c5ff; background: #0f2a3a; color: #fff; }
+.aprs-sym-none { color: #6e7681; padding: 8px; }
+.aprs-sym-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 11px; color: #8b949e; }
+.aprs-sym-foot label { margin: 0; font-size: 11px; }
+#config-panel .aprs-sym-foot input { width: 52px; padding: 3px 6px; }
+.aprs-sym-credit { margin-left: auto; font-size: 10px; color: #6e7681; }
+.aprs-sym { flex-shrink: 0; background-repeat: no-repeat; }
+
+/* ---- received stations drawn with their APRS symbol ---- */
+.leaflet-marker-icon.aprs-sym-marker { background: none; border: 0; }
+.aprs-sym-marker .aprs-sym-wrap { display: block; width: 24px; height: 24px; border-radius: 50%; }
+.aprs-sym-marker.via-sat .aprs-sym-wrap { box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85); }
+.aprs-sym-marker.approx .aprs-sym-wrap { outline: 1.5px dashed #7aa7c7; outline-offset: 1px; }
+.aprs-sym-marker.self .aprs-sym-wrap { box-shadow: 0 0 0 2px #3fb950; }
+.globe-heard.globe-aprs.has-sym .globe-heard-dot { background: none !important; border: 0 !important; width: 20px; height: 20px; left: -10px; top: -10px; }
+.globe-heard.globe-aprs.has-sym.aprs-sat .globe-heard-dot { box-shadow: 0 0 0 1.5px #fff; border-radius: 50%; }
+#config-panel #cfg-kiss-bt-hint { margin: 2px 0 10px; }

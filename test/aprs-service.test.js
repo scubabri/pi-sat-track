@@ -173,33 +173,60 @@ test("per-satellite Via override falls back to the default path, then ARISS", ()
   assert.strictEqual(viaForSat(normalizeConfig({ path: "" }), null), "ARISS");
 });
 
-test("send message To/Via/Text and position beacon: exact frames reach the TNC", async () => {
+test("UISS model: To = AX.25 destination (default CQ), Via = path; message / position / UI text / header frames", async () => {
   const tnc = await fakeTnc();
   const { svc } = makeSvc(tnc, ISS_UP);
-  svc.configure({ enabled: true, txEnabled: true, host: "127.0.0.1", port: tnc.port, logToFile: false, comment: "Pi Sat Track" });
+  svc.configure({ enabled: true, txEnabled: true, host: "127.0.0.1", port: tnc.port, logToFile: false, comment: "Pi Sat Track", msgIntervalS: 5 });
   assert.ok(await until(() => svc.statusPayload().state === "connected"));
-  const r = svc.send({ kind: "message", to: "rs0iss", via: "ARISS", text: "hello from DN40" });
+  assert.strictEqual(svc.statusPayload().defaultTo, "CQ");
+  // APRS message: For = addressee, To defaults to CQ (UISS "Fm ON6MU To CQ Via PCSAT-1 :EMAIL ...")
+  const r = svc.send({ kind: "message", for: "rs0iss", via: "ARISS", text: "hello from DN40" });
   assert.ok(r.ok, JSON.stringify(r));
   assert.ok(await until(() => tnc.rx.length === 1));
-  const expect = ax25.encodeUI({ src: "K0TEST", dst: "APZPST", path: "ARISS", info: ":RS0ISS   :hello from DN40" });
+  const expect = ax25.encodeUI({ src: "K0TEST", dst: "CQ", path: "ARISS", info: ":RS0ISS   :hello from DN40" });
   assert.strictEqual(tnc.rx[0].port, 0);
   assert.strictEqual(tnc.rx[0].cmd, 0);
   assert.strictEqual(tnc.rx[0].data.toString("hex"), expect.toString("hex"));
-  assert.strictEqual(ax25.toTnc2(ax25.decode(tnc.rx[0].data)), "K0TEST>APZPST,ARISS::RS0ISS   :hello from DN40");
-  // rate limit for the next message
-  const r2 = svc.send({ kind: "message", to: "RS0ISS", via: "ARISS", text: "again" });
+  assert.strictEqual(r.packet.dst, "CQ");
+  assert.strictEqual(r.packet.to, "RS0ISS");
+  // rate limit applies to every non-beacon send
+  const r2 = svc.send({ kind: "text", via: "ARISS", text: "again" });
   assert.strictEqual(r2.ok, false);
   assert.match(r2.reasons.join(), /between messages/);
-  // beacon: grid centre DN40 = 40.5N 111W, default comment, no SSID
-  const b = svc.send({ kind: "beacon" });
+  // position beacon uses the same To / Via header; "=" (messaging capable) like UISS
+  const b = svc.send({ kind: "beacon", to: "aprs" });
   assert.ok(b.ok, JSON.stringify(b));
   assert.ok(await until(() => tnc.rx.length === 2));
-  assert.strictEqual(ax25.toTnc2(ax25.decode(tnc.rx[1].data)), "K0TEST>APZPST,ARISS:!4030.00N/11100.00W`Pi Sat Track");
-  // blocked send writes nothing
+  assert.strictEqual(ax25.toTnc2(ax25.decode(tnc.rx[1].data)), "K0TEST>APRS,ARISS:=4030.00N/11100.00W`Pi Sat Track");
   const r3 = svc.send({ kind: "beacon" });
-  assert.strictEqual(r3.ok, false);
-  await wait(100);
-  assert.strictEqual(tnc.rx.length, 2);
+  assert.strictEqual(r3.ok, false, "beacon rate limit");
+  svc.stop();
+  await tnc.close();
+});
+
+test("UI text is sent as typed (UISS Send UI Data); header only; invalid To / missing For rejected", async () => {
+  const tnc = await fakeTnc();
+  const { svc } = makeSvc(tnc, ISS_UP);
+  svc.configure({ enabled: true, txEnabled: true, host: "127.0.0.1", port: tnc.port, logToFile: false, msgIntervalS: 5, defaultTo: "beacon" });
+  assert.ok(await until(() => svc.statusPayload().state === "connected"));
+  assert.match(svc.send({ kind: "text", to: "TOOLONGCALL", text: "x" }).reasons.join(), /Invalid To/);
+  assert.match(svc.send({ kind: "text", to: "CQ-16", text: "x" }).reasons.join(), /Invalid To/);
+  assert.match(svc.send({ kind: "message", to: "CQ", text: "x" }).reasons.join(), /addressee/);
+  assert.match(svc.send({ kind: "text", to: "CQ", via: "ARISS", text: "x".repeat(81) }).reasons.join(), /max 80/);
+  assert.strictEqual(tnc.rx.length, 0, "rejected sends write nothing");
+  const r = svc.send({ kind: "text", to: "cq", via: "RS0ISS", text: ">JO20AW Hello all {UISS} | ~" });
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.ok(await until(() => tnc.rx.length === 1));
+  assert.strictEqual(ax25.toTnc2(ax25.decode(tnc.rx[0].data)), "K0TEST>CQ,RS0ISS:>JO20AW Hello all {UISS} | ~");
+  assert.strictEqual(r.packet.type, "status");
+  await wait(5100);
+  // header only: empty info, To defaults to the configured default (BEACON)
+  const h = svc.send({ kind: "header", via: "RS0ISS" });
+  assert.ok(h.ok, JSON.stringify(h));
+  assert.ok(await until(() => tnc.rx.length === 2));
+  const fr = ax25.decode(tnc.rx[1].data);
+  assert.strictEqual(ax25.toTnc2(fr), "K0TEST>BEACON,RS0ISS:");
+  assert.strictEqual(fr.info.length, 0);
   svc.stop();
   await tnc.close();
 });
@@ -209,11 +236,28 @@ test("optional SSID is used when set", async () => {
   const { svc } = makeSvc(tnc, ISS_UP);
   svc.configure({ enabled: true, txEnabled: true, host: "127.0.0.1", port: tnc.port, logToFile: false, ssid: "9" });
   assert.ok(await until(() => svc.statusPayload().state === "connected"));
-  assert.ok(svc.send({ kind: "message", to: "", via: "ARISS", text: "QRV" }).ok);
+  assert.ok(svc.send({ kind: "text", to: "CQ", via: "ARISS", text: ">QRV" }).ok);
   assert.ok(await until(() => tnc.rx.length === 1));
-  assert.strictEqual(ax25.toTnc2(ax25.decode(tnc.rx[0].data)), "K0TEST-9>APZPST,ARISS:>QRV");
+  assert.strictEqual(ax25.toTnc2(ax25.decode(tnc.rx[0].data)), "K0TEST-9>CQ,ARISS:>QRV");
   svc.stop();
   await tnc.close();
+});
+
+test("config: default To CQ (UISS), Connection TCP / Bluetooth (old 'serial' maps to Bluetooth)", () => {
+  const d = normalizeConfig(null);
+  assert.strictEqual(d.defaultTo, "CQ");
+  assert.strictEqual(d.transport, "tcp");
+  assert.strictEqual(normalizeConfig({ defaultTo: "aprsat" }).defaultTo, "APRSAT");
+  assert.strictEqual(normalizeConfig({ defaultTo: "not a call" }).defaultTo, "CQ");
+  assert.strictEqual(normalizeConfig({ transport: "serial" }).transport, "bluetooth");
+  assert.strictEqual(normalizeConfig({ transport: "bluetooth" }).transport, "bluetooth");
+  assert.strictEqual(normalizeConfig({ transport: "bogus" }).transport, "tcp");
+  assert.strictEqual(normalizeConfig({ transport: "bluetooth" }).serialDevice, "/dev/rfcomm0");
+  const { createTransport } = require("../lib/kiss/client");
+  for (const t of ["bluetooth", "serial"]) {
+    const tr = createTransport(normalizeConfig({ transport: t }));
+    assert.match(tr.describe(), /rfcomm0/);
+  }
 });
 
 test("one-shot Test: connects, counts KISS frames, sends nothing, closes; refused reported", async () => {

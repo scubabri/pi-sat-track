@@ -1,10 +1,13 @@
 /**
- * APRS on the map: the "APRS" box (a Leaflet control directly below the
- * WSJT Heard / Clear Spots bar) and the "APRS Heard" layer.
+ * APRS on the map: the "APRS" button (in the Sked Finder / WSJT Heard /
+ * Clear Spots button stack, directly below Clear Spots), the floating APRS
+ * window it toggles, and the "APRS Heard" layer.
  *
- * Box: KISS status, APRS Heard toggle, Messages window button, and the
- * primary action: Send position (Via + comment editable), plus the last
- * few heard stations. Reasons why sending is blocked are shown inline.
+ * Button: highlighted while the window is open, small dot = KISS state.
+ * Window (js/aprs-float.js chrome, state in localStorage "aprsStationWin"):
+ * KISS status, APRS Heard toggle, Messages window button, UISS-style
+ * To / Via header + comment and the primary action Send position, the reason
+ * sending is blocked, and recent stations. Nothing permanently covers the map.
  *
  * Layer: stations from the server "aprs-heard" store. Position reports plot
  * at their position; messages / status without one plot at the sender's last
@@ -16,13 +19,10 @@
   const LS_ON = "aprsOverlayOn";
   let on = localStorage.getItem(LS_ON) !== "0";
   let layer = null;
-  let box = null;
   let stations = [];
   let expireMs = 60 * 60 * 1000;
   let skewMs = 0;
   const markers = new Map();
-  let viaEdited = false;
-  let lastSatKey = null;
 
   const esc = (s) =>
     String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -65,7 +65,11 @@
       '<div class="aprs-pop"><div class="aprs-pop-h"><b>' + esc(s.call) + "</b>" + (s.symbol ? ' <span class="aprs-pop-sym">' + esc(s.symbol) + "</span>" : "") +
       (s.viaSat ? ' <span class="aprs-badge-sat">via sat</span>' : "") + '<span class="aprs-pop-age">' + ago(now - s.lastHeard) + " ago</span></div>" +
       '<div class="aprs-pop-pos">' + pos + " · " + (s.count || 1) + " pkt</div>" + rows +
-      '<div class="aprs-pop-act"><a href="#" data-aprs-to="' + esc(s.call) + '">Message ' + esc(s.call) + "…</a></div></div>"
+      '<div class="aprs-pop-act">' +
+      '<a href="#" data-aprs-paste="for" data-call="' + esc(s.call) + '" title="Open Messages with For: ' + esc(s.call) + ' (APRS message)">Message…</a>' +
+      '<a href="#" data-aprs-paste="to" data-call="' + esc(s.call) + '" title="Put ' + esc(s.call) + ' in To: (AX.25 destination)">To:</a>' +
+      '<a href="#" data-aprs-paste="via" data-call="' + esc(s.call) + '" title="Put ' + esc(s.call) + ' in Via: (digipeater)">Via:</a>' +
+      "</div></div>"
     );
   }
 
@@ -91,6 +95,15 @@
       opacity: op,
     };
   }
+  /** Station's APRS symbol (table+code) when the sprite set knows it, else "" (dot). */
+  function symOf(s) {
+    const S = window.APRS_SYMBOLS;
+    return S && s && s.symbol && S.parse(s.symbol) ? s.symbol : "";
+  }
+  function symIcon(s, sym) {
+    const cls = "aprs-sym-marker" + (s.viaSat ? " via-sat" : "") + (s.posSource === "grid" || s.posSource === "last" ? " approx" : "") + (s.posSource === "self" ? " self" : "");
+    return L.divIcon({ className: cls, html: '<span class="aprs-sym-wrap">' + window.APRS_SYMBOLS.html(sym, 24) + "</span>", iconSize: [24, 24], iconAnchor: [12, 12], tooltipAnchor: [2, 0], popupAnchor: [0, -10] });
+  }
   function render() {
     const lg = ensureLayer();
     syncBox();
@@ -104,10 +117,20 @@
       const op = ageOpacity(age);
       const sub = SRC_LABEL[s.posSource] || "";
       const html = '<span class="dc-call">' + esc(s.call) + "</span>" + (sub ? '<span class="dc-grid">' + esc(sub) + "</span>" : "");
+      const sym = symOf(s);
+      const kind = sym ? "sym:" + sym + ":" + s.posSource + ":" + !!s.viaSat : "dot";
       let mk = markers.get(s.call);
+      if (mk && mk.__kind !== kind && (sym || mk.__kind !== "dot")) {
+        lg.removeLayer(mk);
+        markers.delete(s.call);
+        mk = null;
+      }
       if (!mk) {
-        mk = L.circleMarker([s.lat, s.lon], Object.assign({ className: "aprs-dot" }, styleFor(s, op)));
-        mk.bindTooltip(html, { permanent: true, direction: "right", offset: [5, 0], className: "decode-label aprs-label", opacity: op });
+        mk = sym
+          ? L.marker([s.lat, s.lon], { icon: symIcon(s, sym), opacity: op, keyboard: false })
+          : L.circleMarker([s.lat, s.lon], Object.assign({ className: "aprs-dot" }, styleFor(s, op)));
+        mk.__kind = kind;
+        mk.bindTooltip(html, { permanent: true, direction: "right", offset: sym ? [10, 0] : [5, 0], className: "decode-label aprs-label", opacity: op });
         mk.bindPopup("", { className: "aprs-popup", maxWidth: 320 });
         mk.on("popupopen", (e) => {
           const st = stations.find((x) => x.call === mk.__call);
@@ -117,7 +140,8 @@
         markers.set(s.call, mk);
       } else {
         mk.setLatLng([s.lat, s.lon]);
-        mk.setStyle(styleFor(s, op));
+        if (mk.setStyle) mk.setStyle(styleFor(s, op));
+        else mk.setOpacity(op);
         mk.setTooltipContent(html);
         const t = mk.getTooltip();
         if (t) t.setOpacity(op);
@@ -156,6 +180,7 @@
         tip: tipText(s, age),
         posSource: s.posSource,
         viaSat: !!s.viaSat,
+        symbol: symOf(s),
       });
     }
     return out;
@@ -181,48 +206,66 @@
     gpop.style.top = Math.max(8, y - 20) + "px";
   }
   function onPopupClick(e) {
-    const a = e.target.closest && e.target.closest("[data-aprs-to]");
+    const a = e.target.closest && e.target.closest("[data-aprs-paste]");
     if (!a) return;
     e.preventDefault();
-    if (window.aprsWindow) window.aprsWindow.open({ to: a.getAttribute("data-aprs-to") });
+    const field = a.getAttribute("data-aprs-paste");
+    if (APRS()) APRS().pasteCall(a.getAttribute("data-call"), field);
+    if (field !== "for" && win && !win.isOpen()) win.open();
+    flash("Put " + a.getAttribute("data-call") + " in " + (field === "for" ? "For:" : field === "to" ? "To:" : "Via:"));
     if (gpop) gpop.hidden = true;
   }
   document.addEventListener("click", (e) => {
-    if (e.target.closest && e.target.closest(".aprs-popup [data-aprs-to]")) onPopupClick(e);
+    if (e.target.closest && e.target.closest(".aprs-popup [data-aprs-paste]")) onPopupClick(e);
   });
 
-  /* ---------- map box ---------- */
-  function boxHtml() {
+  /* ---------- APRS button + window ---------- */
+  let win = null;
+  let btn = null;
+  function winHtml() {
     return (
-      '<div class="aprs-box-head"><span class="aprs-box-title">APRS</span>' +
-      '<span class="aprs-kiss-dot" id="aprs-kiss-dot"></span><span class="aprs-kiss-text" id="aprs-kiss-text">KISS off</span></div>' +
+      '<div class="aprs-st">' +
+      '<div class="aprs-box-head"><span class="aprs-kiss-dot" id="aprs-kiss-dot"></span><span class="aprs-kiss-text" id="aprs-kiss-text">KISS off</span></div>' +
       '<div class="aprs-box-btns">' +
       '<a href="#" role="button" class="aprs-heard-btn" id="aprs-heard-btn">APRS Heard</a>' +
       '<a href="#" role="button" class="aprs-msgs-btn" id="aprs-msgs-btn" title="Open the APRS messages / packets window">Messages<span class="aprs-unread" id="aprs-unread" hidden></span></a>' +
       "</div>" +
       '<div class="aprs-box-tx">' +
-      '<label class="aprs-f"><span>Via</span><input type="text" id="aprs-box-via" spellcheck="false" autocomplete="off" placeholder="ARISS" /></label>' +
+      '<label class="aprs-f"><span>To</span><input type="text" id="aprs-box-to" list="aprs-dl-to" maxlength="9" spellcheck="false" autocomplete="off" placeholder="CQ" title="AX.25 destination (UISS To:), e.g. CQ or APRS" /></label>' +
+      '<label class="aprs-f"><span>Via</span><input type="text" id="aprs-box-via" list="aprs-dl-via" spellcheck="false" autocomplete="off" placeholder="direct" title="Digipeater path (UISS Via:), up to 8 separated by space or comma" /></label>' +
       '<label class="aprs-f"><span>Comment</span><input type="text" id="aprs-box-comment" maxlength="43" autocomplete="off" placeholder="beacon comment" /></label>' +
       '<button type="button" class="aprs-send-pos" id="aprs-send-pos">Send position</button>' +
       '<div class="aprs-box-why" id="aprs-box-why" aria-live="polite"></div>' +
       "</div>" +
-      '<div class="aprs-box-heard" id="aprs-box-heard"></div>'
+      '<div class="aprs-box-sub">Recent stations <span class="aprs-hint" title="Click: show on map. Right-click: put the call in To / Via / For (like UISS MHeard)">ⓘ</span></div>' +
+      '<div class="aprs-box-heard" id="aprs-box-heard"></div>' +
+      "</div>"
     );
   }
-  function addBox() {
-    const m = getMap();
-    const bar = document.querySelector(".decode-toggle-control");
-    if (!m || !bar || typeof L === "undefined") return false;
-    if (box) return true;
-    box = L.DomUtil.create("div", "leaflet-bar leaflet-control aprs-box");
-    box.innerHTML = boxHtml();
-    L.DomEvent.disableClickPropagation(box);
-    L.DomEvent.disableScrollPropagation(box);
-    ["keydown", "keyup", "keypress", "dblclick", "mousedown", "touchstart", "pointerdown"].forEach((ev) =>
-      box.addEventListener(ev, (e) => e.stopPropagation()),
-    );
-    // Directly below the WSJT Heard / Clear Spots bar.
-    bar.parentNode.insertBefore(box, bar.nextSibling);
+  let flashT = 0;
+  function flash(text) {
+    if (!win) return;
+    const why = win.el.querySelector("#aprs-box-why");
+    why.dataset.result = String(Date.now());
+    why.className = "aprs-box-why ok";
+    why.textContent = text;
+    clearTimeout(flashT);
+    flashT = setTimeout(syncBox, 6100);
+  }
+  function buildWin() {
+    if (win || !window.aprsFloat) return win;
+    win = window.aprsFloat.create({
+      id: "aprs-station-win",
+      cls: "aprs-station-win",
+      title: "APRS",
+      label: "APRS station",
+      lsKey: "aprsStationWin",
+      width: 250,
+      defaultX: (w) => Math.max(8, window.innerWidth - w - 400),
+      defaultY: 150,
+    });
+    const box = win.el;
+    win.body.innerHTML = winHtml();
     box.querySelector("#aprs-heard-btn").addEventListener("click", (e) => {
       e.preventDefault();
       on = !on;
@@ -234,11 +277,14 @@
       e.preventDefault();
       if (window.aprsWindow) window.aprsWindow.toggle();
     });
-    box.querySelector("#aprs-box-via").addEventListener("input", () => {
-      viaEdited = true;
-    });
+    box.querySelector("#aprs-box-to").addEventListener("input", (e) => APRS() && APRS().setHdr({ to: e.target.value || null }, "box"));
+    box.querySelector("#aprs-box-via").addEventListener("input", (e) => APRS() && APRS().setHdr({ via: e.target.value }, "box"));
     box.querySelector("#aprs-send-pos").addEventListener("click", sendPosition);
-    box.querySelector("#aprs-box-heard").addEventListener("click", (e) => {
+    box.querySelector("#aprs-box-comment").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") sendPosition();
+    });
+    const heard = box.querySelector("#aprs-box-heard");
+    heard.addEventListener("click", (e) => {
       const r = e.target.closest && e.target.closest("[data-call]");
       if (!r) return;
       const s = stations.find((x) => x.call === r.getAttribute("data-call"));
@@ -249,26 +295,79 @@
         if (mk && on) mk.openPopup();
       }
     });
-    const commentEl = box.querySelector("#aprs-box-comment");
+    heard.addEventListener("contextmenu", (e) => {
+      const r = e.target.closest && e.target.closest("[data-call]");
+      if (!r || !APRS()) return;
+      e.preventDefault();
+      APRS().callMenu(r.getAttribute("data-call"), e.clientX, e.clientY);
+    });
+    win.onChange(syncBtn);
     const st = APRS() && APRS().status;
-    if (st && st.comment) commentEl.value = st.comment;
+    if (st && st.comment) box.querySelector("#aprs-box-comment").value = st.comment;
     syncBox();
+    return win;
+  }
+  /** "APRS" button in the decode button stack, directly below Clear Spots. */
+  function addButton() {
+    const bar = document.querySelector(".decode-toggle-control");
+    if (!bar || !window.aprsFloat) return false;
+    if (btn && bar.contains(btn)) return true;
+    btn = document.createElement("a");
+    btn.href = "#";
+    btn.className = "decode-toggle-btn aprs-open-btn";
+    btn.id = "aprs-open-btn";
+    btn.setAttribute("role", "button");
+    btn.innerHTML = '<span class="aprs-btn-dot" id="aprs-btn-dot"></span>APRS<span class="aprs-unread" id="aprs-btn-unread" hidden></span>';
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      buildWin();
+      win.toggle();
+      syncBox();
+    });
+    const clr = bar.querySelector(".decode-clear-btn");
+    if (clr) clr.insertAdjacentElement("afterend", btn);
+    else bar.appendChild(btn);
+    buildWin();
+    syncBtn();
     return true;
+  }
+  function syncBtn() {
+    if (!btn) return;
+    const open = !!(win && win.isOpen());
+    btn.classList.toggle("active", open);
+    btn.setAttribute("aria-pressed", open ? "true" : "false");
+    const st = APRS() && APRS().status;
+    const state = st ? (st.enabled ? st.state : "off") : "off";
+    btn.querySelector("#aprs-btn-dot").className = "aprs-btn-dot kiss-" + state;
+    btn.title = (open ? "Hide" : "Show") + " the APRS window · " + (st && APRS().statusText ? APRS().statusText(st) : "KISS off");
   }
   let pendingReq = 0;
   function sendPosition() {
+    const box = win.el;
+    const to = box.querySelector("#aprs-box-to").value.trim().toUpperCase();
     const via = box.querySelector("#aprs-box-via").value.trim().toUpperCase();
     const comment = box.querySelector("#aprs-box-comment").value;
     const why = box.querySelector("#aprs-box-why");
     pendingReq = Date.now();
-    if (!APRS() || !APRS().send({ type: "aprs-send", kind: "beacon", via, comment, reqId: pendingReq })) {
+    if (!APRS() || !APRS().send({ type: "aprs-send", kind: "beacon", to, via, comment, reqId: pendingReq })) {
       why.textContent = "Not connected to the tracker server";
       return;
     }
     why.textContent = "Sending…";
   }
+  function syncHdrFields() {
+    if (!win || !APRS()) return;
+    const A = APRS();
+    const toEl = win.el.querySelector("#aprs-box-to");
+    const viaEl = win.el.querySelector("#aprs-box-via");
+    if (document.activeElement !== toEl) toEl.value = A.getTo();
+    if (document.activeElement !== viaEl) viaEl.value = A.getVia();
+  }
   function syncBox() {
-    if (!box) return;
+    syncBtn();
+    if (!win) return;
+    const box = win.el;
     const b = box.querySelector("#aprs-heard-btn");
     b.classList.toggle("active", on);
     b.setAttribute("aria-pressed", on ? "true" : "false");
@@ -280,19 +379,16 @@
     dot.className = "aprs-kiss-dot kiss-" + state;
     txt.textContent =
       !st || !st.enabled ? "KISS off" : state === "connected" ? "KISS connected" : state === "waiting" ? "KISS down, retrying" : "KISS " + state;
-    box.title = st && APRS().statusText ? APRS().statusText(st) : "";
-    const viaEl = box.querySelector("#aprs-box-via");
+    txt.title = st && APRS().statusText ? APRS().statusText(st) : "";
+    syncHdrFields();
     if (st) {
-      const satKey = st.sat ? st.sat.key : null;
-      if (satKey !== lastSatKey) {
-        lastSatKey = satKey;
-        viaEdited = false;
-      }
-      if (!viaEdited && document.activeElement !== viaEl) viaEl.value = st.defaultVia || "";
+      const viaEl = box.querySelector("#aprs-box-via");
       const gate = st.gateBeacon || { ok: false, reasons: [] };
-      const btn = box.querySelector("#aprs-send-pos");
-      btn.disabled = !gate.ok;
-      btn.title = gate.ok ? "Send your position (" + (st.selfPos ? st.selfPos.source : "?") + ") as " + (st.source || "?") + " via " + (viaEl.value || "direct") : gate.reasons.join("\n");
+      const sb = box.querySelector("#aprs-send-pos");
+      sb.disabled = !gate.ok;
+      sb.title = gate.ok
+        ? "Send your position (" + (st.selfPos ? st.selfPos.source : "?") + ") as " + (st.source || "?") + ">" + (box.querySelector("#aprs-box-to").value || "CQ") + (viaEl.value ? " via " + viaEl.value : " direct")
+        : gate.reasons.join("\n");
       const why = box.querySelector("#aprs-box-why");
       if (!why.dataset.result || Date.now() - Number(why.dataset.result) > 6000) {
         why.dataset.result = "";
@@ -305,10 +401,10 @@
     renderHeardList();
   }
   function renderHeardList() {
-    if (!box) return;
-    const el = box.querySelector("#aprs-box-heard");
+    if (!win) return;
+    const el = win.el.querySelector("#aprs-box-heard");
     const now = Date.now() + skewMs;
-    const rx = stations.filter((s) => s.posSource !== "self").slice(0, 4);
+    const rx = stations.filter((s) => s.posSource !== "self").slice(0, 6);
     el.innerHTML = rx.length
       ? rx
           .map(
@@ -323,8 +419,8 @@
   }
 
   function onSendResult(r) {
-    if (!box || r.kind !== "beacon") return;
-    const why = box.querySelector("#aprs-box-why");
+    if (!win || r.kind !== "beacon") return;
+    const why = win.el.querySelector("#aprs-box-why");
     why.dataset.result = String(Date.now());
     why.classList.toggle("ok", !!r.ok);
     why.classList.toggle("blocked", !r.ok);
@@ -346,6 +442,8 @@
     ageOpacity,
     showPopup: showGlobePopup,
     stations: () => stations,
+    window: () => win,
+    flash,
   };
 
   function init() {
@@ -355,9 +453,10 @@
       hooked = true;
       const A = window.APRS;
       A.on("aprs-heard", apply);
+      A.on("hdr", syncHdrFields);
       A.on("aprs-status", (st) => {
-        if (box && st && st.comment != null) {
-          const c = box.querySelector("#aprs-box-comment");
+        if (win && st && st.comment != null) {
+          const c = win.el.querySelector("#aprs-box-comment");
           if (c && !c.value && document.activeElement !== c) c.value = st.comment;
         }
         syncBox();
@@ -376,7 +475,7 @@
       notify();
     }, 20000);
     const t = setInterval(() => {
-      if (ensureLayer() && addBox()) clearInterval(t);
+      if (ensureLayer() && addButton()) clearInterval(t);
     }, 300);
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

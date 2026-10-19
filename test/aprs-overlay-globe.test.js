@@ -33,7 +33,7 @@ function payload(now) {
     expireMs: 60 * MIN,
     now,
     stations: [
-      { call: "N0SAT", lat: 39.74, lon: -104.98, posSource: "aprs", lastHeard: now - 2 * MIN, viaSat: true, recent: [] },
+      { call: "N0SAT", symbol: "/`", lat: 39.74, lon: -104.98, posSource: "aprs", lastHeard: now - 2 * MIN, viaSat: true, recent: [] },
       { call: "DL7NDR", lat: 40.69, lon: -111.96, posSource: "grid", grid: "DN40aq", lastHeard: now - 5 * MIN, recent: [] },
       { call: "K0TEST", lat: 40.5, lon: -111, posSource: "self", lastHeard: now - 1 * MIN, recent: [] },
       { call: "OLD1", lat: 1, lon: 2, posSource: "aprs", lastHeard: now - 61 * MIN, recent: [] },
@@ -64,4 +64,14 @@ test("APRS Heard toggle off -> globe list empty", () => {
   handlers["aprs-heard"](payload(Date.now()));
   assert.strictEqual(ctx.aprsOverlay.isOn(), false);
   assert.strictEqual(ctx.aprsOverlay.items().length, 0);
+});
+
+test("aprsOverlay.items carry the station's APRS symbol for the globe (dot when unknown)", () => {
+  const { ctx, handlers } = load();
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "../js/aprs-symbols.js"), "utf8"), ctx);
+  const now = Date.now();
+  handlers["aprs-heard"](payload(now));
+  const items = ctx.aprsOverlay.items(now);
+  assert.strictEqual(items[0].symbol, "/`");
+  assert.strictEqual(items[1].symbol, "", "no symbol -> dot");
 });

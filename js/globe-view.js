@@ -674,6 +674,15 @@
       e.classList.toggle("aprs-approx", d.posSource === "grid" || d.posSource === "last");
       e.classList.toggle("aprs-self", d.posSource === "self");
       e.classList.toggle("aprs-sat", !!d.viaSat);
+      // Actual APRS symbol icon (js/aprs-symbols.js) when known, else the dot.
+      const S = window.APRS_SYMBOLS;
+      const sym = S && d.symbol && S.parse(d.symbol) ? d.symbol : "";
+      if (d._sym !== sym) {
+        d._sym = sym;
+        const dotEl = inner.firstChild;
+        dotEl.innerHTML = sym ? S.html(sym, 20) : "";
+        e.classList.toggle("has-sym", !!sym);
+      }
     }
     const call = inner.querySelector(".dc-call"), grid = inner.querySelector(".dc-grid");
     if (call.textContent !== d.call) call.textContent = d.call;
@@ -700,7 +709,7 @@
       let d = heard.get(k);
       if (!d) { d = { kind: "heard", src: "aprs", key: "__aprs:" + s.call, alt: 0.006 }; heard.set(k, d); }
       d.call = s.call; d.grid = s.grid; d.lat = s.lat; d.lng = s.lon; d.opacity = s.opacity; d.tip = s.tip;
-      d.posSource = s.posSource; d.viaSat = s.viaSat;
+      d.posSource = s.posSource; d.viaSat = s.viaSat; d.symbol = s.symbol || "";
       seen.add(k);
       paintHeard(d);
     }

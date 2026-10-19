@@ -987,8 +987,8 @@
                 <div>
                   <label for="cfg-kiss-transport">Connection</label>
                   <select id="cfg-kiss-transport" class="cfg-select">
-                    <option value="tcp">Network (KISS over TCP)</option>
-                    <option value="serial">Serial (Bluetooth /dev/rfcomm0, USB TNC)</option>
+                    <option value="tcp">TCP</option>
+                    <option value="bluetooth">Bluetooth</option>
                   </select>
                 </div>
               </div>
@@ -1004,7 +1004,7 @@
               </div>
               <div class="form-row-2" id="cfg-kiss-serial-row" hidden>
                 <div>
-                  <label for="cfg-kiss-serial-device">Serial device</label>
+                  <label for="cfg-kiss-serial-device">Device</label>
                   <input type="text" id="cfg-kiss-serial-device" placeholder="/dev/rfcomm0" autocomplete="off" spellcheck="false" />
                 </div>
                 <div>
@@ -1012,6 +1012,7 @@
                   <input type="number" id="cfg-kiss-serial-baud" placeholder="9600" min="1200" step="1" />
                 </div>
               </div>
+              <p class="form-hint" id="cfg-kiss-bt-hint" hidden>Pair the TNC first and bind it with rfcomm, e.g. <code>sudo rfcomm bind 0 &lt;TNC MAC&gt;</code> &rarr; <code>/dev/rfcomm0</code> (Bluetooth Classic / SPP).</p>
               <div class="form-row-2">
                 <div>
                   <label for="cfg-kiss-kissport">KISS port (channel)</label>
@@ -1051,8 +1052,18 @@
                   <input type="text" id="cfg-kiss-ssid" placeholder="none" maxlength="2" autocomplete="off" spellcheck="false" />
                 </div>
                 <div>
-                  <label for="cfg-kiss-symbol">Symbol (table + code)</label>
-                  <input type="text" id="cfg-kiss-symbol" placeholder="/`" maxlength="2" autocomplete="off" spellcheck="false" />
+                  <label for="cfg-kiss-symbol-btn">Map symbol</label>
+                  <input type="hidden" id="cfg-kiss-symbol" />
+                  <button type="button" id="cfg-kiss-symbol-btn" class="aprs-sym-field" aria-expanded="false" aria-controls="cfg-kiss-symbol-pop"></button>
+                </div>
+              </div>
+              <div class="form-row aprs-sym-pop" id="cfg-kiss-symbol-pop" hidden>
+                <input type="search" id="cfg-kiss-symbol-q" placeholder="Search symbols: car, house, tent, weather, satellite…" autocomplete="off" spellcheck="false" aria-label="Search APRS symbols" />
+                <div class="aprs-sym-list" id="cfg-kiss-symbol-list" role="listbox" aria-label="APRS symbols"></div>
+                <div class="aprs-sym-foot">
+                  <label for="cfg-kiss-symbol-ov">Overlay character (alternate-table symbols only)</label>
+                  <input type="text" id="cfg-kiss-symbol-ov" maxlength="1" placeholder="none" autocomplete="off" spellcheck="false" />
+                  <span class="aprs-sym-credit">Icons: aprs.fi symbol set by OH7LZB (CC BY-SA), see docs/APRS.md</span>
                 </div>
               </div>
               <p class="form-hint" id="cfg-kiss-source-hint">Source = your Station callsign (no SSID unless set).</p>
@@ -1096,7 +1107,7 @@
               <div class="form-row">
                 <label class="cfg-check-label" for="cfg-kiss-tx">
                   <input type="checkbox" id="cfg-kiss-tx" />
-                  Enable transmit (position beacon / messages from the map APRS box)
+                  Enable transmit (position, UI text and messages from the APRS windows)
                 </label>
               </div>
               <div class="form-row-2">
@@ -1108,6 +1119,13 @@
                   <label for="cfg-kiss-minel">Min sat elevation (°)</label>
                   <input type="number" id="cfg-kiss-minel" placeholder="0" min="-5" max="90" step="1" />
                 </div>
+              </div>
+              <div class="form-row-2">
+                <div>
+                  <label for="cfg-kiss-default-to">Default To (AX.25 destination)</label>
+                  <input type="text" id="cfg-kiss-default-to" list="aprs-dl-to" placeholder="CQ" maxlength="9" autocomplete="off" spellcheck="false" />
+                </div>
+                <div class="form-hint" style="align-self:end">Like UISS: To / Via form the header of every packet (CQ VIA ARISS). Change them per send in the APRS windows.</div>
               </div>
               <div class="form-row">
                 <label for="cfg-kiss-satpaths">Per-satellite Via (one per line: SAT=PATH)</label>
@@ -1139,7 +1157,7 @@
                   Log all packets to ~/.rpitrack/aprs/aprs-YYYY-MM-DD.log (UTC)
                 </label>
               </div>
-              <p class="form-hint">Destination (tocall) <code>APZPST</code> (experimental). No acks or retries in this version.</p>
+              <p class="form-hint">Header = <code>CALL&gt;To,Via</code> (UISS style). APRS messages are sent without ack request (UISS default); no retries.</p>
             </div>
             </section>
           </div>
@@ -1549,7 +1567,9 @@
     <script src="js/qso-log.js"></script>
     <script src="js/qso-call-grid.js"></script>
     <script src="js/decode-overlay.js"></script>
+    <script src="js/aprs-symbols.js"></script>
     <script src="js/aprs-config.js"></script>
+    <script src="js/aprs-float.js"></script>
     <script src="js/aprs-overlay.js"></script>
     <script src="js/aprs-window.js"></script>
     <script src="js/schedule.js"></script>
