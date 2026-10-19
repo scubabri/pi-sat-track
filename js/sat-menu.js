@@ -273,6 +273,7 @@ function renderSatMenu(payload) {
       star.textContent = on ? "★" : "☆";
       star.title = on ? "Remove favorite" : "Add favorite";
     });
+    if (window.PassAlerts) window.PassAlerts.paint(menu);
     return;
   }
 
@@ -365,6 +366,14 @@ function renderSatMenu(payload) {
     // Clicks handled by menu event delegation (survives re-renders)
     wrap.appendChild(star);
 
+    // Pass alerts for every pass of this sat (js/pass-alerts.js handles clicks)
+    const bell = document.createElement("button");
+    bell.type = "button";
+    bell.className = "sat-alert";
+    bell.dataset.alert = "sat";
+    bell.dataset.sat = s.key;
+    wrap.appendChild(bell);
+
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "sat-option";
@@ -413,6 +422,7 @@ function renderSatMenu(payload) {
     setSatButtonLabel(quick[0].name);
   }
   menu.dataset.structKey = structKey;
+  if (window.PassAlerts) window.PassAlerts.paint(menu);
   if (typeof renderFavPanel === "function") renderFavPanel();
 }
 

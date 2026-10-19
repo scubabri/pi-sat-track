@@ -1,0 +1,132 @@
+/* Pass alert bells (js/pass-alerts.js). Outline = off, yellow = on,
+ * dim yellow = inherited (sat / all-favorites alert), half = some favorites. */
+.sat-alert {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 26px;
+  padding: 0;
+  margin: 0 2px 0 0;
+  border: none;
+  background: transparent;
+  color: var(--text-dim, #8b949e);
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+  vertical-align: middle;
+}
+.sat-alert:hover,
+.sat-alert:focus-visible {
+  color: var(--yellow, #d4a72c);
+  background: rgba(212, 167, 44, 0.12);
+  outline: none;
+}
+.sat-alert svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+  pointer-events: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+.sat-alert.on,
+.sat-alert.inherited,
+.sat-alert.partial {
+  color: var(--yellow, #d4a72c);
+}
+.sat-alert.on svg,
+.sat-alert.inherited svg,
+.sat-alert.partial svg {
+  fill: currentColor;
+  stroke-width: 1;
+}
+.sat-alert.inherited { color: #b08920; opacity: 0.72; }
+.sat-alert.partial { opacity: 0.55; }
+
+/* Top bar: [sat name ▾] ☆ 🔔 */
+#sat-selector {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+#sat-selector .sat-fav-top { margin-left: 4px; }
+#sat-selector .sat-fav-top[hidden],
+#sat-selector .sat-alert-top[hidden] { display: none; }
+
+/* Sat picker chip: ☆ 🔔 name */
+#sat-menu .sat-chip .sat-alert { margin-left: -2px; }
+
+/* Favorites: header (all favorites) + per-row bell inside the name cell */
+.fav-drawer-toggle .sat-alert-all {
+  width: 20px;
+  height: 20px;
+  margin: 0 -4px;
+}
+.fav-name .sat-alert-inline {
+  width: 18px;
+  height: 18px;
+  margin-right: 4px;
+  vertical-align: -4px;
+}
+.fav-name .sat-alert-inline svg { width: 13px; height: 13px; }
+
+/* Next Passes: leading bell column */
+.pass-head,
+.pass-row-item {
+  grid-template-columns:
+    24px   /* alert bell */
+    36px   /* # */
+    120px  /* AOS */
+    120px  /* LOS */
+    72px   /* max el */
+    80px   /* duration */
+    72px   /* aos az */
+    88px;  /* status */
+}
+.pass-cell.pass-alert {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pass-cell.pass-alert .sat-alert { width: 22px; height: 22px; margin: 0; }
+
+/* Toasts (bottom-center, above the after-LOS toast) */
+#pass-alert-toasts {
+  position: fixed;
+  left: 50%;
+  bottom: 64px;
+  transform: translateX(-50%);
+  z-index: 4000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.pass-alert-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: rgba(13, 17, 23, 0.96);
+  border: 1px solid #d29922;
+  border-radius: 8px;
+  color: #e6edf3;
+  font: 600 14px system-ui, sans-serif;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  max-width: min(560px, 92vw);
+  pointer-events: auto;
+  cursor: pointer;
+  animation: pass-alert-in 0.2s ease-out;
+}
+.pass-alert-toast.now { border-color: #e3b341; background: rgba(41, 33, 10, 0.97); }
+.pass-alert-toast .pat-bell { color: #d29922; display: inline-flex; }
+.pass-alert-toast .pat-bell svg { width: 18px; height: 18px; fill: currentColor; }
+@keyframes pass-alert-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
