@@ -143,9 +143,12 @@ it in **To**, **Via** or **For**.
 - **APRS button** (map button stack, directly below Clear Spots; dot = KISS
   state, highlighted while open) toggles the floating **APRS window**: KISS
   status, **APRS Heard** layer toggle, **Messages**, To / Via / Comment and
-  **Send position**, the reason sending is blocked (TX off, Radio off, KISS
-  not connected, no callsign, rate limit: 60 s between beacons, 10 s between
-  other sends), and recent stations. The selected satellite's elevation,
+  **Send position**, the reason sending is blocked (APRS or transmit off,
+  Radio off when *Only send while Radio is ON* is ticked, KISS connection not
+  connected or no matching TX connection, no callsign), and recent stations.
+  There is no rate limit: on a satellite the link is always suspect, so you
+  can send as often as you like (only an accidental double click within 1 s
+  is ignored). The selected satellite's elevation,
   selection or mode never block sending; with a satellite Via (ARISS, RS0ISS,
   APRSAT, a sat digipeater call) a grey hint notes e.g. "RS-44 is below the
   horizon". WIDEn-N, RELAY, TRACE and other calls are terrestrial paths. Windows are draggable,
@@ -191,6 +194,31 @@ it in **To**, **Via** or **For**.
 
 Source call = Station callsign (+ optional SSID); position from the Station
 grid centre (or exact lat/lon).
+
+### Graywolf drops identical frames within 30 s
+
+Graywolf's TX governor (all transmit sources, including KISS clients) drops
+a frame whose **destination + source + info** match one it queued in the
+last **30 s**; the digipeater path is not part of the key, so changing only
+Via does not count as different. The drop is silent: the KISS client is not
+told (Graywolf only logs `tx deduped` at debug level and counts it in its TX
+metrics).
+
+As of graywolf 0acbb7f (2026-10-11) the 30 s window is **not
+configurable**: it is hard-coded (`DedupWindow: 30 * time.Second` in
+`pkg/app/wiring.go`, keyed by `Frame.DedupKey()` in `pkg/ax25/frame.go`),
+and only connected-mode (non-UI) frames bypass it. The *Dedupe window*
+setting on Graywolf's Digipeater page (`dedupe_window_seconds`) is a
+different thing: it only affects digipeating other stations' packets. The
+per-channel TX rate limits (packets per 1 / 5 min) are configurable and
+default to unlimited.
+
+Pi Sat Track never changes a packet to get around this. When you resend an
+identical frame through a connection with the Graywolf preset within 30 s,
+it is still sent unchanged and the "Sent …" line adds a note that Graywolf
+may not transmit it; the digipeat line will then show *No digipeat heard*.
+Change the text (or To) yourself if you need it on the air again, or send
+that packet through Direwolf.
 
 ## Digipeat confirmation and the digipeat log
 

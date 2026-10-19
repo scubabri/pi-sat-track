@@ -83,7 +83,6 @@ function cfgFor(t, more) {
       logToFile: false,
       ssid: 3,
       path: "WIDE1-1,WIDE2-1",
-      msgIntervalS: 5,
       connections: [{ id: "gw", name: "FLEX ch1", host: "127.0.0.1", port: t.port, role: "rxtx", speed: 1200 }],
     },
     more,

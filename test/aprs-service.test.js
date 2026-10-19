@@ -144,7 +144,7 @@ test("RX frames become packets (via-sat flag, own echo) and heard stations", asy
   await tnc.close();
 });
 
-test("TX gates: disabled TX, radio off, connection, callsign, rate limits", () => {
+test("TX gates: disabled TX, radio off, connection, callsign; no rate limit", () => {
   const cfg = normalizeConfig({ enabled: true, txEnabled: true });
   const st = { callsign: "K0TEST", grid: "DN40" };
   const ok = Object.assign({ connected: true }, ISS_UP);
@@ -153,8 +153,12 @@ test("TX gates: disabled TX, radio off, connection, callsign, rate limits", () =
   assert.match(r1.reasons.join(), /Transmit is off/);
   assert.match(checkGate(cfg, "beacon", "ARISS", Object.assign({}, ok, { radioOn: false }), st).reasons.join(), /Radio is off/);
   assert.ok(checkGate(normalizeConfig({ enabled: true, txEnabled: true, txRequireRadioOn: false }), "beacon", "ARISS", Object.assign({}, ok, { radioOn: false }), st).ok);
-  assert.match(checkGate(cfg, "beacon", "ARISS", Object.assign({}, ok, { lastBeaconMs: Date.now() - 30000 }), st).reasons.join(), /min 60 s between beacons/);
-  assert.match(checkGate(cfg, "message", "ARISS", Object.assign({}, ok, { lastMsgMs: Date.now() - 3000 }), st).reasons.join(), /min 10 s between messages/);
+  // no rate limit, whatever the previous send times are (old ctx fields ignored)
+  assert.ok(checkGate(cfg, "beacon", "ARISS", Object.assign({}, ok, { lastBeaconMs: Date.now() - 1000 }), st).ok);
+  assert.ok(checkGate(cfg, "message", "ARISS", Object.assign({}, ok, { lastMsgMs: Date.now() - 100 }), st).ok);
+  const old = normalizeConfig({ enabled: true, txEnabled: true, beaconIntervalS: 600, msgIntervalS: 60 });
+  assert.strictEqual(old.beaconIntervalS, undefined);
+  assert.strictEqual(old.msgIntervalS, undefined);
   assert.match(checkGate(cfg, "beacon", "ARISS", Object.assign({}, ok, { connected: false }), st).reasons.join(), /not connected/);
   assert.match(checkGate(cfg, "beacon", "ARISS", ok, { callsign: "" }).reasons.join(), /callsign/);
   assert.match(checkGate(normalizeConfig({ txEnabled: true }), "beacon", "ARISS", ok, st).reasons.join(), /APRS is disabled/);
@@ -203,7 +207,7 @@ test("per-satellite Via override falls back to the default path, then ARISS", ()
 test("UISS model: To = AX.25 destination (default CQ), Via = path; message / position / UI text / header frames", async () => {
   const tnc = await fakeTnc();
   const { svc } = makeSvc(tnc, ISS_UP);
-  svc.configure({ enabled: true, txEnabled: true, host: "127.0.0.1", port: tnc.port, logToFile: false, comment: "Pi Sat Track", msgIntervalS: 5 });
+  svc.configure({ enabled: true, txEnabled: true, host: "127.0.0.1", port: tnc.port, logToFile: false, comment: "Pi Sat Track" });
   assert.ok(await until(() => svc.statusPayload().state === "connected"));
   assert.strictEqual(svc.statusPayload().defaultTo, "CQ");
   // APRS message: For = addressee, To defaults to CQ (UISS "Fm ON6MU To CQ Via PCSAT-1 :EMAIL ...")
@@ -216,17 +220,22 @@ test("UISS model: To = AX.25 destination (default CQ), Via = path; message / pos
   assert.strictEqual(tnc.rx[0].data.toString("hex"), expect.toString("hex"));
   assert.strictEqual(r.packet.dst, "CQ");
   assert.strictEqual(r.packet.to, "RS0ISS");
-  // rate limit applies to every non-beacon send
+  // no rate limit: back-to-back sends all go out (sat links are always suspect)
   const r2 = svc.send({ kind: "text", via: "ARISS", text: "again" });
-  assert.strictEqual(r2.ok, false);
-  assert.match(r2.reasons.join(), /between messages/);
+  assert.ok(r2.ok, JSON.stringify(r2));
+  assert.ok(await until(() => tnc.rx.length === 2));
   // position beacon uses the same To / Via header; "=" (messaging capable) like UISS
   const b = svc.send({ kind: "beacon", to: "aprs" });
   assert.ok(b.ok, JSON.stringify(b));
-  assert.ok(await until(() => tnc.rx.length === 2));
-  assert.strictEqual(ax25.toTnc2(ax25.decode(tnc.rx[1].data)), "K0TEST>APRS,ARISS:=4030.00N/11100.00W`Pi Sat Track");
-  const r3 = svc.send({ kind: "beacon" });
-  assert.strictEqual(r3.ok, false, "beacon rate limit");
+  assert.ok(await until(() => tnc.rx.length === 3));
+  assert.strictEqual(ax25.toTnc2(ax25.decode(tnc.rx[2].data)), "K0TEST>APRS,ARISS:=4030.00N/11100.00W`Pi Sat Track");
+  const r3 = svc.send({ kind: "beacon", to: "aprs" });
+  assert.ok(r3.ok, "identical beacon right away is sent too: " + JSON.stringify(r3));
+  assert.ok(await until(() => tnc.rx.length === 4));
+  assert.strictEqual(tnc.rx[3].data.toString("hex"), tnc.rx[2].data.toString("hex"), "packet content not altered on resend");
+  // Graywolf preset (row 1 default): resend of an identical frame within 30 s gets a note
+  assert.strictEqual(b.note, undefined, "first send: no note");
+  assert.match(r3.note || "", /Graywolf drops identical frames within 30 s/);
   svc.stop();
   await tnc.close();
 });
@@ -234,7 +243,7 @@ test("UISS model: To = AX.25 destination (default CQ), Via = path; message / pos
 test("UI text is sent as typed (UISS Send UI Data); header only; invalid To / missing For rejected", async () => {
   const tnc = await fakeTnc();
   const { svc } = makeSvc(tnc, ISS_UP);
-  svc.configure({ enabled: true, txEnabled: true, host: "127.0.0.1", port: tnc.port, logToFile: false, msgIntervalS: 5, defaultTo: "beacon" });
+  svc.configure({ enabled: true, txEnabled: true, host: "127.0.0.1", port: tnc.port, logToFile: false, defaultTo: "beacon" });
   assert.ok(await until(() => svc.statusPayload().state === "connected"));
   assert.match(svc.send({ kind: "text", to: "TOOLONGCALL", text: "x" }).reasons.join(), /Invalid To/);
   assert.match(svc.send({ kind: "text", to: "CQ-16", text: "x" }).reasons.join(), /Invalid To/);
@@ -246,7 +255,6 @@ test("UI text is sent as typed (UISS Send UI Data); header only; invalid To / mi
   assert.ok(await until(() => tnc.rx.length === 1));
   assert.strictEqual(ax25.toTnc2(ax25.decode(tnc.rx[0].data)), "K0TEST>CQ,RS0ISS:>JO20AW Hello all {UISS} | ~");
   assert.strictEqual(r.packet.type, "status");
-  await wait(5100);
   // header only: empty info, To defaults to the configured default (BEACON)
   const h = svc.send({ kind: "header", via: "RS0ISS" });
   assert.ok(h.ok, JSON.stringify(h));

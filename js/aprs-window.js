@@ -273,7 +273,10 @@
     el.className = "aprs-win-why " + (ok ? "ok" : "blocked");
     el.dataset.result = String(Date.now());
   }
+  let lastSendMs = 0;
   function sendMsg() {
+    // accidental double click / Enter: ignore a second send within 1 s (no message)
+    if (Date.now() - lastSendMs < 1000) return;
     const kind = w.st.mode;
     const to = $("aprs-msg-to").value.trim().toUpperCase();
     const via = $("aprs-msg-via").value.trim().toUpperCase();
@@ -284,6 +287,7 @@
     const req = { type: "aprs-send", kind, to, via, reqId: Date.now() };
     if (kind !== "header") req.text = text;
     if (kind === "message") req.for = forCall;
+    lastSendMs = Date.now();
     if (!A() || !A().send(req)) return showWhy("Not connected to the tracker server", false);
     showWhy("Sending…", true);
   }
@@ -294,7 +298,7 @@
       syncCount();
       const t = r.packet ? r.packet.type : "";
       const as = r.kind === "text" ? (t === "other" ? " (plain text on APRS maps)" : t ? " (APRS sees: " + t + ")" : "") : "";
-      showWhy("Sent " + hhmmss(Date.now()) + ": " + (r.packet ? r.packet.tnc2 : "") + as, true);
+      showWhy("Sent " + hhmmss(Date.now()) + ": " + (r.packet ? r.packet.tnc2 : "") + as + (r.note ? " · Note: " + r.note : ""), true);
     } else showWhy((r.reasons || ["failed"]).join("; "), false);
   }
 

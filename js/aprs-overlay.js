@@ -371,7 +371,11 @@
     btn.title = (open ? "Hide" : "Show") + " the APRS window · " + (st && APRS().statusText ? APRS().statusText(st) : "KISS off");
   }
   let pendingReq = 0;
+  let lastClickMs = 0;
   function sendPosition() {
+    // accidental double click: ignore a second click within 1 s (no message)
+    if (Date.now() - lastClickMs < 1000) return;
+    lastClickMs = Date.now();
     const box = win.el;
     const to = box.querySelector("#aprs-box-to").value.trim().toUpperCase();
     const via = box.querySelector("#aprs-box-via").value.trim().toUpperCase();
@@ -486,7 +490,7 @@
     why.dataset.result = String(Date.now());
     why.classList.toggle("ok", !!r.ok);
     why.classList.toggle("blocked", !r.ok);
-    why.textContent = r.ok ? "Sent " + hhmm(Date.now()) + ": " + (r.packet ? r.packet.tnc2 : "") : (r.reasons || ["failed"]).join("; ");
+    why.textContent = r.ok ? "Sent " + hhmm(Date.now()) + ": " + (r.packet ? r.packet.tnc2 : "") + (r.note ? " · Note: " + r.note : "") : (r.reasons || ["failed"]).join("; ");
     why.title = why.textContent;
   }
 

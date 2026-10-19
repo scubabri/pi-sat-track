@@ -224,7 +224,6 @@ test("service: TX goes out on the routed connection only; 9600 sat without a 960
     enabled: true,
     txEnabled: true,
     logToFile: false,
-    msgIntervalS: 5,
     connections: [
       { id: "gw", name: "FLEX ch1", host: "127.0.0.1", port: gw.port, role: "rxtx", speed: 1200 },
       { id: "dw", name: "Direwolf 9600", host: "127.0.0.1", port: dw.port, role: "tx", speed: 9600 },
@@ -249,7 +248,6 @@ test("service: TX goes out on the routed connection only; 9600 sat without a 960
   assert.ok(!/No 9600/.test(svc.statusPayload().gateMessageSat.reasons.join()));
   svc.configure(base);
   assert.ok(await until(() => svc.statusPayload().state === "connected"));
-  await wait(5100); // message rate limit
   r = svc.send({ kind: "text", text: ">via CroCube", via: "9A0CC" });
   assert.strictEqual(r.ok, true, JSON.stringify(r.reasons));
   assert.ok(await until(() => dw.rx.length === 1));
