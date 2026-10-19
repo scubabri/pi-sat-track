@@ -1,59 +1,40 @@
-// Globe follow mode (js/globe-view.js): extrapolated sub-point target and the
-// triggers / cancels wired in the source.
+// Globe follow mode: continuous rAF integrator + bled sample correction.
 const test = require("node:test");
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 
 const src = fs.readFileSync(path.join(__dirname, "../js/globe-view.js"), "utf8");
-function loadTarget() {
-  const i = src.indexOf("  const follow = {");
-  const j = src.indexOf("  function followTick()");
-  assert.ok(i > 0 && j > i, "follow helpers present");
-  const body = src.slice(i, j).replace(/function startFollow[\s\S]*?function followSample/, "function followSample");
-  return new Function("lastState", "G", body + "; return { follow, followSample, followTarget, wrap180 };")(null, null);
-}
 
-test("target extrapolates from the last two live samples (capped at 3 s)", () => {
-  const f = loadTarget();
-  const now = Date.now;
-  try {
-    let t = 1000000;
-    Date.now = () => t;
-    f.followSample({ position: { lat: 10, lon: 20 } });
-    assert.deepStrictEqual(f.followTarget(t), { lat: 10, lng: 20 }, "one sample: hold");
-    t += 1000;
-    f.followSample({ position: { lat: 10.1, lon: 20.2 } });
-    const a = f.followTarget(t + 500);
-    assert.ok(Math.abs(a.lat - 10.15) < 1e-9 && Math.abs(a.lng - 20.3) < 1e-9, JSON.stringify(a));
-    const capped = f.followTarget(t + 60000);
-    assert.ok(Math.abs(capped.lat - 10.4) < 1e-9, "capped at 3 s: " + capped.lat);
-    f.followSample({ position: null }); // no position: ignored
-    assert.strictEqual(f.follow.samples.length, 2);
-  } finally { Date.now = now; }
+test("follow uses rAF integrator, not a 1 Hz / setInterval camera pin", () => {
+  assert.match(src, /requestAnimationFrame\(followFrame\)/);
+  assert.doesNotMatch(src, /FOLLOW_TICK_MS|setInterval\(followTick/);
+  assert.match(src, /follow\.pullLat = p\.lat - follow\.lat/, "sample error queued as pull");
+  assert.match(src, /Math\.exp\(-dt \/ 400\)/, "pull bled over ~1 s");
+  assert.match(src, /followPos\(\)/, "applyState reads smoothed pos while following");
+  assert.match(src, /follow\.key === st\.sat && !pT\) \? followPos\(\)/);
+  assert.match(src, /now - follow\.lastFp > 240/, "footprint throttled");
 });
 
-test("antimeridian: longitude wraps instead of spinning the globe", () => {
-  const f = loadTarget();
-  const now = Date.now;
-  try {
-    let t = 5000;
-    Date.now = () => t;
-    f.followSample({ position: { lat: 0, lon: 179.9 } });
-    t += 1000;
-    f.followSample({ position: { lat: 0, lon: -179.9 } });
-    const g = f.followTarget(t + 1000);
-    assert.ok(Math.abs(g.lng - -179.7) < 1e-9, "lng " + g.lng);
-    assert.strictEqual(f.wrap180(190), -170);
-  } finally { Date.now = now; }
-});
-
-test("wiring: chart snap starts follow; drag, center buttons, Map stop it; preview doesn't move it", () => {
+test("wiring: chart snap starts follow; drag, center buttons, Map stop it", () => {
   assert.match(src, /window\.globeSnapTo = function \(key\) \{[\s\S]*?startFollow\(key\);/);
   assert.match(src, /window\.globeCenterOn = function \(lat, lng, opts\) \{[\s\S]*?if \(opts && opts\.preview && follow\.key\) return true;[\s\S]*?stopFollow\(\);/);
   assert.match(src, /pointermove[\s\S]{0,200}stopFollow\(\)/);
   assert.match(src, /\} else \{\s*stopFollow\(\);\s*if \(el\) el\.hidden = true;/);
-  assert.match(src, /const follow = \{ key: null,/, "off by default");
   const pp = fs.readFileSync(path.join(__dirname, "../js/pass-preview.js"), "utf8");
   assert.match(pp, /globeCenterOn\(cur\.position\.lat, cur\.position\.lon, \{ preview: true \}\)/);
+});
+
+test("integrator advances; sample pull bleeds in over time (no single-frame snap)", () => {
+  function wrap180(x) { return ((((x + 180) % 360) + 360) % 360) - 180; }
+  const f = { lat: 10, lng: 20, vLat: 0.001, vLng: 0.002, pullLat: 0, pullLng: 0 };
+  f.lat += f.vLat * 100;
+  f.lng = wrap180(f.lng + f.vLng * 100);
+  assert.ok(Math.abs(f.lat - 10.1) < 1e-9);
+  f.pullLat = (10.1 - 0.2) - f.lat; // -0.2 residual
+  const a = 1 - Math.exp(-50 / 400);
+  f.lat += f.pullLat * a;
+  f.pullLat *= 1 - a;
+  assert.ok(f.lat < 10.1 && f.lat > 9.9, "partial bleed " + f.lat);
+  assert.ok(Math.abs(f.pullLat) < 0.2 && Math.abs(f.pullLat) > 0.1);
 });
