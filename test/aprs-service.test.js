@@ -142,27 +142,52 @@ test("RX frames become packets (via-sat flag, own echo) and heard stations", asy
   await tnc.close();
 });
 
-test("TX gates: disabled TX, radio off, sat below min el, non-APRS mode, rate limits", () => {
+test("TX gates: disabled TX, radio off, connection, callsign, rate limits", () => {
   const cfg = normalizeConfig({ enabled: true, txEnabled: true });
   const st = { callsign: "K0TEST", grid: "DN40" };
   const ok = Object.assign({ connected: true }, ISS_UP);
-  assert.deepStrictEqual(checkGate(cfg, "beacon", "ARISS", ok, st), { ok: true, reasons: [] });
+  assert.deepStrictEqual(checkGate(cfg, "beacon", "ARISS", ok, st), { ok: true, reasons: [], hints: [] });
   const r1 = checkGate(normalizeConfig({ enabled: true }), "beacon", "ARISS", ok, st);
   assert.match(r1.reasons.join(), /Transmit is off/);
   assert.match(checkGate(cfg, "beacon", "ARISS", Object.assign({}, ok, { radioOn: false }), st).reasons.join(), /Radio is off/);
-  const low = Object.assign({}, ok, { sat: Object.assign({}, ok.sat, { el: -3 }) });
-  assert.match(checkGate(cfg, "beacon", "ARISS", low, st).reasons.join(), /below 0°/);
-  assert.ok(checkGate(cfg, "message", "WIDE2-1", low, st).ok, "terrestrial path ignores sat elevation");
-  const fm = Object.assign({}, ok, { sat: Object.assign({}, ok.sat, { mode: "FM" }) });
-  assert.match(checkGate(cfg, "beacon", "ARISS", fm, st).reasons.join(), /not APRS/);
-  assert.ok(checkGate(normalizeConfig({ enabled: true, txEnabled: true, txRequireAprsMode: false }), "beacon", "ARISS", fm, st).ok);
+  assert.ok(checkGate(normalizeConfig({ enabled: true, txEnabled: true, txRequireRadioOn: false }), "beacon", "ARISS", Object.assign({}, ok, { radioOn: false }), st).ok);
   assert.match(checkGate(cfg, "beacon", "ARISS", Object.assign({}, ok, { lastBeaconMs: Date.now() - 30000 }), st).reasons.join(), /min 60 s between beacons/);
   assert.match(checkGate(cfg, "message", "ARISS", Object.assign({}, ok, { lastMsgMs: Date.now() - 3000 }), st).reasons.join(), /min 10 s between messages/);
   assert.match(checkGate(cfg, "beacon", "ARISS", Object.assign({}, ok, { connected: false }), st).reasons.join(), /not connected/);
   assert.match(checkGate(cfg, "beacon", "ARISS", ok, { callsign: "" }).reasons.join(), /callsign/);
-  assert.strictEqual(isSatPath("ARISS"), true);
-  assert.strictEqual(isSatPath("WIDE1-1,WIDE2-1"), false);
-  assert.strictEqual(isSatPath(""), false);
+  assert.match(checkGate(normalizeConfig({ txEnabled: true }), "beacon", "ARISS", ok, st).reasons.join(), /APRS is disabled/);
+});
+
+test("satellite position / selection / mode never block TX (only non-blocking hints)", () => {
+  const cfg = normalizeConfig({ enabled: true, txEnabled: true });
+  const st = { callsign: "KA7KDX", grid: "DN40" };
+  const base = { connected: true, radioOn: true };
+  // Brian's case: RS-44 selected just below the horizon, terrestrial position report
+  const rs44 = Object.assign({}, base, { sat: { satKey: "RS-44", satName: "RS-44", mode: "CW", el: -0.7 } });
+  for (const via of ["WIDE1-1,WIDE2-1", "WIDE2-1", "", "ARISS"]) {
+    for (const kind of ["beacon", "message", "text"]) {
+      const g = checkGate(cfg, kind, via, rs44, st);
+      assert.strictEqual(g.ok, true, kind + " via '" + via + "': " + g.reasons.join());
+    }
+  }
+  const h = checkGate(cfg, "beacon", "ARISS", rs44, st).hints.join();
+  assert.match(h, /RS-44 is below the horizon \(el -0\.7°\)/);
+  assert.match(h, /not an APRS/);
+  // no satellite selected at all, with a satellite Via
+  assert.strictEqual(checkGate(cfg, "beacon", "ARISS", Object.assign({}, base, { sat: null }), st).ok, true);
+  assert.strictEqual(checkGate(cfg, "message", "RS0ISS", base, st).ok, true);
+  // old config keys are ignored
+  const old = normalizeConfig({ enabled: true, txEnabled: true, minEl: 10, txRequireAprsMode: true });
+  assert.strictEqual(old.minEl, undefined);
+  assert.strictEqual(old.txRequireAprsMode, undefined);
+  assert.strictEqual(checkGate(old, "beacon", "ARISS", rs44, st).ok, true);
+});
+
+test("isSatPath: WIDEn-N / RELAY / TRACE / blank / other calls terrestrial; sat digipeaters are sat", () => {
+  for (const v of ["WIDE1-1,WIDE2-1", "WIDE1-1 WIDE2-1", "WIDE2-1", "WIDE2-2", "WIDE1-1", "RELAY", "RELAY,WIDE2-1", "TRACE", "TRACE3-3", "TEMP1-1", "", "   ", "SHEPRD", "KF6RAL-1,WIDE2-1", "K7XYZ-10", "SGATE", "wide1-1,wide2-1"])
+    assert.strictEqual(isSatPath(v), false, JSON.stringify(v));
+  for (const v of ["ARISS", "RS0ISS", "NA1SS", "APRSAT", "PCSAT", "W3ADO-1", "YB0X", "DP0SNX", "9A0CC", "HS0K", "OM9MAR", "ARISS,WIDE2-1", "WIDE1-1,RS0ISS", "ariss"])
+    assert.strictEqual(isSatPath(v), true, JSON.stringify(v));
 });
 
 test("per-satellite Via override falls back to the default path, then ARISS", () => {

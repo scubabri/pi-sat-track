@@ -412,9 +412,12 @@
       const why = box.querySelector("#aprs-box-why");
       if (!why.dataset.result || Date.now() - Number(why.dataset.result) > 6000) {
         why.dataset.result = "";
-        why.textContent = gate.ok ? "" : gate.reasons[0] || "";
-        why.title = gate.reasons.join("\n");
+        // satellite elevation / mode never block; shown as a hint for a sat Via
+        const hint = gate.ok && gate.hints && gate.hints[0] && APRS().viaIsSat && APRS().viaIsSat(viaEl.value) ? gate.hints[0] : "";
+        why.textContent = gate.ok ? hint : gate.reasons[0] || "";
+        why.title = gate.reasons.concat(hint ? gate.hints : []).join("\n");
         why.classList.toggle("blocked", !gate.ok);
+        why.classList.toggle("hint", !!hint);
         why.classList.remove("ok");
       }
     }

@@ -278,3 +278,5 @@
 .aprs-r-text { flex: 1 1 160px; min-width: 0; color: #e6edf3; overflow-wrap: anywhere; }
 .aprs-r-dev { font-size: 10px; color: #d2a8ff; }
 .aprs-r-raw { margin-top: 1px; font: 10.5px ui-monospace, Menlo, Consolas, monospace; color: #8b949e; overflow-wrap: anywhere; }
+.aprs-box-why.hint,
+.aprs-win-why.hint { color: #8b949e; font-style: italic; }

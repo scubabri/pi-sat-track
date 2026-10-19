@@ -88,9 +88,12 @@ it in **To**, **Via** or **For**.
 - **APRS button** (map button stack, directly below Clear Spots; dot = KISS
   state, highlighted while open) toggles the floating **APRS window**: KISS
   status, **APRS Heard** layer toggle, **Messages**, To / Via / Comment and
-  **Send position**, the reason sending is blocked (TX off, Radio off, sat
-  below min elevation, mode not APRS, rate limit: 60 s between beacons, 10 s
-  between other sends), and recent stations. Windows are draggable,
+  **Send position**, the reason sending is blocked (TX off, Radio off, KISS
+  not connected, no callsign, rate limit: 60 s between beacons, 10 s between
+  other sends), and recent stations. The selected satellite's elevation,
+  selection or mode never block sending; with a satellite Via (ARISS, RS0ISS,
+  APRSAT, a sat digipeater call) a grey hint notes e.g. "RS-44 is below the
+  horizon". WIDEn-N, RELAY, TRACE and other calls are terrestrial paths. Windows are draggable,
   minimisable and closable; position and open state are remembered.
 - **APRS Heard layer** (map + globe): stations are drawn with their APRS
   symbol (dot when unknown). Position reports plot at their position;

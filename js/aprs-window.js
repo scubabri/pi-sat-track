@@ -317,12 +317,13 @@
       const why = $("aprs-win-why");
       if (!why.dataset.result || Date.now() - Number(why.dataset.result) > 8000) {
         why.dataset.result = "";
-        // Same rule as the server (lib/aprs/service.js isSatPath): any non-WIDEn-N/RELAY/TRACE hop.
-        const viaSat = hops(viaEl.value).some((h) => !/^(WIDE\d?|RELAY|TRACE\d?|TEMP\d?)(-\d{1,2})?$/i.test(h));
+        // Same rule as the server (lib/aprs/service.js isSatPath): a known satellite digipeater hop.
+        const viaSat = !!(A().viaIsSat && A().viaIsSat(viaEl.value));
         const g = viaSat ? s.gateMessage : s.gateMessageDirect;
-        why.textContent = g && !g.ok ? g.reasons[0] : "";
-        why.title = g ? g.reasons.join("\n") : "";
-        why.className = "aprs-win-why" + (g && !g.ok ? " blocked" : "");
+        const hint = g && g.ok && viaSat && g.hints && g.hints[0] ? g.hints[0] : "";
+        why.textContent = g && !g.ok ? g.reasons[0] : hint;
+        why.title = g ? g.reasons.concat(viaSat ? g.hints || [] : []).join("\n") : "";
+        why.className = "aprs-win-why" + (g && !g.ok ? " blocked" : hint ? " hint" : "");
         $("aprs-msg-send").disabled = !!(g && !g.ok);
         $("aprs-msg-send").title = g && !g.ok ? g.reasons.join("\n") : "Send as " + (s.source || "?") + ">" + ($("aprs-msg-to").value || "CQ") + (viaEl.value ? "," + viaEl.value : "");
       }

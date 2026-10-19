@@ -1116,10 +1116,7 @@
                   <label for="cfg-kiss-path">Default Via (path)</label>
                   <input type="text" id="cfg-kiss-path" placeholder="ARISS" autocomplete="off" spellcheck="false" />
                 </div>
-                <div>
-                  <label for="cfg-kiss-minel">Min sat elevation (°)</label>
-                  <input type="number" id="cfg-kiss-minel" placeholder="0" min="-5" max="90" step="1" />
-                </div>
+                <div class="form-hint" style="align-self:end">Sending is never blocked by the selected satellite's elevation or mode.</div>
               </div>
               <div class="form-row-2">
                 <div>
@@ -1136,10 +1133,6 @@
                 <label class="cfg-check-label" for="cfg-kiss-req-radio">
                   <input type="checkbox" id="cfg-kiss-req-radio" checked />
                   Only send while Radio is ON (tracker is tuning the radio)
-                </label>
-                <label class="cfg-check-label" for="cfg-kiss-req-mode">
-                  <input type="checkbox" id="cfg-kiss-req-mode" checked />
-                  Only send via a satellite when its APRS / packet mode is selected
                 </label>
               </div>
               <div class="form-row-2">

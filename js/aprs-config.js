@@ -58,6 +58,13 @@
   APRS.hdr = loadJson(LS_HDR, { to: null, via: null, for: "" });
   APRS.hist = loadJson(LS_HIST, { to: [], via: [], for: [] });
   const up = (v) => String(v == null ? "" : v).trim().toUpperCase();
+  /** Satellite Via? Mirror of SAT_DIGIS / isSatPath in lib/aprs/service.js: a
+   * known sat digipeater hop; WIDEn-N, RELAY, TRACE and other calls are terrestrial. */
+  APRS.viaIsSat = (via) =>
+    String(via || "")
+      .split(/[\s,]+/)
+      .filter(Boolean)
+      .some((h) => /^(RS0ISS|NA1SS|ARISS|APRSAT|DP0SNX|W3ADO|PCSAT|YB0X|PSAT2?|9A0CC|HA2GRB|HS0K|OK0KST|OK0LSR|OM9MAR)(-\d{1,2})?\*?$/i.test(h));
   APRS.getTo = () => (APRS.hdr.to != null && APRS.hdr.to !== "" ? APRS.hdr.to : (APRS.status && APRS.status.defaultTo) || "CQ");
   APRS.getVia = () => (APRS.hdr.via != null ? APRS.hdr.via : (APRS.status && APRS.status.defaultVia) || "ARISS");
   APRS.setHdr = (patch, origin) => {
@@ -407,10 +414,8 @@
     setChk("cfg-kiss-tx", c.txEnabled === true);
     setVal("cfg-kiss-path", c.path != null ? c.path : "ARISS");
     setVal("cfg-kiss-default-to", c.defaultTo || "CQ");
-    setVal("cfg-kiss-minel", c.minEl != null ? c.minEl : 0);
     setVal("cfg-kiss-satpaths", satPathsToText(c.satPaths));
     setChk("cfg-kiss-req-radio", c.txRequireRadioOn !== false);
-    setChk("cfg-kiss-req-mode", c.txRequireAprsMode !== false);
     setVal("cfg-kiss-beacon-int", c.beaconIntervalS || 60);
     setVal("cfg-kiss-msg-int", c.msgIntervalS || 10);
     setChk("cfg-kiss-log", c.logToFile !== false);
@@ -445,10 +450,8 @@
       txEnabled: ck("cfg-kiss-tx"),
       path: v("cfg-kiss-path").trim().toUpperCase(),
       defaultTo: v("cfg-kiss-default-to").trim().toUpperCase(),
-      minEl: numOrNull("cfg-kiss-minel") || 0,
       satPaths: textToSatPaths(v("cfg-kiss-satpaths")),
       txRequireRadioOn: ck("cfg-kiss-req-radio"),
-      txRequireAprsMode: ck("cfg-kiss-req-mode"),
       beaconIntervalS: numOrNull("cfg-kiss-beacon-int"),
       msgIntervalS: numOrNull("cfg-kiss-msg-int"),
       logToFile: ck("cfg-kiss-log"),
