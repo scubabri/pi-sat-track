@@ -258,58 +258,127 @@
    * underneath it (altitude / zoom stay the user's). Off by default, never
    * persisted. Ends on a user drag of the globe, the center buttons, Map view,
    * or another sat being selected elsewhere. Wheel / pinch zoom keeps following.
-   * Cheap: a ~15 Hz timer (only while following and visible) eases the camera
-   * toward the sub-point extrapolated from the last two 1 s state positions.
+   *
+   * Motion is continuous (rAF): we integrate lat/lng/alt with a velocity taken
+   * from the last two 1 s server positions, gently correct when a new sample
+   * arrives (no snap), and drive BOTH the camera and the selected sat's
+   * marker/label from that same smoothed state. Footprint path + fill refresh
+   * at ~4 Hz (not every frame) so the Pi isn't rebuilding geometries at 60 Hz.
    */
-  const FOLLOW_TICK_MS = 66;
-  const follow = { key: null, timer: null, since: 0, samples: [], lat: null, lng: null };
+  const follow = {
+    key: null, raf: 0, since: 0, lastFrame: 0, lastFp: 0,
+    // integrated state (deg, deg, earth-radii) and velocity (deg/ms, deg/ms, radii/ms)
+    lat: null, lng: null, alt: null, vLat: 0, vLng: 0, vAlt: 0,
+    pullLat: 0, pullLng: 0, pullAlt: 0, // residual sample error, bled out over ~1 s
+    samples: [], // up to 2 {t, lat, lng, alt}
+  };
   function wrap180(x) { return ((((x + 180) % 360) + 360) % 360) - 180; }
   function startFollow(key) {
     follow.key = key;
     follow.since = Date.now() + 900; // let the 800 ms snap tween finish first
     follow.samples = [];
-    follow.lat = follow.lng = null;
+    follow.lat = follow.lng = follow.alt = null;
+    follow.vLat = follow.vLng = follow.vAlt = 0;
+    follow.pullLat = follow.pullLng = follow.pullAlt = 0;
+    follow.lastFrame = 0;
+    follow.lastFp = 0;
     if (lastState && lastState.sat === key) followSample(lastState);
-    if (!follow.timer) follow.timer = setInterval(followTick, FOLLOW_TICK_MS);
+    if (!follow.raf) follow.raf = requestAnimationFrame(followFrame);
   }
   function stopFollow() {
     follow.key = null;
     follow.samples = [];
-    if (follow.timer) { clearInterval(follow.timer); follow.timer = null; }
+    if (follow.raf) { cancelAnimationFrame(follow.raf); follow.raf = 0; }
     if (G && G.__savePov) G.__savePov();
   }
   function followSample(msg) {
     const p = msg && msg.position; // live position (a pass preview only highlights)
     if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return;
-    const q = follow.samples;
-    q.push({ t: Date.now(), lat: p.lat, lng: p.lon });
-    if (q.length > 2) q.shift();
-  }
-  function followTarget(now) {
-    const q = follow.samples;
-    if (!q.length) return null;
-    const b = q[q.length - 1];
-    if (q.length < 2) return { lat: b.lat, lng: b.lng };
-    const a = q[0];
-    const dt = b.t - a.t;
-    if (!(dt > 0)) return { lat: b.lat, lng: b.lng };
-    const k = Math.min(now - b.t, 3000) / dt; // extrapolate at most 3 s past the last sample
-    return { lat: b.lat + (b.lat - a.lat) * k, lng: wrap180(b.lng + wrap180(b.lng - a.lng) * k) };
-  }
-  function followTick() {
-    if (!follow.key || !G || mode !== "globe" || document.hidden) return;
     const now = Date.now();
-    if (now < follow.since) return;
-    const tg = followTarget(now);
-    if (!tg) return;
+    const alt = (Number.isFinite(p.heightKm) ? p.heightKm : 0) / RE_KM;
+    const q = follow.samples;
+    q.push({ t: now, lat: p.lat, lng: p.lon, alt: alt });
+    if (q.length > 2) q.shift();
+    // Seed or softly correct the integrator so a new sample never snaps the camera.
+    if (follow.lat == null) {
+      follow.lat = p.lat; follow.lng = p.lon; follow.alt = alt;
+      if (q.length === 2) {
+        const dt = q[1].t - q[0].t;
+        if (dt > 0) {
+          follow.vLat = (q[1].lat - q[0].lat) / dt;
+          follow.vLng = wrap180(q[1].lng - q[0].lng) / dt;
+          follow.vAlt = (q[1].alt - q[0].alt) / dt;
+        }
+      }
+      return;
+    }
+    // Queue the prediction error to be bled into position over ~1 s (see
+    // followFrame) so a 1 Hz sample never produces a visible camera jump.
+    follow.pullLat = p.lat - follow.lat;
+    follow.pullLng = wrap180(p.lon - follow.lng);
+    follow.pullAlt = alt - follow.alt;
+    if (q.length === 2) {
+      const dt = q[1].t - q[0].t;
+      if (dt > 50) {
+        const nLat = (q[1].lat - q[0].lat) / dt;
+        const nLng = wrap180(q[1].lng - q[0].lng) / dt;
+        const nAlt = (q[1].alt - q[0].alt) / dt;
+        follow.vLat = follow.vLat * 0.4 + nLat * 0.6;
+        follow.vLng = follow.vLng * 0.4 + nLng * 0.6;
+        follow.vAlt = follow.vAlt * 0.4 + nAlt * 0.6;
+      }
+    }
+  }
+  function followFrame(ts) {
+    follow.raf = 0;
+    if (!follow.key || !G || mode !== "globe") return;
+    follow.raf = requestAnimationFrame(followFrame);
+    if (document.hidden) { follow.lastFrame = 0; return; }
+    const now = Date.now();
+    if (now < follow.since || follow.lat == null) return;
+    const prev = follow.lastFrame || now;
+    // Cap the step so a tab-thaw doesn't leap several seconds of orbit.
+    const dt = Math.min(64, Math.max(0, now - prev));
+    follow.lastFrame = now;
+    if (dt > 0) {
+      // Bleed ~63% of the residual pull per 400 ms (smooth, no 1 Hz spike).
+      const a = 1 - Math.exp(-dt / 400);
+      const dLat = follow.vLat * dt + follow.pullLat * a;
+      const dLng = follow.vLng * dt + follow.pullLng * a;
+      const dAlt = follow.vAlt * dt + follow.pullAlt * a;
+      follow.lat += dLat;
+      follow.lng = wrap180(follow.lng + dLng);
+      follow.alt += dAlt;
+      follow.pullLat *= 1 - a;
+      follow.pullLng *= 1 - a;
+      follow.pullAlt *= 1 - a;
+    }
     const pov = G.pointOfView();
-    if (follow.lat == null) { follow.lat = pov.lat; follow.lng = pov.lng; }
-    // Ease toward the target (no jumps when a new sample corrects the extrapolation).
-    follow.lat += (tg.lat - follow.lat) * 0.25;
-    follow.lng = wrap180(follow.lng + wrap180(tg.lng - follow.lng) * 0.25);
     G.pointOfView({ lat: follow.lat, lng: follow.lng, altitude: pov.altitude }, 0);
+    // Move the selected sat marker + label in place (globe.gl re-reads lat/lng
+    // each frame; no htmlElementsData rebuild).
+    const p = pts.get(follow.key);
+    if (p && p.sel) {
+      p.lat = follow.lat; p.lng = follow.lng; p.alt = follow.alt;
+      selLabel.lat = follow.lat; selLabel.lng = follow.lng; selLabel.alt = follow.alt;
+    }
+    // Footprint at ~4 Hz — geometry rebuild is the expensive bit.
+    if (now - follow.lastFp > 240 && p && p.sel && lastState && lastState.position) {
+      follow.lastFp = now;
+      const hKm = follow.alt * RE_KM;
+      footprint.pts = footprintPts(follow.lat, follow.lng, hKm);
+      fpShade.geometry.coordinates = [footprint.pts.map((q) => [q[1], q[0]])];
+      G.polygonsData([fpShade]);
+      if (orbits) renderPaths();
+      else G.pathsData((footprint.pts.length > 1 ? [footprint] : []).concat(terminatorPath.pts.length > 1 ? [terminatorPath] : []));
+    }
   }
   window.globeFollowing = () => follow.key;
+  /** Smoothed sub-point while following (for applyState to avoid 1 Hz snaps). */
+  function followPos() {
+    if (!follow.key || follow.lat == null || Date.now() < follow.since) return null;
+    return { lat: follow.lat, lon: follow.lng, heightKm: follow.alt * RE_KM };
+  }
 
   /** Profile chart click: once that sat's position arrives, spin the globe to it, then follow it. */
   let snapKey = null;
@@ -629,19 +698,30 @@
     const keep = new Set();
     if (st.position && Number.isFinite(st.position.lat)) {
       const p = point(st.sat);
-      p.lat = st.position.lat; p.lng = st.position.lon; p.alt = (st.position.heightKm || 0) / RE_KM;
+      // While following, keep the integrator's position so applyState's 1 s
+      // server sample can't snap the marker (the rAF loop owns lat/lng/alt).
+      const fp = (follow.key === st.sat && !pT) ? followPos() : null;
+      const use = fp || st.position;
+      p.lat = use.lat; p.lng = use.lon; p.alt = (use.heightKm || 0) / RE_KM;
       p.color = selColor(); p.sel = true; p.display = st.display || st.sat;
       keep.add(st.sat);
       selLabel.lat = p.lat; selLabel.lng = p.lng; selLabel.alt = p.alt;
       selLabel.text = selLabelText(st, pT);
       if (pT) p.color = "#e3b341";
       paintSelLabel();
-      footprint.pts = footprintPts(p.lat, p.lng, st.position.heightKm || 0);
+      footprint.pts = footprintPts(p.lat, p.lng, use.heightKm || 0);
       if (snapKey && snapKey === st.sat) {
         snapKey = null;
         const lp = (lastState && lastState.position) || st.position; // live sub-point (follow tracks the live sat)
         centerOn(lp.lat, lp.lon);
-        if (follow.key === st.sat) { follow.since = Date.now() + 900; follow.lat = follow.lng = null; }
+        if (follow.key === st.sat) {
+          follow.since = Date.now() + 900;
+          follow.lat = follow.lng = follow.alt = null;
+          follow.vLat = follow.vLng = follow.vAlt = 0;
+          follow.pullLat = follow.pullLng = follow.pullAlt = 0;
+          follow.samples = [];
+          if (lastState) followSample(lastState);
+        }
       }
       fpShade.geometry.coordinates = [footprint.pts.map((q) => [q[1], q[0]])];
       G.polygonsData([fpShade]);
@@ -674,7 +754,10 @@
   function onVisibility() {
     if (!G) return;
     if (document.hidden || mode !== "globe") G.pauseAnimation();
-    else G.resumeAnimation();
+    else {
+      G.resumeAnimation();
+      if (follow.key && !follow.raf) { follow.lastFrame = 0; follow.raf = requestAnimationFrame(followFrame); }
+    }
   }
 
   function setMode(next, save) {
