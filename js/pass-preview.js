@@ -47,7 +47,7 @@
     const cur = (data.sats || []).find((s) => s.key === data.current);
     centerPending = false;
     if (cur && cur.position && typeof window.globeCenterOn === "function")
-      window.globeCenterOn(cur.position.lat, cur.position.lon);
+      window.globeCenterOn(cur.position.lat, cur.position.lon, { preview: true }); // no-op while the globe follows a sat
   }
 
   function set(t, opts) {
