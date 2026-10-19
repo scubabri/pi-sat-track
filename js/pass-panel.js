@@ -130,7 +130,16 @@ function renderPassPanel() {
         ? Number(p.aosAz).toFixed(0) + "\u00B0"
         : "\u2014";
 
+    // Pass alert bell (js/pass-alerts.js paints on/inherited/off + clicks).
+    const bell =
+      lastPassListSat && Number.isFinite(aosMs)
+        ? '<button type="button" class="sat-alert" data-alert="pass" data-sat="' +
+          String(lastPassListSat).replace(/"/g, "&quot;") +
+          '" data-aos="' + aosMs + '" data-los="' + (Number.isFinite(losMs) ? losMs : "") +
+          '"></button>'
+        : "";
     row.innerHTML =
+      '<span class="pass-cell pass-alert">' + bell + "</span>" +
       '<span class="pass-cell pass-idx">' +
       (idx + 1) +
       "</span>" +
@@ -155,6 +164,7 @@ function renderPassPanel() {
 
     body.appendChild(row);
   });
+  if (window.PassAlerts) window.PassAlerts.paint(body);
 }
 
 /**

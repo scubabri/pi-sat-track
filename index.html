@@ -23,6 +23,7 @@
     <link rel="stylesheet" href="css/fine-ctcss.css" />
     <link rel="stylesheet" href="css/connection-test.css" />
     <link rel="stylesheet" href="css/config-modal.css" />
+    <link rel="stylesheet" href="css/pass-alerts.css" />
   </head>
   <body>
     <header id="topbar">
@@ -35,6 +36,19 @@
         >
           - ▾
         </button>
+        <button
+          type="button"
+          id="sat-fav-top"
+          class="sat-fav sat-fav-top"
+          title="Add favorite"
+        >&#9734;</button>
+        <button
+          type="button"
+          id="sat-alert-top"
+          class="sat-alert sat-alert-top"
+          data-alert="sat"
+          title="Alert for every pass of this sat (AOS&#8722;5 min and AOS)"
+        ></button>
         <div id="sat-menu" class="sat-menu" hidden>
           <a class="sat-option sat-browse" href="/sats.html"
             >Browse full catalog...</a
@@ -162,6 +176,19 @@
             <div class="form-row">
               <label for="cfg-elev">Elevation (m)</label>
               <input type="number" id="cfg-elev" placeholder="1324" step="1" />
+            </div>
+
+            <div class="form-row">
+              <label class="cfg-check-label" for="cfg-alert-desktop">
+                <input type="checkbox" id="cfg-alert-desktop" />
+                Desktop notifications for pass alerts
+              </label>
+              <p class="form-hint" id="cfg-alert-desktop-hint">
+                Pass alerts (the bells) always ding and show a toast here.
+                Turn this on to also get a system notification, e.g. when
+                this tab is in the background. Saved in this browser; applies
+                right away.
+              </p>
             </div>
 
             </section>
@@ -954,6 +981,13 @@
       >
         <span class="fav-drawer-chevron">&#9662;</span>
         <span class="fav-drawer-label">Favorites</span>
+        <span
+          class="sat-alert sat-alert-all"
+          data-alert="all-favorites"
+          role="button"
+          tabindex="0"
+          title="Alert for all favorites (AOS&#8722;5 min and AOS)"
+        ></span>
         <span id="fav-drawer-count" class="fav-drawer-count">—</span>
         <span class="fav-drawer-hint">sorted by AOS</span>
       </button>
@@ -995,6 +1029,7 @@
       <div id="pass-panel-drawer" class="pass-panel-drawer">
         <div id="pass-panel-table">
           <div class="pass-head">
+            <span class="pass-cell pass-alert" title="Pass alerts (AOS&#8722;5 min and AOS)"></span>
             <span class="pass-cell pass-idx">#</span>
             <span class="pass-cell pass-time">AOS</span>
             <span class="pass-cell pass-time">LOS</span>
@@ -1337,6 +1372,8 @@
     <script src="js/decode-overlay.js"></script>
     <script src="js/schedule.js"></script>
     <script src="js/fav-overlay.js"></script>
+    <script src="js/pass-alerts-core.js"></script>
+    <script src="js/pass-alerts.js"></script>
     <script src="js/globe-view.js"></script>
     <script src="js/pass-preview.js"></script>
     <script src="js/log-viewer.js"></script>

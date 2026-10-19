@@ -254,6 +254,7 @@ function applyProfileToRuntime(prof) {
   state.setFavorites(Array.isArray(prof.favorites) ? prof.favorites : []);
   state.setFavOverlayShown(prof.favOverlay ? prof.favOverlay.shown : null);
   state.setAutoSelect(prof.autoSelect === true);
+  state.setPassAlerts(prof.alerts);
   const cfg = prof.config && typeof prof.config === "object" ? prof.config : {};
   if (Object.keys(cfg).length) {
     const flags = config.applyEndpoints(cfg);
@@ -629,6 +630,17 @@ wss.on("connection", (ws, req) => {
         const pf = profiles.updateActive({ autoSelect: msg.on === true });
         state.setAutoSelect(pf.autoSelect === true);
         console.log("Auto Select", pf.autoSelect ? "ON" : "OFF");
+        broadcastProfiles();
+        const st = state.computeState();
+        if (st) broadcast(st);
+        return;
+      }
+
+      if (msg.type === "alerts-set" && msg.alerts && typeof msg.alerts === "object") {
+        // Pass alert bells: saved per profile, synced to all clients (each
+        // browser fires its own AOS−5 / AOS alerts from state.alertPasses).
+        const pf = profiles.updateActive({ alerts: msg.alerts });
+        state.setPassAlerts(pf.alerts);
         broadcastProfiles();
         const st = state.computeState();
         if (st) broadcast(st);
@@ -1227,6 +1239,20 @@ setInterval(() => {
 }, STATE_MS);
 
 setInterval(broadcastSats, SATS_BROADCAST_MS);
+
+// Pass alerts: drop single-pass alerts / exceptions once their LOS is over.
+function pruneAlertsNow() {
+  try {
+    if (profiles.pruneAlerts(Date.now())) {
+      state.setPassAlerts(profiles.getActive().alerts);
+      broadcastProfiles();
+    }
+  } catch (e) {
+    console.warn("Alert prune failed:", e.message);
+  }
+}
+pruneAlertsNow();
+setInterval(pruneAlertsNow, 60 * 1000).unref();
 
 // Favorites orbit overlay: tracks refreshed every 60 s (positions ride on "state").
 let lastFavTrackSig = "";

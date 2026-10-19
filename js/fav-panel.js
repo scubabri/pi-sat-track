@@ -371,7 +371,7 @@ function patchFavRow(el, row) {
   // order: name, norad, vis, az, el, range, rate, lat, lon, alt, orbit, next
   if (cells.length < 12) return;
 
-  setCellText(cells[0], v.name);
+  setCellText(cells[0].querySelector(".fav-name-text") || cells[0], v.name);
   if (cells[0].getAttribute("title") !== v.name) {
     cells[0].setAttribute("title", v.name);
   }
@@ -404,7 +404,17 @@ function buildFavRowEl(row) {
   const nameSpan = document.createElement("span");
   nameSpan.className = "fav-cell fav-name";
   nameSpan.title = v.name;
-  nameSpan.textContent = v.name;
+  // Pass alerts bell for this favorite (js/pass-alerts.js paints + clicks)
+  const bell = document.createElement("button");
+  bell.type = "button";
+  bell.className = "sat-alert sat-alert-inline";
+  bell.dataset.alert = "sat";
+  bell.dataset.sat = row.key;
+  nameSpan.appendChild(bell);
+  const nameText = document.createElement("span");
+  nameText.className = "fav-name-text";
+  nameText.textContent = v.name;
+  nameSpan.appendChild(nameText);
   el.appendChild(nameSpan);
 
   function numCell(text, extraClass) {
@@ -465,6 +475,7 @@ function renderFavPanel() {
       body.appendChild(buildFavRowEl(row));
     });
     lastFavStructureKey = structureKey;
+    if (window.PassAlerts) window.PassAlerts.paint(body);
     return;
   }
 
