@@ -35,8 +35,12 @@
   const dxMark = { kind: "dx", lat: 0, lng: 0, alt: MARK_ALT, text: "" };
   const dxPath = { key: "__dx", footprint: true, color: "#ffd34d", w: 0.6, pts: [] };
   const footprint = { key: "__fp", footprint: true, color: "rgba(88,166,255,0.95)", w: 1.1, pts: [] };
-  // Shaded footprint interior (polygon layer), same ring as the outline.
-  const fpShade = { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [[]] } };
+  // Selected-sat footprint is a persistent three.js group (fill + ring), built
+  // once and reoriented each frame — globe.gl's polygonsData leaked meshes and
+  // left a painted trail when refreshed at follow rates (see ensureFpMesh).
+  const fpShade = { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [[]] } }; // unused for selected sat; kept so old refs don't throw
+  let fpMesh = null; // { group, fill, ring, lam, R } | false if unavailable
+  let fpLam = -1;
   // Day/night (js/sun.js): a translucent black shell just above the surface
   // whose per-vertex alpha follows the sun angle (night ~0.5, ~3 deg soft
   // twilight edge), a thin terminator path and a non-interactive "SUN" marker.
@@ -179,7 +183,11 @@
         .polygonStrokeColor(() => false)
         .polygonAltitude(0.004)
         .polygonsTransitionDuration(0)
+        .pathDashLength(1)
+        .pathDashGap(0)
         .onPathClick(pick);
+      // Never animate polygon morphs — leftover tween meshes painted the footprint trail.
+      try { G.polygonsData([]); } catch (_) {}
       try { G.renderer().setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5)); } catch (_) {}
       const fit = () => { if (el && G && mode === "globe") G.width(el.clientWidth).height(el.clientHeight); };
       if (typeof ResizeObserver === "function") new ResizeObserver(fit).observe(host);
@@ -262,11 +270,11 @@
    * Motion is continuous (rAF): we integrate lat/lng/alt with a velocity taken
    * from the last two 1 s server positions, gently correct when a new sample
    * arrives (no snap), and drive BOTH the camera and the selected sat's
-   * marker/label from that same smoothed state. Footprint path + fill refresh
-   * at ~4 Hz (not every frame) so the Pi isn't rebuilding geometries at 60 Hz.
+   * marker/label from that same smoothed state. Footprint is a persistent
+   * three.js mesh reoriented each frame (no polygonsData churn / trail).
    */
   const follow = {
-    key: null, raf: 0, since: 0, lastFrame: 0, lastFp: 0,
+    key: null, raf: 0, since: 0, lastFrame: 0,
     // integrated state (deg, deg, earth-radii) and velocity (deg/ms, deg/ms, radii/ms)
     lat: null, lng: null, alt: null, vLat: 0, vLng: 0, vAlt: 0,
     pullLat: 0, pullLng: 0, pullAlt: 0, // residual sample error, bled out over ~1 s
@@ -281,7 +289,6 @@
     follow.vLat = follow.vLng = follow.vAlt = 0;
     follow.pullLat = follow.pullLng = follow.pullAlt = 0;
     follow.lastFrame = 0;
-    follow.lastFp = 0;
     if (lastState && lastState.sat === key) followSample(lastState);
     if (!follow.raf) follow.raf = requestAnimationFrame(followFrame);
   }
@@ -361,19 +368,22 @@
     if (p && p.sel) {
       p.lat = follow.lat; p.lng = follow.lng; p.alt = follow.alt;
       selLabel.lat = follow.lat; selLabel.lng = follow.lng; selLabel.alt = follow.alt;
-    }
-    // Footprint at ~4 Hz — geometry rebuild is the expensive bit.
-    if (now - follow.lastFp > 240 && p && p.sel && lastState && lastState.position) {
-      follow.lastFp = now;
-      const hKm = follow.alt * RE_KM;
-      footprint.pts = footprintPts(follow.lat, follow.lng, hKm);
-      fpShade.geometry.coordinates = [footprint.pts.map((q) => [q[1], q[0]])];
-      G.polygonsData([fpShade]);
-      if (orbits) renderPaths();
-      else G.pathsData((footprint.pts.length > 1 ? [footprint] : []).concat(terminatorPath.pts.length > 1 ? [terminatorPath] : []));
+      orientFpMesh(follow.lat, follow.lng, follow.alt * RE_KM);
     }
   }
   window.globeFollowing = () => follow.key;
+  window.__fpMesh = () => fpMesh;
+  window.__countFp = () => {
+    if (!G) return { fp: 0, poly: 0, named: 0 };
+    let fp = 0, poly = 0, named = 0;
+    G.scene().traverse((o) => {
+      if (o.name === "sat-footprint") fp++;
+      if (o.name && o.name.indexOf("sat-footprint") === 0) named++;
+      if (o.type === "Mesh" && o.parent && o.parent.__globeObjType === "polygons") poly++;
+      if (o.__globeObjType === "polygons") poly++;
+    });
+    return { fp, named, poly, children: G.scene().children.length };
+  };
   /** Smoothed sub-point while following (for applyState to avoid 1 Hz snaps). */
   function followPos() {
     if (!follow.key || follow.lat == null || Date.now() < follow.since) return null;
@@ -429,6 +439,102 @@
       out.push([(l2 * 180) / Math.PI, ((((o2 * 180) / Math.PI) + 540) % 360) - 180, 0.005]);
     }
     return out;
+  }
+
+  /**
+   * Persistent footprint fill + ring (siblings of the globe mesh). Geometry sits
+   * on the +Z pole in local space; each frame we only set the group's quaternion
+   * so +Z points at the sub-satellite point. Rebuild when the angular radius
+   * changes by >0.2 deg (altitude). depthWrite false, renderOrder 0 (after the
+   * night shell at -1) — same anti-diamond setup as before.
+   */
+  function ensureFpMesh() {
+    if (fpMesh !== null || !G) return fpMesh;
+    try {
+      const gm = G.globeMaterial();
+      let gMesh = null;
+      G.scene().traverse((o) => { if (!gMesh && o.material === gm) gMesh = o; });
+      if (!gMesh || !gMesh.parent) return null;
+      fpMesh = false;
+      const Mesh = gMesh.constructor;
+      const SphereGeometry = gMesh.geometry.constructor;
+      const Mat = gm.constructor;
+      const V3 = G.camera().position.constructor;
+      const Quat = G.camera().quaternion.constructor;
+      // Group: reuse an empty Object3D via a Mesh we never render, or parent.children.
+      // Scene graph: add a Mesh-less holder by cloning the globe mesh's parent API —
+      // three.js Object3D is the prototype of Mesh.
+      const Object3D = Object.getPrototypeOf(Mesh.prototype).constructor;
+      const group = new Object3D();
+      group.name = "sat-footprint";
+      group.matrixAutoUpdate = true;
+      const R = G.getGlobeRadius() * 1.0045; // above night shell (1.003) and globe
+      // Placeholder cap; rebuildFpGeom fills real lam.
+      const fillGeo = new SphereGeometry(R, 64, 24, 0, Math.PI * 2, 0, 0.01);
+      const fillMat = new Mat({
+        color: 0x58a6ff, transparent: true, opacity: 0.22,
+        depthWrite: false, shininess: 0, side: 2, // DoubleSide
+      });
+      if (fillMat.specular) fillMat.specular.setRGB(0, 0, 0);
+      const fill = new Mesh(fillGeo, fillMat);
+      fill.raycast = () => {};
+      fill.renderOrder = 0;
+      fill.name = "sat-footprint-fill";
+      // Ring: thin spherical band (Line width is unreliable in WebGL).
+      const ringGeo = new SphereGeometry(R * 1.0003, 96, 3, 0, Math.PI * 2, 0.009, 0.002);
+      const ringMat = new Mat({
+        color: 0x58a6ff, transparent: true, opacity: 0.95,
+        depthWrite: false, shininess: 0, side: 2,
+      });
+      if (ringMat.specular) ringMat.specular.setRGB(0, 0, 0);
+      const ring = new Mesh(ringGeo, ringMat);
+      ring.raycast = () => {};
+      ring.renderOrder = 1;
+      ring.name = "sat-footprint-ring";
+      group.add(fill);
+      group.add(ring);
+      gMesh.parent.add(group);
+      fpMesh = { group, fill, ring, lam: -1, R, V3, Quat, SphereGeometry, Mesh, Mat };
+      // Drop any leftover globe.gl polygon footprint (stops the trail).
+      try { G.polygonsData([]); } catch (_) {}
+    } catch (e) {
+      fpMesh = false;
+      console.warn("Globe footprint mesh unavailable", e);
+    }
+    return fpMesh;
+  }
+
+  function rebuildFpGeom(m, lam) {
+    // Cap from the +Z pole down to polar angle `lam`.
+    const fillGeo = new m.SphereGeometry(m.R, 64, Math.max(8, Math.ceil(lam * 24)), 0, Math.PI * 2, 0, lam);
+    m.fill.geometry.dispose();
+    m.fill.geometry = fillGeo;
+    const band = 0.0035; // ~0.2 deg visual width
+    const ringGeo = new m.SphereGeometry(m.R * 1.0004, 96, 3, 0, Math.PI * 2, Math.max(0, lam - band / 2), band);
+    m.ring.geometry.dispose();
+    m.ring.geometry = ringGeo;
+    m.lam = lam;
+  }
+
+  /** Point the footprint group at (lat,lng) and size it for heightKm. */
+  function orientFpMesh(lat, lng, hKm) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || !(hKm > 0)) return;
+    const m = ensureFpMesh();
+    if (!m) return;
+    const lam = Math.acos(RE_KM / (RE_KM + hKm));
+    if (!(lam > 1e-4)) { m.group.visible = false; return; }
+    m.group.visible = true;
+    if (Math.abs(lam - m.lam) > (0.2 * Math.PI) / 180) rebuildFpGeom(m, lam);
+    // SphereGeometry's pole is +Y; rotate that to the subpoint (globe.gl coords).
+    const c = G.getCoords(lat, lng, 0);
+    const target = new m.V3(c.x, c.y, c.z).normalize();
+    const q = new m.Quat().setFromUnitVectors(new m.V3(0, 1, 0), target);
+    m.group.quaternion.copy(q);
+    m.group.updateMatrixWorld(true);
+  }
+
+  function hideFpMesh() {
+    if (fpMesh && fpMesh.group) fpMesh.group.visible = false;
   }
 
   /**
@@ -593,7 +699,8 @@
         pts: s.pts.map((q) => [q[0], q[1], q[2] / RE_KM]),
       });
     }
-    if (footprint.pts.length > 1) paths.push(footprint);
+    // Ring comes from the custom fp mesh when available (avoids path rebuild trails).
+    if (!(fpMesh && fpMesh.group && fpMesh.group.visible) && footprint.pts.length > 1) paths.push(footprint);
     if (terminatorPath.pts.length > 1) paths.push(terminatorPath);
     const dx = dxItems();
     if (dx && dx.path) paths.push(dx.path);
@@ -709,7 +816,7 @@
       selLabel.text = selLabelText(st, pT);
       if (pT) p.color = "#e3b341";
       paintSelLabel();
-      footprint.pts = footprintPts(p.lat, p.lng, use.heightKm || 0);
+      footprint.pts = footprintPts(p.lat, p.lng, use.heightKm || 0); // kept for any fallback path consumers
       if (snapKey && snapKey === st.sat) {
         snapKey = null;
         const lp = (lastState && lastState.position) || st.position; // live sub-point (follow tracks the live sat)
@@ -723,8 +830,10 @@
           if (lastState) followSample(lastState);
         }
       }
-      fpShade.geometry.coordinates = [footprint.pts.map((q) => [q[1], q[0]])];
-      G.polygonsData([fpShade]);
+      orientFpMesh(p.lat, p.lng, use.heightKm || 0);
+      try { G.polygonsData([]); } catch (_) {}
+    } else {
+      hideFpMesh();
     }
     updateSun(false);
     if (favOn()) {
@@ -746,9 +855,15 @@
     if (dx) extra.push(dx.mk);
     if (sunMark.lat || sunMark.lng) extra.push(sunMark);
     G.htmlElementsData(heardItems().concat([...pts.values(), stLabel]).concat(st.position ? [selLabel] : [], extra));
-    // footprint moves with the sat: refresh paths cheaply (same orbit arrays)
+    // Orbits / terminator / DX paths (footprint ring is the custom mesh).
     if (orbits) renderPaths();
-    else G.pathsData((footprint.pts.length > 1 ? [footprint] : []).concat(terminatorPath.pts.length > 1 ? [terminatorPath] : [], dx && dx.path ? [dx.path] : []));
+    else {
+      const paths = [];
+      if (!(fpMesh && fpMesh.group && fpMesh.group.visible) && footprint.pts.length > 1) paths.push(footprint);
+      if (terminatorPath.pts.length > 1) paths.push(terminatorPath);
+      if (dx && dx.path) paths.push(dx.path);
+      G.pathsData(paths);
+    }
   }
 
   function onVisibility() {
