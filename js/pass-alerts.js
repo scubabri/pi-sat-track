@@ -185,7 +185,6 @@
     const s = sock();
     if (s) s.send(JSON.stringify({ type: "alerts-set", alerts }));
     paint();
-    if (turnedOn) playDing(1);
   }
 
   function onBell(el) {
