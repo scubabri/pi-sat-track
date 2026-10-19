@@ -63,7 +63,8 @@
         (r) =>
           '<div class="aprs-pop-row ' + (r.dir === "tx" ? "tx" : "rx") + '"><span class="aprs-pop-t">' + hhmmBare(r.time) + "</span> " +
           '<span class="aprs-pop-k">' + esc(r.type) + "</span> " +
-          (r.viaSat ? '<span class="aprs-badge-sat">SAT</span> ' : "") + esc(r.text) + "</div>",
+          (r.viaSat ? '<span class="aprs-badge-sat">SAT</span> ' : "") + esc(r.text) +
+          (r.conn ? ' <span class="aprs-pop-c">[' + esc(r.conn) + "]</span>" : "") + "</div>",
       )
       .join("");
     const pos =
@@ -73,6 +74,7 @@
       (s.symbol ? ' <span class="aprs-pop-sym" title="APRS symbol ' + esc(s.symbol) + '">' + esc(window.APRS_SYMBOLS && window.APRS_SYMBOLS.parse(s.symbol) ? window.APRS_SYMBOLS.name(s.symbol) : s.symbol) + "</span>" : "") +
       (s.viaSat ? ' <span class="aprs-badge-sat">via sat</span>' : "") + '<span class="aprs-pop-age">' + ago(now - s.lastHeard) + " ago</span></div>" +
       '<div class="aprs-pop-pos">' + pos + " · " + (s.count || 1) + " pkt · last " + hhmm(s.lastHeard) + "</div>" +
+      (s.conn ? '<div class="aprs-pop-conn" title="KISS connection that heard it last">heard on ' + esc(s.conn) + "</div>" : "") +
       (s.device ? '<div class="aprs-pop-dev" title="Radio / tracker, from the Mic-E device code (aprs-deviceid)">' + esc(s.device) + "</div>" : "") +
       (s.comment ? '<div class="aprs-pop-cmt">' + esc(s.comment) + "</div>" : "") +
       rows +
@@ -247,6 +249,8 @@
       '<label class="aprs-f"><span>Via</span><input type="text" id="aprs-box-via" list="aprs-dl-via" spellcheck="false" autocomplete="off" placeholder="direct" title="Digipeater path (UISS Via:), up to 8 separated by space or comma" /></label>' +
       '<label class="aprs-f"><span>Comment</span><input type="text" id="aprs-box-comment" maxlength="43" autocomplete="off" placeholder="beacon comment" /></label>' +
       '<button type="button" class="aprs-send-pos" id="aprs-send-pos">Send position</button>' +
+      '<div class="aprs-lasttx" id="aprs-box-lasttx" aria-live="polite"></div>' +
+      '<div class="aprs-route" id="aprs-box-route" aria-live="polite" title="KISS connection this send uses (role + speed matched to the satellite; Configure → KISS / APRS)"></div>' +
       '<div class="aprs-box-why" id="aprs-box-why" aria-live="polite"></div>' +
       "</div>" +
       '<div class="aprs-box-sub">Recent stations <span class="aprs-zone" id="aprs-hl-zone"></span> <span class="aprs-hint" title="Click: show on map. Right-click: put the call in To / Via / For (like UISS MHeard)">ⓘ</span></div>' +
@@ -291,6 +295,11 @@
       e.preventDefault();
       e.stopPropagation(); // config.js closes the panel on any outside click
       if (APRS() && APRS().openKissConfig) APRS().openKissConfig();
+    });
+    box.addEventListener("click", (e) => {
+      if (!(e.target.closest && e.target.closest("#aprs-digi-count"))) return;
+      e.preventDefault();
+      if (window.aprsWindow) window.aprsWindow.open({ view: "digipeats" });
     });
     box.querySelector("#aprs-msgs-btn").addEventListener("click", (e) => {
       e.preventDefault();
@@ -383,6 +392,14 @@
     if (document.activeElement !== toEl) toEl.value = A.getTo();
     if (document.activeElement !== viaEl) viaEl.value = A.getVia();
   }
+  /** Digipeat confirmation under Send: "✓ Digipeated by KU5R-6 · 17:05:54 MT",
+   * "Sent 17:05:45 MT — waiting for digipeat…", "Sent … — no digipeat heard". */
+  function lastTxText(last, fmt) {
+    const d = last.digi;
+    if (d && d.state === "digipeated") return "✓ " + (d.viaSat ? "Heard via " : "Digipeated by ") + d.by.join(", ") + " · " + fmt(d.firstMs || last.time);
+    if (d && d.state === "none") return "Sent " + fmt(last.time) + " — no digipeat heard (" + (d.timeoutS || 30) + " s)";
+    return "Sent " + fmt(last.time) + " — waiting for digipeat…";
+  }
   function syncBox() {
     syncBtn();
     if (!win) return;
@@ -397,13 +414,33 @@
     const state = st ? (st.enabled ? st.state : "off") : "off";
     dot.className = "aprs-kiss-dot kiss-" + state;
     txt.textContent =
-      !st || !st.enabled ? "KISS off" : state === "connected" ? "KISS connected" : state === "waiting" ? "KISS down, retrying" : "KISS " + state;
+      !st || !st.enabled
+        ? "KISS off"
+        : state === "connected"
+          ? "KISS connected" + (st.total > 1 ? " (" + st.total + ")" : "")
+          : state === "partial"
+            ? "KISS " + st.connected + "/" + st.total + " connected"
+            : state === "waiting"
+              ? "KISS down, retrying"
+              : "KISS " + state;
     txt.title = st && APRS().statusText ? APRS().statusText(st) : "";
     box.querySelector("#aprs-kiss-off").hidden = !!(st && st.enabled);
     syncHdrFields();
     if (st) {
       const viaEl = box.querySelector("#aprs-box-via");
       const gate = st.gateBeacon || { ok: false, reasons: [] };
+      const lt = box.querySelector("#aprs-box-lasttx");
+      const last = st.lastTx;
+      const dt = last && APRS().digiText ? APRS().digiText(last.digi) : null;
+      const fmt = APRS().fmtTime || ((t) => new Date(t).toISOString().slice(11, 19) + " UTC");
+      const dc = APRS().digipeatCount || st.digipeatCount || 0;
+      lt.innerHTML =
+        (last ? '<span class="aprs-digi ' + (dt ? dt.cls : "pending") + '" title="' + esc("Last TX " + fmt(last.time) + (last.conn ? " on " + last.conn : "") + "\n" + last.tnc2) + '">' + esc(lastTxText(last, fmt)) + "</span>" : "") +
+        '<a href="#" class="aprs-digi-count" id="aprs-digi-count" title="Open the digipeat log (Messages window)">Digipeats: ' + dc + "</a>";
+      const rt = box.querySelector("#aprs-box-route");
+      const route = APRS().routeFor ? APRS().routeFor(viaEl.value) : null;
+      rt.innerHTML = APRS().routeHtml ? APRS().routeHtml(route) : "";
+      rt.classList.toggle("blocked", !!(route && (!route.ok || !route.connected)));
       const sb = box.querySelector("#aprs-send-pos");
       sb.disabled = !gate.ok;
       sb.title = gate.ok
@@ -487,9 +524,11 @@
         syncBox();
       });
       A.on("aprs-send-result", onSendResult);
+      ["aprs-tx-update", "aprs-digipeat", "aprs-digipeats"].forEach((ev) => A.on(ev, syncBox));
       A.on("time-mode", () => {
         render();
         renderHeardList();
+        syncBox();
       });
       if (A.heard) apply(A.heard);
       return true;

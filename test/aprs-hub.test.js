@@ -108,3 +108,22 @@ test("without pass-ui.js the stored satTrackerTimeMode is used", () => {
   assert.strictEqual(A.zoneLabel(), "MT");
   assert.strictEqual(load({}).A.zoneLabel(), "UTC");
 });
+
+test("multi-KISS: status text, route per typed Via, per-sat speed text parsing", () => {
+  const { A } = load();
+  const conns = [
+    { id: "a", name: "FLEX ch1", enabled: true, state: "connected", rx: 3, tx: 1, target: "pc:8001" },
+    { id: "b", name: "VHF Dax 3", enabled: true, state: "waiting", error: "refused", target: "pc:8002" },
+  ];
+  const satR = { ok: true, satRoute: true, connected: true, speed: 9600, speedSource: "amsat", conn: { id: "d", name: "Direwolf 9600", speed: 9600 } };
+  const dirR = { ok: true, satRoute: false, connected: true, speed: 1200, conn: { id: "a", name: "FLEX ch1", speed: 1200 } };
+  A.__feed(status({ state: "partial", connections: conns, rx: 3, tx: 1, error: "VHF Dax 3: refused", sat: { key: "CROCUBE", name: "CroCube", speed: 9600 }, txRoute: satR, txRouteDirect: dirR }));
+  assert.match(A.statusText(A.status), /^KISS 1\/2 connected · RX 3 · TX 1 · VHF Dax 3: refused/);
+  assert.strictEqual(A.routeFor("9A0CC"), satR);
+  assert.strictEqual(A.routeFor("WIDE2-1"), dirR);
+  assert.strictEqual(A.routeFor(""), dirR);
+  assert.match(A.routeHtml(satR), /TX via <b>Direwolf 9600<\/b>.*CroCube 9600 \(AMSAT digipeater list\)/);
+  assert.match(A.routeHtml({ ok: false, reason: "No 9600 TX connection configured for CroCube" }), /No 9600 TX connection configured/);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(A.textToSatSpeeds("crocube=9600\nISS = 1200\nfoo=4800\nmarina=9k6"))), { CROCUBE: 9600, ISS: 1200, MARINA: 9600 });
+  assert.match(A.statusText({ enabled: true, connections: [conns[0]] }), /^KISS FLEX ch1 pc:8001: connected · RX 3 · TX 1/);
+});

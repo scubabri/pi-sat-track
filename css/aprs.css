@@ -280,3 +280,82 @@
 .aprs-r-raw { margin-top: 1px; font: 10.5px ui-monospace, Menlo, Consolas, monospace; color: #8b949e; overflow-wrap: anywhere; }
 .aprs-box-why.hint,
 .aprs-win-why.hint { color: #8b949e; font-style: italic; }
+
+/* ---- Configure → KISS / APRS: connection rows ---- */
+#config-panel .kiss-conns { display: flex; flex-direction: column; gap: 8px; margin: 6px 0; }
+#config-panel .kiss-conn { padding: 8px 10px; border: 1px solid var(--border, #30363d); border-radius: 8px; background: rgba(255, 255, 255, 0.02); }
+#config-panel .kc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+#config-panel .kc-en { display: flex; align-items: center; gap: 4px; margin: 0; font-size: 12px; white-space: nowrap; }
+#config-panel .kc-name { flex: 0 1 180px; min-width: 90px; font-weight: 600; }
+#config-panel .kc-status { flex: 1; min-width: 0; font-size: 11.5px; color: #8b949e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#config-panel .kc-status.kiss-connected { color: #3fb950; }
+#config-panel .kc-status.kiss-waiting { color: #f85149; }
+#config-panel .kc-status.kiss-connecting { color: #d29922; }
+#config-panel .kc-status.kiss-unsaved { color: #d29922; font-style: italic; }
+#config-panel .kc-test-btn { padding: 3px 10px; margin: 0; }
+#config-panel .kc-rm { width: 26px; height: 26px; padding: 0; font: 700 15px/24px system-ui, sans-serif; color: #8b949e; background: transparent; border: 1px solid var(--border, #30363d); border-radius: 5px; cursor: pointer; }
+#config-panel .kc-rm:hover { color: #f85149; border-color: #f85149; }
+#config-panel .kc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px 8px; margin-bottom: 4px; }
+#config-panel .kc-grid.kc-tcp, #config-panel .kc-grid.kc-bt { grid-template-columns: 2fr 1fr; }
+#config-panel .kc-grid label, #config-panel .kc-kp { display: flex; flex-direction: column; gap: 2px; margin: 0; font-size: 11px; color: #8b949e; }
+#config-panel .kc-grid[hidden], #config-panel .kc-bt-hint[hidden] { display: none !important; }
+#config-panel .kc-adv summary { font-size: 11px; color: #8b949e; cursor: pointer; }
+#config-panel .kc-adv[open] { display: flex; flex-wrap: wrap; align-items: end; gap: 4px 10px; }
+#config-panel .kc-adv[open] summary { width: 100%; }
+#config-panel .kc-kp input { width: 80px; }
+#config-panel .kc-test { margin: 2px 0 0; min-height: 0; }
+#config-panel .kc-test:empty { display: none; }
+#config-panel .kiss-conns-foot { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+#config-panel .kiss-conns-foot .form-hint { margin: 0; }
+#config-panel .kiss-status.kiss-partial { color: #d29922; }
+/* TX route next to the Send buttons */
+.aprs-route { font-size: 10.5px; color: #8b949e; overflow-wrap: anywhere; }
+.aprs-route b { color: #e6edf3; font-weight: 600; }
+.aprs-route.blocked { color: #f85149; }
+.aprs-route .aprs-route-sp { padding: 0 4px; border-radius: 3px; background: #21262d; color: #c9d1d9; font-weight: 700; }
+.aprs-route .aprs-route-sp.s9600 { background: #6e40c9; color: #fff; }
+.aprs-kiss-dot.kiss-partial { background: #d29922; }
+.aprs-win-kiss.kiss-partial { color: #d29922; }
+.aprs-r-conn { font: 10px ui-monospace, monospace; color: #6e7681; }
+.aprs-pop-conn { font-size: 10.5px; color: #8b949e; }
+.aprs-pop-c { font: 10px ui-monospace, monospace; color: #6e7681; }
+
+/* ---- digipeat confirmation + collapsed duplicates ---- */
+.aprs-digi { padding: 0 5px; font: 700 10px system-ui, sans-serif; border-radius: 3px; white-space: nowrap; }
+.aprs-digi.ok { color: #0d1117; background: #3fb950; }
+.aprs-digi.none { color: #0d1117; background: #d29922; }
+.aprs-digi.pending { color: #8b949e; background: #21262d; }
+.aprs-digi[data-grp] { cursor: pointer; }
+.aprs-dup { padding: 0 5px; font: 700 10px system-ui, sans-serif; color: #e6edf3; background: #30363d; border: 0; border-radius: 8px; cursor: pointer; }
+.aprs-r.grp { cursor: pointer; }
+.aprs-r.open .aprs-dup { background: #58a6ff; color: #0d1117; }
+.aprs-cps { margin: 2px 0 2px 58px; padding-left: 6px; border-left: 1px dashed #30363d; }
+.aprs-cp { display: flex; gap: 6px; align-items: baseline; font-size: 11px; color: #c9d1d9; }
+.aprs-cp .aprs-m-t { font-size: 10px; }
+.aprs-cp-l { color: #6e7681; font-size: 10px; }
+.aprs-cp-path { font-family: ui-monospace, Menlo, Consolas, monospace; color: #e6edf3; }
+.aprs-lasttx { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; font-size: 11px; }
+.aprs-lasttx .aprs-digi { white-space: normal; font-weight: 600; }
+.aprs-digi-count { margin-left: auto; font-size: 11px; color: #58a6ff; }
+.aprs-chip.aprs-digi-view.active { background: #3fb950; }
+.aprs-chip.aprs-digi-csv { text-decoration: none; color: #58a6ff; }
+.aprs-chip[hidden] { display: none; }
+.aprs-dg { padding: 4px 0 4px 6px; border-bottom: 1px solid #161b22; border-left: 2px solid #3fb950; }
+.aprs-dg.sat { border-left-color: #ffa657; background: #1f1a10; }
+.aprs-dg-by { color: #e6edf3; }
+.aprs-dg-by b { color: #3fb950; }
+.aprs-dg.sat .aprs-dg-by b { color: #ffa657; }
+.aprs-dg-sat { font-size: 10.5px; color: #ffa657; }
+.aprs-dg-tx { font: 10.5px ui-monospace, Menlo, Consolas, monospace; color: #8b949e; overflow-wrap: anywhere; }
+.aprs-r-igate { font-size: 10.5px; color: #8b949e; white-space: nowrap; }
+.aprs-cp-l b { color: #c9d1d9; font-weight: 600; }
+.aprs-lasttx .aprs-digi.pending { color: #0d1117; background: #d29922; }
+.aprs-lasttx .aprs-digi.none { color: #d29922; background: transparent; border: 1px solid #d29922; }
+.aprs-win-search { display: flex; align-items: center; gap: 4px; padding: 4px 6px 2px; }
+.aprs-win-search input { flex: 1 1 auto; min-width: 0; padding: 3px 6px; font-size: 12px; color: #e6edf3; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; }
+.aprs-win-search input:focus { outline: none; border-color: #58a6ff; }
+.aprs-win-search input::-webkit-search-cancel-button { display: none; }
+.aprs-win-q-x { padding: 0 6px; font-size: 14px; line-height: 18px; color: #8b949e; background: transparent; border: 0; cursor: pointer; }
+.aprs-win-q-x:hover { color: #e6edf3; }
+.aprs-win-q-n { font-size: 10.5px; color: #8b949e; white-space: nowrap; }
+mark.aprs-qhl { color: #0d1117; background: #e3b341; border-radius: 2px; padding: 0 1px; }

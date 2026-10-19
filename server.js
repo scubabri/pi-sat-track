@@ -372,6 +372,16 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify(state.satsPayload(filter)));
   }
 
+  // APRS digipeat log export (Messages window → Digipeats → Export CSV)
+  if (urlPath === "/api/aprs/digipeats.csv") {
+    res.writeHead(200, {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": 'attachment; filename="aprs-digipeats-' + new Date().toISOString().slice(0, 10) + '.csv"',
+      "Cache-Control": "no-store",
+    });
+    return res.end(aprsService.digipeatsCsv());
+  }
+
   if (urlPath === "/api/host") {
     res.writeHead(200, {
       "Content-Type": "application/json",
@@ -570,6 +580,7 @@ wss.on("connection", (ws, req) => {
   ws.send(JSON.stringify(aprsService.statusPayload()));
   ws.send(JSON.stringify(aprsService.packetsPayload()));
   ws.send(JSON.stringify(aprsService.heardPayload()));
+  ws.send(JSON.stringify(aprsService.digipeatsPayload()));
   // Re-send shortly after: the sidebar logging script hooks the socket
   // asynchronously and can miss the first message.
   setTimeout(() => {
@@ -586,6 +597,7 @@ wss.on("connection", (ws, req) => {
         ws.send(JSON.stringify(decodeStore.payload()));
         ws.send(JSON.stringify(aprsService.statusPayload()));
         ws.send(JSON.stringify(aprsService.heardPayload()));
+        ws.send(JSON.stringify(aprsService.digipeatsPayload()));
       }
     } catch (_) {}
   }, 1500);
@@ -629,7 +641,9 @@ wss.on("connection", (ws, req) => {
       if (msg.type === "aprs-test") {
         // One-shot probe with the (unsaved) form values; never sends a frame.
         aprsService.testTcp(msg.host, msg.port).then((r) => {
-          if (ws.readyState === 1) ws.send(JSON.stringify(Object.assign({ type: "aprs-test-result" }, r)));
+          // id = the Configure connection row that asked (several KISS connections)
+          const id = typeof msg.id === "string" ? msg.id.slice(0, 16) : "";
+          if (ws.readyState === 1) ws.send(JSON.stringify(Object.assign({ type: "aprs-test-result", id }, r)));
         });
       }
 

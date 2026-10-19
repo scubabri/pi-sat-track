@@ -9,26 +9,61 @@ keeps tuning the radio (Doppler) as usual; the TNC only does audio + PTT.
 
 Configure → **KISS / APRS**:
 
-- **Connect to a KISS TNC**: the client only connects (and reconnects) while
-  this is on. Turning it off closes the socket.
-- **Software / TNC**: Graywolf (KISS TCP 6700), Direwolf (KISS TCP 8001) or
-  Custom. Choosing one fills the port only when the port is empty or still
-  another preset's default, so a port you typed (e.g. Graywolf channel 2 on
-  8002) is kept.
-- **Connection**:
-  - **TCP**: **Host** may be this machine (empty = localhost) or a remote
-    host, plus **Port**.
-  - **Bluetooth**: a Bluetooth Classic (SPP) TNC through the serial port
-    device, default `/dev/rfcomm0`, plus baud. Pair the TNC first and bind it
-    with rfcomm, e.g. `sudo rfcomm bind 0 <TNC MAC>` (Mobilinkd TNC3/TNC4,
-    Kenwood TH-D74/D75, …). BLE is not supported. Profiles saved with the
-    old `serial` value load as Bluetooth.
-- **Test connection**: opens one TCP connection to the host/port in the form
+- **Connect to a KISS TNC**: master switch. Nothing connects (and nothing
+  reconnects) while it is off; turning it off closes every connection.
+- **KISS connections**: a list, one row per TNC channel / port. Graywolf
+  binds one radio channel per KISS TCP port, so a Graywolf PC with a FlexRadio plus Direwolf for 9600 is three
+  rows:
+
+  | Name | Software | Host:port | Role | Speed |
+  | --- | --- | --- | --- | --- |
+  | FLEX ch1 | Graywolf | pc:8001 | RX + TX | 1200 AFSK |
+  | VHF Dax 3 | Graywolf | pc:8002 | RX only | 1200 AFSK (144.390) |
+  | Direwolf 9600 | Direwolf | pc:8003 | RX + TX | 9600 G3RUH |
+
+  Each row: **Enabled**, **Name** (shown on packets, in Raw view and popups),
+  **Software** (Graywolf / Direwolf / Custom: fills the port only when it is
+  empty or still another preset's default, never over a port you typed),
+  **Connection** TCP (**Host**, empty = localhost, + **Port**) or Bluetooth
+  (serial **Device**, default `/dev/rfcomm0`, + **Baud**; pair the TNC and
+  `sudo rfcomm bind 0 <TNC MAC>`; Mobilinkd TNC3/TNC4, TH-D74/D75; BLE not
+  supported), **Role** (RX only / TX only / RX + TX), **Speed** (1200 AFSK /
+  9600 G3RUH = the modem on that channel), **Advanced → KISS port**
+  (Direwolf / multi-port TNCs only; leave 0 for Graywolf), a live status
+  (connected · RX n · TX n, or the error and retry time), **Test** and **×**
+  (remove). **+ Add connection** adds a row (up to 8). Older profiles with a
+  single endpoint load it as row 1 (RX + TX, 1200; host, port, KISS port and
+  connection kept).
+- **RX**: every enabled RX or RX + TX connection feeds the same packet list,
+  map and log; each packet is tagged with its connection name. The same
+  packet (identical TNC2 line, path included) heard on a second connection
+  within 5 s is shown once with both names (`[FLEX ch1 + VHF Dax 3]`);
+  digipeated copies with a different path stay separate. A TX-only
+  connection's receive side is ignored.
+- **TX routing**: with a satellite selected and a satellite Via, the send
+  goes out on an enabled TX-capable connection whose **speed matches the
+  satellite** (the Default TX connection first if it matches, else a
+  connected one). With no satellite, or a terrestrial Via (WIDEn-N, direct),
+  it goes out on the **Default TX connection** (Auto = the first TX-capable
+  1200 connection). If nothing matches, sending is blocked with the reason,
+  e.g. "No 9600 TX connection configured for CroCube". The APRS window and
+  the Messages window show the connection next to Send ("TX via FLEX ch1
+  1200 · ISS 1200 (AMSAT digipeater list)").
+- **Satellite speed**: Transmit → **Per-satellite speed** (`SAT=1200` /
+  `SAT=9600` lines, key = sat name, catalog key or NORAD) wins; else the
+  AMSAT digipeater list (lib/aprs/sat-speeds.js: ISS, IO-86, NO-44,
+  SONATE-2 = 1200; CroCube, GRBBeta, KNACKSAT-2, KOSTKA, LASARsat, Marina =
+  9600); else the selected mode text (`9k6` / `9600` / `G3RUH` = 9600,
+  `1k2` / `AFSK` = 1200); else 1200. (The selected mode never blocks
+  sending; for satellites on that list a mode named just `9k6_GFSK` does not
+  even show the "not an APRS mode" hint.)
+- **Test** (per row): opens one TCP connection to that row's host/port
   (unsaved values, also while disabled), waits up to 5 s, reports any KISS
   frames seen within 3 s, then closes. It never sends anything. If it works
-  while Connect is off, it says so: tick **Connect to a KISS TNC** and
-  **Save** to stay connected. While KISS is off the APRS window shows
-  "KISS off — enable in Configure → KISS / APRS" (click it to open the tab).
+  while the master switch (or the row) is off, it says so: tick **Connect to
+  a KISS TNC** (or the row's **Enabled**) and **Save** to stay connected.
+  While KISS is off the APRS window shows "KISS off — enable in Configure →
+  KISS / APRS" (click it to open the tab).
 - **SSID**: optional. Empty sends the plain station callsign (SSID 0).
 - **Map symbol**: pick your icon (Car, House, Satellite dish antenna,
   Campground/tent, Jeep, RV, Weather station, …). Common symbols first, the
@@ -41,16 +76,36 @@ Configure → **KISS / APRS**:
 
 ### Graywolf
 
-On the Graywolf host: Interfaces → KISS TNC → **+ Add Interface**,
-Type **TCP (server)**, listen `0.0.0.0:6700`, Channel = the radio channel used
-for satellites, **Mode = Modem** (Graywolf's soft modem keys the radio).
-Disable Graywolf beacons and digipeater rules on that channel. Graywolf drops a
-repeat of the same packet within 30 s. In Pi Sat Track choose Graywolf, TCP,
-and enter that host's IP.
+Graywolf binds **one channel per KISS TCP port**. On the Graywolf host:
+Interfaces → KISS TNC → **+ Add Interface**, Type **TCP (server)**, listen
+e.g. `0.0.0.0:8001`, Channel = the radio channel, **Mode = Modem**
+(Graywolf's soft modem keys the radio). Add one interface (port) per channel
+you want, e.g. 8001 = FLEX ch1 (TX), 8002 = VHF Dax 3 (RX only, 144.390),
+and one Pi Sat Track connection row per port. Disable Graywolf beacons and
+digipeater rules on the satellite channel. Graywolf drops a repeat of the
+same packet within 30 s. Graywolf only has 1200 AFSK / PSK modems: for 9600
+G3RUH satellites run Direwolf next to it.
 
-### Direwolf
+### Direwolf (9600 G3RUH)
 
-KISS TCP listens on 8001 by default (`KISSPORT 8001`).
+Direwolf's KISS TCP default is 8001, which clashes with a Graywolf port 8001,
+so give it its own port. Minimal `direwolf.conf` for a 9600 channel on a
+FlexRadio DAX pair (Windows; use the device numbers or names `direwolf -x`
+lists):
+
+```
+ADEVICE  4 5            # DAX RX / DAX TX audio devices
+ACHANNELS 1
+CHANNEL 0
+MYCALL   N0CALL
+MODEM    9600           # G3RUH; needs flat audio (DAX is)
+PTT      VOX            # or CAT / RTS for your radio
+KISSPORT 8003
+```
+
+Then add a row: Software Direwolf, host = that PC, port 8003, Role RX + TX,
+Speed **9600 G3RUH**. KISS port (Advanced) stays 0 unless that Direwolf
+serves several channels on one KISS TCP port.
 
 ## Operating (UISS model)
 
@@ -137,15 +192,84 @@ it in **To**, **Via** or **For**.
 Source call = Station callsign (+ optional SSID); position from the Station
 grid centre (or exact lat/lon).
 
+## Digipeat confirmation and the digipeat log
+
+Every packet you send is tracked (source incl. SSID, destination, info). When
+a packet with the **same source and same info** (path ignored) is heard on
+any KISS connection and its path has at least one **used** hop (H bit, shown
+`*`), the TX is marked:
+
+- **Digipeated by SHEPRD, KF6RAL-1** (all distinct digipeaters heard), or
+- **Heard via RS0ISS** for a satellite digipeater,
+- **No digipeat heard** (amber) if nothing came back within
+  *Configure → KISS / APRS → Digipeat wait* (default 30 s). A later echo
+  (up to 10 min) still upgrades it.
+
+An echo whose path has no used hop (e.g. your own packet heard direct from a
+second receiver) is not a digipeat. Echoes never create a station in Recent
+Stations or on the map; in the Messages window they are listed under the TX
+row (click the green ✓ badge). The small APRS window shows the state of the
+last send right under *Send position*, live, in UTC or local time per the
+time toggle: amber `Sent 17:05:45 MT — waiting for digipeat…`, then green
+`✓ Digipeated by KU5R-6 · 17:05:54 MT` (all digipeaters if several; `✓ Heard
+via RS0ISS` for a satellite) or `Sent … — no digipeat heard (30 s)`, plus
+**Digipeats: N** (click to open the log).
+
+Each digipeated echo is appended to `~/.rpitrack/aprs/digipeats.jsonl` (one
+JSON object per line, kept across restarts): UTC `time`, `src`, `dst`, `path`
+as sent, `digis` (H-bit calls), `viaSat`, `sat` name / `satEl` /
+`satAboveHorizon`, `conn` (connection heard on), `txConn`, `lat`/`lon`,
+`info` and the `raw` echo. The Messages window **Digipeats** button lists it
+newest first (satellite digipeats highlighted, times follow the UTC/local
+toggle) and **Export CSV** downloads it (`/api/aprs/digipeats.csv`).
+
+## Third-party packets
+
+Packets with data type `}` (APRS 1.01 ch. 17, traffic gated from APRS-IS to
+RF by an iGate) are decoded recursively: the encapsulated
+`SRC>DEST,PATH:info` is parsed and classified by its own type. For
+
+```
+KU5R-6>APMI06,WIDE2-1:}OTA>APZ100,TCPIP,KU5R-6*::K7ETC-7 :DE K6BOY-5 QSL Thx for the chase! 73{6278
+```
+
+the row reads `OTA → K7ETC-7: DE K6BOY-5 QSL Thx for the chase! 73 (via
+iGate KU5R-6)` (a message, id 6278). The station is the inner source (OTA),
+not the iGate, and it is plotted only if the inner packet carries a
+position. The same inner packet gated by several iGates (and with a
+different inner destination, e.g. APZ100 vs APRS) is one ×N group; expanding
+it lists each iGate, inner header, path and connection. Message addressees
+shorter than the standard 9-character field (as some gateways send) are
+accepted.
+
+## Duplicate copies
+
+A packet is often heard several times: direct, via one or more digipeaters
+and on more than one connection. Copies with the same source and info within
+*Duplicate window* (default 30 s, like Graywolf's dedupe) are one row with
+the first-heard time and a **×N** badge; click it to see each copy's time,
+path (`direct` or `via SHEPRD*,WIDE2*`) and connection (with Raw on, the raw
+line of each). Filter counts count rows, and the map / Recent Stations update
+once per group. Identical frames (same path too) heard on two connections
+within 5 s are merged before this, into one copy tagged with both names.
+
 ## Testing without a TNC
 
 ```
 node tools/kiss-sim.js --port 6700 --echo --rx-log /tmp/kiss-rx.jsonl
+node tools/kiss-sim.js --port 8001,8002,8003 --echo   # several channels / TNCs
 ```
+
+With several ports, samples go round-robin to one port each and every 4th
+goes to all ports (to exercise de-duplication; `--all` sends every sample
+everywhere). Frames sent by the tracker are logged with the TCP port they
+arrived on and echoed back on that port only.
 
 Replays sample ISS traffic plus real 144.390 packets (Mic-E, PHG digi,
 weather, item, telemetry), prints and logs every frame the tracker sends,
-and with `--echo` returns it as digipeated by RS0ISS.
+and with `--echo` returns it as digipeated by RS0ISS. `--echo-digi
+SHEPRD,KF6RAL-1` instead returns one copy per listed terrestrial digipeater;
+`--dupes` re-sends each sample direct and via SHEPRD* shortly after (×N rows).
 
 ## Credits
 
@@ -159,4 +283,7 @@ and with `--echo` returns it as digipeated by RS0ISS.
 - Mic-E device codes: https://github.com/aprsorg/aprs-deviceid
   (`tocalls.yaml`, CC BY-SA 2.0), the continuation of the aprs.org
   mic-e-types list; generated into `lib/aprs/mice-devices.js`.
+- Satellite digipeater speeds: AMSAT "Digipeater Satellites"
+  (https://www.amsat.org/live-digipeater-satellites/, updated 2026-10-18),
+  cross-checked with SatNOGS DB.
 - Send model after UISS by Guy Roels, ON6MU (https://qsl.net/on6mu/uiss.htm).

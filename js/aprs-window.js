@@ -47,6 +47,45 @@
   let w = null;
   let win = null;
   let unread = 0;
+  /** Expanded duplicate groups (first packet id); not persisted. */
+  const expanded = new Set();
+  /** Search text (lower case); session only. */
+  let query = "";
+  /** Everything a search can match in one packet. */
+  function hay(p) {
+    const tp = p.thirdParty || {};
+    return [p.src, p.dst, p.gateway, tp.src, tp.dst, (tp.path || []).join(","), p.to, p.msgText, p.text, p.decoded, p.comment, p.device, (p.via || []).join(","), A() && A().pathText ? A().pathText(p) : "", p.tnc2, p.innerTnc2, connsOf(p).join(" "), p.digi && p.digi.by ? p.digi.by.join(",") : "", (p.echoDigis || []).join(",")]
+      .filter((x) => x != null && x !== "")
+      .join("\n")
+      .toLowerCase();
+  }
+  function groupMatches(g) {
+    return !query || g.copies.concat(g.echoes || []).some((p) => hay(p).includes(query));
+  }
+  /** Wrap search matches in <mark> (text nodes only). */
+  function highlight(root) {
+    if (!query || !document.createTreeWalker) return;
+    const tw = document.createTreeWalker(root, 4 /* NodeFilter.SHOW_TEXT */);
+    const nodes = [];
+    while (tw.nextNode()) if (tw.currentNode.nodeValue.toLowerCase().includes(query)) nodes.push(tw.currentNode);
+    nodes.forEach((n) => {
+      const v = n.nodeValue;
+      const lv = v.toLowerCase();
+      const frag = document.createDocumentFragment();
+      let i = 0;
+      let j;
+      while ((j = lv.indexOf(query, i)) >= 0) {
+        if (j > i) frag.appendChild(document.createTextNode(v.slice(i, j)));
+        const m = document.createElement("mark");
+        m.className = "aprs-qhl";
+        m.textContent = v.slice(j, j + query.length);
+        frag.appendChild(m);
+        i = j + query.length;
+      }
+      if (i < v.length) frag.appendChild(document.createTextNode(v.slice(i)));
+      n.parentNode.replaceChild(frag, n);
+    });
+  }
   const esc = (s) =>
     String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   const A = () => window.APRS || null;
@@ -89,11 +128,19 @@
       if (typeof w.st.filters[k] !== "boolean") w.st.filters[k] = true;
     });
     w.st.raw = w.st.raw === true;
+    w.st.view = w.st.view === "digipeats" ? "digipeats" : "traffic";
     w.body.innerHTML =
+      '<div class="aprs-win-search" role="search">' +
+      '<input type="search" id="aprs-win-q" placeholder="Search call, text, path, device, raw…" spellcheck="false" autocomplete="off" aria-label="Search packets" title="Live filter (case-insensitive): call/SSID, third-party source/addressee, decoded text/comment, device, digipeater path, raw line. Esc clears." />' +
+      '<button type="button" id="aprs-win-q-x" class="aprs-win-q-x" title="Clear search (Esc)" aria-label="Clear search" hidden>×</button>' +
+      '<span class="aprs-win-q-n" id="aprs-win-q-n" aria-live="polite"></span>' +
+      "</div>" +
       '<div class="aprs-win-filters" id="aprs-win-filters" role="group" aria-label="Show packet types">' +
       CATS.map(([k, v, tip]) => '<button type="button" class="aprs-chip c-' + k + '" data-cat="' + k + '" aria-pressed="true" title="' + esc(tip) + '">' + esc(v) + '<span class="aprs-chip-n" data-n="' + k + '"></span></button>').join("") +
       '<span class="aprs-filt-sp"></span>' +
       '<button type="button" class="aprs-chip aprs-raw" id="aprs-win-raw" aria-pressed="false" title="Also show the raw packet (CALL&gt;DEST,PATH:info)">Raw</button>' +
+      '<button type="button" class="aprs-chip aprs-digi-view" id="aprs-win-digi" aria-pressed="false" title="Your packets heard back through a digipeater / satellite (kept across restarts)">Digipeats<span class="aprs-chip-n" id="aprs-win-digi-n"></span></button>' +
+      '<a class="aprs-chip aprs-digi-csv" id="aprs-win-digi-csv" href="/api/aprs/digipeats.csv" download hidden title="Download the whole digipeat log as CSV">Export CSV</a>' +
       '<span class="aprs-win-zone" id="aprs-win-zone"></span>' +
       "</div>" +
       '<div class="aprs-win-list" id="aprs-win-list" aria-live="polite"></div>' +
@@ -109,6 +156,7 @@
       '<div class="aprs-win-row"><input type="text" id="aprs-msg-text" aria-label="Text" />' +
       '<span class="aprs-count" id="aprs-msg-count"></span>' +
       '<button type="submit" id="aprs-msg-send">Send</button></div>' +
+      '<div class="aprs-route" id="aprs-msg-route" aria-live="polite" title="KISS connection this send uses"></div>' +
       '<div class="aprs-win-why" id="aprs-win-why" aria-live="polite"></div>' +
       "</form>";
     win.querySelectorAll("[data-cat]").forEach((b) =>
@@ -121,6 +169,37 @@
         renderList();
       }),
     );
+    // free-text search: live (debounced), not persisted
+    const qEl = $("aprs-win-q");
+    let qTimer = null;
+    const setQuery = (v) => {
+      query = String(v || "").trim().toLowerCase();
+      $("aprs-win-q-x").hidden = !qEl.value;
+      renderList();
+    };
+    qEl.addEventListener("input", () => {
+      clearTimeout(qTimer);
+      qTimer = setTimeout(() => setQuery(qEl.value), 150);
+    });
+    qEl.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        qEl.value = "";
+        clearTimeout(qTimer);
+        setQuery("");
+      }
+    });
+    $("aprs-win-q-x").addEventListener("click", () => {
+      qEl.value = "";
+      setQuery("");
+      qEl.focus();
+    });
+    $("aprs-win-digi").addEventListener("click", () => {
+      w.st.view = w.st.view === "digipeats" ? "traffic" : "digipeats";
+      w.save();
+      renderList();
+    });
     $("aprs-win-raw").addEventListener("click", () => {
       w.st.raw = !w.st.raw;
       w.save();
@@ -157,7 +236,15 @@
     const list = $("aprs-win-list");
     list.addEventListener("click", (e) => {
       const r = e.target.closest && e.target.closest("[data-call]");
-      if (r) A() && A().pasteCall(r.getAttribute("data-call"), "for");
+      if (r) return A() && A().pasteCall(r.getAttribute("data-call"), "for");
+      // click a collapsed group (×N / echo badge or the row): expand / collapse its copies
+      const g = e.target.closest && e.target.closest("[data-grp]");
+      if (g && !(e.target.closest && e.target.closest("a, input, button:not([data-grp])"))) {
+        const id = Number(g.getAttribute("data-grp"));
+        if (expanded.has(id)) expanded.delete(id);
+        else expanded.add(id);
+        renderList();
+      }
     });
     list.addEventListener("contextmenu", (e) => {
       const r = e.target.closest && e.target.closest("[data-call]");
@@ -225,26 +312,88 @@
     if (p.type === "message") return "→ " + (p.to || "") + ": " + (p.msgText || "");
     return p.text || "";
   }
-  function row(p) {
+  /** Distinct iGates that gated a third-party group. */
+  function gateways(g) {
+    const out = [];
+    (g.copies || [g.first]).forEach((c) => c.gateway && !out.includes(c.gateway) && out.push(c.gateway));
+    return out;
+  }
+  function connsOf(p) {
+    return Array.isArray(p.conns) && p.conns.length ? p.conns : p.conn ? [p.conn] : [];
+  }
+  function rawLine(p) {
+    const via = (p.via || []).join(",");
+    const c = connsOf(p);
+    return '<div class="aprs-r-raw">' + (c.length ? '<span class="aprs-r-conn">[' + esc(c.join(" + ")) + "]</span> " : "") + esc(p.tnc2 || p.src + ">" + p.dst + (via ? "," + via : "") + ":") + "</div>";
+  }
+  /** One copy / echo inside an expanded group: time, path (used hops *), connection. */
+  function copyRow(p, label) {
+    const c = connsOf(p);
+    return (
+      '<div class="aprs-cp">' +
+      '<span class="aprs-m-t">' + esc(bare(p.time)) + "</span>" +
+      (label ? '<span class="aprs-cp-l">' + esc(label) + "</span>" : "") +
+      (p.gateway ? '<span class="aprs-cp-l">iGate <b>' + esc(p.gateway) + "</b>" + (p.thirdParty ? " · inner " + esc(p.thirdParty.src + ">" + p.thirdParty.dst + (p.thirdParty.path.length ? "," + p.thirdParty.path.join(",") : "")) : "") + "</span>" : "") +
+      '<span class="aprs-cp-path">' + esc(A() && A().pathText ? A().pathText(p) : (p.via || []).join(",")) + "</span>" +
+      (c.length ? '<span class="aprs-r-conn">[' + esc(c.join(" + ")) + "]</span>" : "") +
+      "</div>" +
+      (w.st.raw ? rawLine(p) : "")
+    );
+  }
+  function row(g) {
+    const p = g.first;
     const tx = p.dir === "tx";
     const cat = catOf(p);
     const txt = decodedText(p, cat);
-    const via = (p.via || []).join(",");
-    const tip = p.tnc2 + (p.device ? "\nDevice: " + p.device : "");
+    const conns = connsOf(p);
+    const n = g.copies.length;
+    const sub = tx ? g.echoes : g.copies;
+    const canExpand = tx ? sub.length > 0 : n > 1;
+    const open = canExpand && expanded.has(g.id);
+    const tip = (conns.length ? "[" + conns.join(" + ") + "] " : "") + p.tnc2 + (p.device ? "\nDevice: " + p.device : "") + (canExpand ? "\nClick to " + (open ? "collapse" : "show each copy") : "");
+    const dt = tx && A() && A().digiText ? A().digiText(p.digi) : null;
     return (
-      '<div class="aprs-r ' + (tx ? "sent" : "recv") + " c-" + cat + (p.ownEcho ? " echo" : "") + '" title="' + esc(tip) + '">' +
+      '<div class="aprs-r ' + (tx ? "sent" : "recv") + " c-" + cat + (p.ownEcho ? " echo" : "") + (canExpand ? " grp" : "") + (open ? " open" : "") + '"' + (canExpand ? ' data-grp="' + g.id + '"' : "") + ' title="' + esc(tip) + '">' +
       '<div class="aprs-r-main">' +
       '<span class="aprs-m-t">' + esc(bare(p.time)) + "</span>" +
-      '<span class="aprs-r-dir">' + (tx ? "TX" : "RX") + "</span>" +
+      '<span class="aprs-r-dir">' + (tx ? "TX" : p.ownEcho ? "ECHO" : "RX") + "</span>" +
       symHtml(p) +
       callSpan(p.src, "aprs-m-from") +
       '<span class="aprs-badge c-' + cat + '" title="' + esc(p.type) + '">' + LABEL[cat] + "</span>" +
+      (!tx && n > 1 ? '<button type="button" class="aprs-dup" data-grp="' + g.id + '" title="' + n + " copies within " + dupeS() + ' s (different paths / connections). Click to ' + (open ? "collapse" : "expand") + '">×' + n + "</button>" : "") +
       (p.viaSat ? '<span class="aprs-badge-sat" title="Digipeated by ' + esc(p.viaSat) + '">' + esc(p.viaSat) + "</span>" : "") +
-      (p.ownEcho ? '<span class="aprs-m-ok" title="Your packet was heard back">✓ digipeated</span>' : "") +
+      (dt ? '<span class="aprs-digi ' + dt.cls + '"' + (sub.length ? ' data-grp="' + g.id + '"' : "") + ' title="' + esc(dt.text + (sub.length ? " · " + sub.length + " echo" + (sub.length > 1 ? "es" : "") + " heard, click to " + (open ? "hide" : "show") : "")) + '">' + (dt.cls === "ok" ? "✓ " : dt.cls === "none" ? "⚠ " : "… ") + esc(dt.text) + (sub.length ? " ×" + sub.length : "") + "</span>" : "") +
+      (p.ownEcho && !tx ? '<span class="aprs-m-ok" title="Your packet was heard back">' + (p.echoDigis && p.echoDigis.length ? "✓ via " + esc(p.echoDigis.join(",")) : "own packet") + "</span>" : "") +
       '<span class="aprs-r-text">' + (txt ? esc(txt) : '<i class="aprs-m-hdr">(header only)</i>') + "</span>" +
+      (p.gateway ? '<span class="aprs-r-igate" title="Third-party packet gated to RF by ' + esc(gateways(g).join(", ")) + (p.innerTnc2 ? "\n" + esc(p.innerTnc2) : "") + '">(via iGate ' + esc(gateways(g).join(", ")) + ")</span>" : "") +
       (p.device ? '<span class="aprs-r-dev">' + esc(p.device) + "</span>" : "") +
       "</div>" +
-      (w.st.raw ? '<div class="aprs-r-raw">' + esc(p.tnc2 || p.src + ">" + p.dst + (via ? "," + via : "") + ":") + "</div>" : "") +
+      (open
+        ? '<div class="aprs-cps">' + sub.map((c, k) => copyRow(c, tx ? "echo " + (c.echoDigis && c.echoDigis.length ? "via " + c.echoDigis.join(",") : "") : "copy " + (k + 1))).join("") + "</div>"
+        : w.st.raw
+          ? rawLine(p)
+          : "") +
+      "</div>"
+    );
+  }
+  function dupeS() {
+    const c = A() && A().cfg;
+    return (c && c.dupeWindowS) || 30;
+  }
+  function digiRow(e) {
+    const t = Date.parse(e.time);
+    const by = (e.digis || []).join(", ");
+    return (
+      '<div class="aprs-dg' + (e.viaSat ? " sat" : "") + '" title="' + esc(e.raw) + '">' +
+      '<div class="aprs-r-main">' +
+      '<span class="aprs-m-t">' + esc(A() && A().fmtTimeShort ? bare(t) : e.time) + "</span>" +
+      (e.viaSat ? '<span class="aprs-badge-sat">SAT</span>' : '<span class="aprs-badge c-message">DIGI</span>') +
+      '<span class="aprs-dg-by">' + (e.viaSat ? "Heard via " : "Digipeated by ") + "<b>" + esc(by) + "</b></span>" +
+      (e.sat && e.viaSat ? '<span class="aprs-dg-sat">' + esc(e.sat) + (e.satEl != null ? " el " + e.satEl + "°" : "") + (e.satAboveHorizon === false ? " (below horizon)" : "") + "</span>" : "") +
+      '<span class="aprs-r-conn">[' + esc(e.conn || "?") + "]</span>" +
+      "</div>" +
+      '<div class="aprs-dg-tx">' + esc(e.src + ">" + e.dst + (e.path ? "," + e.path : "") + ":" + e.info) + "</div>" +
+      (w.st.raw ? '<div class="aprs-r-raw">' + esc(e.raw) + "</div>" : "") +
       "</div>"
     );
   }
@@ -252,26 +401,53 @@
     if (!win) return;
     const list = $("aprs-win-list");
     const pk = (A() && A().packets) || [];
+    const groups = A() && A().groupPackets ? A().groupPackets(pk, dupeS()) : pk.map((p) => ({ id: p.id, first: p, last: p, copies: [p], echoes: [] }));
+    const digi = w.st.view === "digipeats";
     const n = {};
-    pk.forEach((p) => {
-      const c = catOf(p);
+    groups.forEach((g) => {
+      const c = catOf(g.first);
       n[c] = (n[c] || 0) + 1;
     });
     win.querySelectorAll("[data-cat]").forEach((b) => {
       const on = !!w.st.filters[b.dataset.cat];
       b.classList.toggle("active", on);
       b.setAttribute("aria-pressed", on ? "true" : "false");
+      b.hidden = digi;
     });
     win.querySelectorAll("[data-n]").forEach((e) => (e.textContent = n[e.dataset.n] ? " " + n[e.dataset.n] : ""));
     const raw = $("aprs-win-raw");
     raw.classList.toggle("active", w.st.raw);
     raw.setAttribute("aria-pressed", w.st.raw ? "true" : "false");
+    const db = $("aprs-win-digi");
+    db.classList.toggle("active", digi);
+    db.setAttribute("aria-pressed", digi ? "true" : "false");
+    const dc = (A() && A().digipeatCount) || 0;
+    $("aprs-win-digi-n").textContent = dc ? " " + dc : "";
+    $("aprs-win-digi-csv").hidden = !digi;
     $("aprs-win-zone").textContent = A() && A().zoneLabel ? A().zoneLabel() : "UTC";
-    const rows = pk.filter((p) => w.st.filters[catOf(p)]).slice(0, 300);
     const keep = list.scrollTop;
-    list.innerHTML = rows.length
-      ? rows.map(row).join("")
-      : '<div class="aprs-empty">' + (pk.length ? "Nothing matches the selected types (" + pk.length + " hidden)." : "No packets yet.") + "</div>";
+    const qn = $("aprs-win-q-n");
+    if (digi) {
+      const all = (A() && A().digipeats) || [];
+      const d = query ? all.filter((e) => JSON.stringify(e).toLowerCase().includes(query)) : all;
+      qn.textContent = query ? d.length + " of " + all.length : "";
+      list.innerHTML = d.length
+        ? d.slice(0, 300).map(digiRow).join("")
+        : query && all.length
+          ? '<div class="aprs-empty">No digipeats match “' + esc(query) + "”.</div>"
+          : '<div class="aprs-empty">No digipeats yet. When one of your packets is heard back through a digipeater or satellite it is listed here (and kept in ~/.rpitrack/aprs/digipeats.jsonl).</div>';
+    } else {
+      const byType = groups.filter((g) => w.st.filters[catOf(g.first)]);
+      const matched = byType.filter(groupMatches);
+      qn.textContent = query ? matched.length + " of " + byType.length : "";
+      const rows = matched.slice(0, 300);
+      list.innerHTML = rows.length
+        ? rows.map(row).join("")
+        : '<div class="aprs-empty">' +
+          (query && byType.length ? "No packets match “" + esc(query) + "”." : groups.length ? "Nothing matches the selected types (" + groups.length + " hidden)." : "No packets yet.") +
+          "</div>";
+    }
+    highlight(list);
     list.scrollTop = keep > 4 ? keep : 0;
   }
   function syncCount() {
@@ -319,7 +495,11 @@
         why.dataset.result = "";
         // Same rule as the server (lib/aprs/service.js isSatPath): a known satellite digipeater hop.
         const viaSat = !!(A().viaIsSat && A().viaIsSat(viaEl.value));
-        const g = viaSat ? s.gateMessage : s.gateMessageDirect;
+        const g = viaSat ? s.gateMessageSat || s.gateMessage : s.gateMessageDirect;
+        const route = A().routeFor ? A().routeFor(viaEl.value) : null;
+        const rt = $("aprs-msg-route");
+        rt.innerHTML = A().routeHtml ? A().routeHtml(route) : "";
+        rt.classList.toggle("blocked", !!(route && (!route.ok || !route.connected)));
         const hint = g && g.ok && viaSat && g.hints && g.hints[0] ? g.hints[0] : "";
         why.textContent = g && !g.ok ? g.reasons[0] : hint;
         why.title = g ? g.reasons.concat(viaSat ? g.hints || [] : []).join("\n") : "";
@@ -342,6 +522,11 @@
   }
   function open(o) {
     if (!win && !build()) return;
+    if (o && o.view) {
+      w.st.view = o.view === "digipeats" ? "digipeats" : "traffic";
+      w.save();
+      renderList();
+    }
     if (o && o.for) {
       setMode("message");
       if (A()) A().setHdr({ for: o.for }, "open");
@@ -366,13 +551,17 @@
       a.on("aprs-packets", () => renderList());
       a.on("aprs-packet", (m) => {
         const p = m.packet;
-        if (p && p.dir === "rx" && catOf(p) === "message" && (!w.st.open || w.st.min)) unread++;
+        if (p && p.dir === "rx" && catOf(p) === "message" && p.dupOf == null && !p.ownEcho && (!w.st.open || w.st.min)) unread++;
         renderList();
         sync();
       });
       a.on("aprs-status", sync);
       a.on("hdr", syncHdr);
       a.on("aprs-send-result", onResult);
+      a.on("aprs-packet-dup", renderList);
+      a.on("aprs-tx-update", renderList);
+      a.on("aprs-digipeats", renderList);
+      a.on("aprs-digipeat", renderList);
       a.on("time-mode", renderList);
       renderList();
       sync();

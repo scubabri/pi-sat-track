@@ -76,11 +76,13 @@ test("config defaults: SSID none, path ARISS, Graywolf port 6700, TX off, disabl
   const c = normalizeConfig(null);
   assert.strictEqual(c.ssid, "");
   assert.strictEqual(c.path, "ARISS");
-  assert.strictEqual(c.port, 6700);
+  assert.strictEqual(c.connections.length, 1);
+  assert.strictEqual(c.connections[0].port, 6700);
   assert.strictEqual(c.enabled, false);
   assert.strictEqual(c.txEnabled, false);
-  assert.strictEqual(c.host, "");
-  assert.strictEqual(normalizeConfig({ preset: "direwolf" }).port, 8001);
+  assert.strictEqual(c.connections[0].host, "");
+  assert.strictEqual(normalizeConfig({ preset: "direwolf" }).connections[0].port, 8001);
+  assert.strictEqual(normalizeConfig({ connections: [{ preset: "direwolf" }] }).connections[0].port, 8001);
   assert.strictEqual(normalizeConfig({ ssid: "-7" }).ssid, "7");
   assert.strictEqual(normalizeConfig({ ssid: "0" }).ssid, "");
   assert.strictEqual(normalizeConfig({ ssid: "22" }).ssid, "");
@@ -271,16 +273,18 @@ test("optional SSID is used when set", async () => {
 test("config: default To CQ (UISS), Connection TCP / Bluetooth (old 'serial' maps to Bluetooth)", () => {
   const d = normalizeConfig(null);
   assert.strictEqual(d.defaultTo, "CQ");
-  assert.strictEqual(d.transport, "tcp");
+  const row = (r) => normalizeConfig(r).connections[0];
+  assert.strictEqual(row(null).transport, "tcp");
   assert.strictEqual(normalizeConfig({ defaultTo: "aprsat" }).defaultTo, "APRSAT");
   assert.strictEqual(normalizeConfig({ defaultTo: "not a call" }).defaultTo, "CQ");
-  assert.strictEqual(normalizeConfig({ transport: "serial" }).transport, "bluetooth");
-  assert.strictEqual(normalizeConfig({ transport: "bluetooth" }).transport, "bluetooth");
-  assert.strictEqual(normalizeConfig({ transport: "bogus" }).transport, "tcp");
-  assert.strictEqual(normalizeConfig({ transport: "bluetooth" }).serialDevice, "/dev/rfcomm0");
+  assert.strictEqual(row({ transport: "serial" }).transport, "bluetooth");
+  assert.strictEqual(row({ transport: "bluetooth" }).transport, "bluetooth");
+  assert.strictEqual(row({ transport: "bogus" }).transport, "tcp");
+  assert.strictEqual(row({ connections: [{ transport: "serial" }] }).transport, "bluetooth");
+  assert.strictEqual(row({ transport: "bluetooth" }).serialDevice, "/dev/rfcomm0");
   const { createTransport } = require("../lib/kiss/client");
   for (const t of ["bluetooth", "serial"]) {
-    const tr = createTransport(normalizeConfig({ transport: t }));
+    const tr = createTransport(row({ transport: t }));
     assert.match(tr.describe(), /rfcomm0/);
   }
 });

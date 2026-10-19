@@ -975,57 +975,23 @@
                 </label>
                 <p class="form-hint">Only connects (and reconnects) while this is on. Turning it off closes the connection.</p>
               </div>
+              <div class="kiss-conns" id="cfg-kiss-conns" aria-label="KISS connections"></div>
+              <div class="kiss-conns-foot">
+                <button type="button" class="btn-test" id="cfg-kiss-add">+ Add connection</button>
+                <span class="form-hint">One row per TNC channel: Graywolf binds one channel per KISS TCP port; 9600 G3RUH needs Direwolf (MODEM 9600).</span>
+              </div>
+              <p class="kiss-test-tip" id="cfg-kiss-test-tip" role="status" hidden></p>
               <div class="form-row-2">
                 <div>
-                  <label for="cfg-kiss-preset">Software / TNC</label>
-                  <select id="cfg-kiss-preset" class="cfg-select">
-                    <option value="graywolf">Graywolf (KISS TCP 6700)</option>
-                    <option value="direwolf">Direwolf (KISS TCP 8001)</option>
-                    <option value="custom">Custom</option>
-                  </select>
-                </div>
-                <div>
-                  <label for="cfg-kiss-transport">Connection</label>
-                  <select id="cfg-kiss-transport" class="cfg-select">
-                    <option value="tcp">TCP</option>
-                    <option value="bluetooth">Bluetooth</option>
-                  </select>
-                </div>
-              </div>
-              <div class="form-row-2" id="cfg-kiss-tcp-row">
-                <div>
-                  <label for="cfg-kiss-host">Host</label>
-                  <input type="text" id="cfg-kiss-host" placeholder="localhost (or remote IP / hostname)" autocomplete="off" spellcheck="false" />
-                </div>
-                <div>
-                  <label for="cfg-kiss-port">Port</label>
-                  <input type="number" id="cfg-kiss-port" placeholder="6700" min="1" max="65535" step="1" />
-                </div>
-              </div>
-              <div class="form-row-2" id="cfg-kiss-serial-row" hidden>
-                <div>
-                  <label for="cfg-kiss-serial-device">Device</label>
-                  <input type="text" id="cfg-kiss-serial-device" placeholder="/dev/rfcomm0" autocomplete="off" spellcheck="false" />
-                </div>
-                <div>
-                  <label for="cfg-kiss-serial-baud">Baud</label>
-                  <input type="number" id="cfg-kiss-serial-baud" placeholder="9600" min="1200" step="1" />
-                </div>
-              </div>
-              <p class="form-hint" id="cfg-kiss-bt-hint" hidden>Pair the TNC first and bind it with rfcomm, e.g. <code>sudo rfcomm bind 0 &lt;TNC MAC&gt;</code> &rarr; <code>/dev/rfcomm0</code> (Bluetooth Classic / SPP).</p>
-              <div class="form-row-2">
-                <div>
-                  <label for="cfg-kiss-kissport">KISS port (channel)</label>
-                  <input type="number" id="cfg-kiss-kissport" placeholder="0" min="0" max="15" step="1" />
+                  <label for="cfg-kiss-default-tx">Default TX connection</label>
+                  <select id="cfg-kiss-default-tx" class="cfg-select" title="Used with no satellite selected or a terrestrial Via (WIDEn-N / direct)"></select>
                 </div>
                 <div>
                   <label for="cfg-kiss-expire">Keep heard stations (min)</label>
                   <input type="number" id="cfg-kiss-expire" placeholder="60" min="5" max="1440" step="1" />
                 </div>
               </div>
-              <button type="button" class="btn-test" id="btn-test-kiss">Test connection</button>
-              <p class="form-hint" id="cfg-kiss-test-result" aria-live="polite"></p>
-              <p class="kiss-test-tip" id="cfg-kiss-test-tip" role="status" hidden></p>
+              <p class="form-hint">Satellite sends go out on a TX-capable connection whose speed matches the satellite (Per-satellite speed under Transmit); with no satellite, on the Default TX connection.</p>
               <p class="form-hint" id="cfg-kiss-status" aria-live="polite">KISS: off</p>
               <details class="rigctld-help" id="cfg-kiss-help">
                 <summary>Graywolf / Direwolf setup</summary>
@@ -1035,10 +1001,13 @@
                   <b>Mode = Modem</b> (Graywolf's modem keys the radio). Leave "Allow digipeater/beacon/iGate
                   to transmit" alone (TNC mode only). Turn off Graywolf beacons / digipeater rules for the
                   satellite channel. Graywolf drops a repeat of the same packet within 30 s.
-                  Enter Graywolf's IP above, port 6700.
+                  Graywolf binds <b>one channel per KISS TCP port</b> (e.g. 8001 = FLEX ch1 with TX,
+                  8002 = VHF Dax 3 RX only): add one row per port. Graywolf only has 1200 AFSK / PSK modems.
                 </p>
                 <p class="form-hint">
-                  <b>Direwolf</b>: KISS TCP is on port 8001 by default (<code>KISSPORT 8001</code>).
+                  <b>Direwolf</b> for 9600 G3RUH sats: <code>MODEM 9600</code> on the 9600 channel and e.g.
+                  <code>KISSPORT 8003</code>; add a row with Speed 9600 G3RUH (see docs/APRS.md).
+                  KISS port (Advanced) is only for multi-channel Direwolf / multi-port TNCs.
                   <b>Bluetooth TNC</b> (Mobilinkd, TH-D74/D75): pair once with <code>bluetoothctl</code>,
                   then <code>sudo rfcomm bind 0 &lt;MAC&gt;</code> and pick Serial, <code>/dev/rfcomm0</code>.
                 </p>
@@ -1130,6 +1099,11 @@
                 <textarea id="cfg-kiss-satpaths" rows="3" spellcheck="false" placeholder="ISS=ARISS&#10;SONATE-2=DP0SNX&#10;NO-44=W3ADO-1"></textarea>
               </div>
               <div class="form-row">
+                <label for="cfg-kiss-satspeeds">Per-satellite speed (one per line: SAT=1200 or SAT=9600)</label>
+                <textarea id="cfg-kiss-satspeeds" rows="2" spellcheck="false" placeholder="CROCUBE=9600&#10;ISS=1200"></textarea>
+                <p class="form-hint" id="cfg-kiss-satspeeds-hint">Empty = from the AMSAT digipeater list (ISS, IO-86, NO-44, SONATE-2 = 1200; CroCube, GRBBeta, KNACKSAT-2, KOSTKA, LASARsat, Marina = 9600), else the selected mode (9k6 / G3RUH = 9600), else 1200.</p>
+              </div>
+              <div class="form-row">
                 <label class="cfg-check-label" for="cfg-kiss-req-radio">
                   <input type="checkbox" id="cfg-kiss-req-radio" checked />
                   Only send while Radio is ON (tracker is tuning the radio)
@@ -1144,6 +1118,20 @@
                   <label for="cfg-kiss-msg-int">Min seconds between messages</label>
                   <input type="number" id="cfg-kiss-msg-int" placeholder="10" min="5" max="600" step="1" />
                 </div>
+              </div>
+              <div class="form-row-2">
+                <div>
+                  <label for="cfg-kiss-digi-timeout">Digipeat wait (s)</label>
+                  <input type="number" id="cfg-kiss-digi-timeout" placeholder="30" min="5" max="600" step="1" title="After this long without hearing your packet repeated, it is marked No digipeat heard" />
+                </div>
+                <div class="form-hint" style="align-self:end">Your packet heard back with a used (*) digipeater = digipeated; logged to ~/.rpitrack/aprs/digipeats.jsonl.</div>
+              </div>
+              <div class="form-row-2">
+                <div>
+                  <label for="cfg-kiss-dupe">Duplicate window (s)</label>
+                  <input type="number" id="cfg-kiss-dupe" placeholder="30" min="1" max="600" step="1" title="Same source + same info within this many seconds is shown as one row with a ×N badge" />
+                </div>
+                <div class="form-hint" style="align-self:end">Copies of one packet (direct and via digipeaters, any connection) collapse into one ×N row; click it to see each path.</div>
               </div>
               <div class="form-row">
                 <label class="cfg-check-label" for="cfg-kiss-log">
