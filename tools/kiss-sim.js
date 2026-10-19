@@ -42,6 +42,16 @@ const SAMPLES = [
   "DL7NDR>JN48AP,RS0ISS*:>QRV via ISS DN40aq",
   "N0SAT>APRS,RS0ISS*:>Thanks for the contact",
   "RS0ISS>0P0PS5,APRSAT:'v&l SI]ARISS-International Space Station=",
+  // Real traffic from a Graywolf on 144.390 (northern Utah). MAVRIK-9's
+  // Mic-E course byte is the control char 0x1c (lost when the log was copied).
+  "MAVRIK-9>EBAYVY,SHEPRD*,WIDE1*,WIDE2-1:`(YTmF\x1cj/`\"C1}W5SAT_1",
+  "VIC>APNX02,SHEPRD*,WIDE1*:>BEACON: N7ELY-2  Info enarsclub@gmail.com ENARS",
+  "K7TX-10>APDW17,KF6RAL-1*,SHEPRD*,WIDE2*:!4025.41NS11150.07W#PHG2160 APRS Digi & iGate",
+  "HRSHDE>APOT30,KF6RAL-1*,SHEPRD*,WIDE2*:!3920.05N/11127.01W# 13.3V 44F SANPETE SAR KB7K",
+  // Weather / item / telemetry so every traffic-window filter has something
+  "KE7WX>APRS,WIDE2-1:!4045.20N/11152.80W_220/004g005t048r000p000P000h50b10132Salt Lake WX",
+  "N7AID>APRS,WIDE2-1:)AID #2!4046.00N/11150.00WA First aid station",
+  "N7TLM-11>APRS,WIDE2-1:T#005,199,000,255,073,123,01101001",
 ];
 
 /** "SRC>DST,DIGI*,..:info" -> AX.25 frame (H bit set on digis up to the last '*'). */

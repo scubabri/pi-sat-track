@@ -12,7 +12,9 @@ Configure → **KISS / APRS**:
 - **Connect to a KISS TNC**: the client only connects (and reconnects) while
   this is on. Turning it off closes the socket.
 - **Software / TNC**: Graywolf (KISS TCP 6700), Direwolf (KISS TCP 8001) or
-  Custom.
+  Custom. Choosing one fills the port only when the port is empty or still
+  another preset's default, so a port you typed (e.g. Graywolf channel 2 on
+  8002) is kept.
 - **Connection**:
   - **TCP**: **Host** may be this machine (empty = localhost) or a remote
     host, plus **Port**.
@@ -23,7 +25,10 @@ Configure → **KISS / APRS**:
     old `serial` value load as Bluetooth.
 - **Test connection**: opens one TCP connection to the host/port in the form
   (unsaved values, also while disabled), waits up to 5 s, reports any KISS
-  frames seen within 3 s, then closes. It never sends anything.
+  frames seen within 3 s, then closes. It never sends anything. If it works
+  while Connect is off, it says so: tick **Connect to a KISS TNC** and
+  **Save** to stay connected. While KISS is off the APRS window shows
+  "KISS off — enable in Configure → KISS / APRS" (click it to open the tab).
 - **SSID**: optional. Empty sends the plain station callsign (SSID 0).
 - **Map symbol**: pick your icon (Car, House, Satellite dish antenna,
   Campground/tent, Jeep, RV, Weather station, …). Common symbols first, the
@@ -93,9 +98,36 @@ it in **To**, **Via** or **For**.
   position, else at a Maidenhead grid in the text (4 or 6 char), else are
   listed only. Your own packets plot at your station. Click a station for its
   recent packets.
-- **Messages window**: sent + received messages / status / text in one list,
-  digipeated-by-RS0ISS flagged, your own packets heard back marked
-  "digipeated". Packets tab: every packet.
+- **Messages window**: all decoded traffic in one list, newest first. Each
+  row: time, RX/TX, symbol, call, a type badge and the decoded text
+  (position + speed/course, altitude, PHG, cleaned comment and device; status
+  text; `→ ADDR: text` for messages; weather values). RS0ISS-digipeated
+  packets are flagged and your own packets heard back are marked
+  "digipeated". Sent items stay in the list.
+  - **Type filters** (all on by default, kept in the browser): Messages (incl.
+    acks, UI text and what you sent), Positions (incl. Mic-E / NMEA),
+    Status/Beacons (status and plain-text beacons), Objects/Items, Weather,
+    Telemetry, Other. Shift-click a chip to show only that type.
+  - **Raw** (off by default) adds the raw `CALL>DEST,PATH:info` line under
+    each row; hovering a row also shows it.
+- **Times** follow the app's UTC | local toggle (same format as the pass
+  times): Messages window rows (the zone is shown next to Raw), the APRS
+  window's recent stations, station popups and the "Sent" lines.
+- **Windows**: drag the title bar to move; drag the left / right / bottom
+  edges or the bottom corners to resize (Messages min 340×260, APRS window
+  min 230×220). The list fills and scrolls in the new size. Position and size
+  are kept in the browser and the window is kept on-screen when the browser
+  window gets smaller.
+- **Mic-E**: the comment is cleaned like APRS 1.01 / mic-e-types: the leading
+  type character (`` ` `` messaging, `'` tracker, Kenwood `>` / `]`), the
+  base-91 altitude `xxx}` and the trailing radio code are removed; the radio
+  model is shown in the popup / row (e.g. `_1` = Yaesu FTM-300D, `|3` =
+  Byonics TinyTrak3, `]=` = Kenwood TM-D710). Packets copied from a log that
+  lost the non-printable speed/course byte still decode (speed/course
+  unknown).
+- Also decoded: PHG (power / height / gain / direction), weather (`_`
+  symbol and positionless `_` reports), items (`)`), telemetry (`T#`,
+  PARM/UNIT/EQNS/BITS).
 - **Log**: every RX/TX packet, one TNC2 line per packet, in
   `~/.rpitrack/aprs/aprs-YYYY-MM-DD.log` (UTC date / time).
 
@@ -108,7 +140,8 @@ grid centre (or exact lat/lon).
 node tools/kiss-sim.js --port 6700 --echo --rx-log /tmp/kiss-rx.jsonl
 ```
 
-Replays sample ISS traffic, prints and logs every frame the tracker sends,
+Replays sample ISS traffic plus real 144.390 packets (Mic-E, PHG digi,
+weather, item, telemetry), prints and logs every frame the tracker sends,
 and with `--echo` returns it as digipeated by RS0ISS.
 
 ## Credits
@@ -120,4 +153,7 @@ and with `--echo` returns it as digipeated by RS0ISS.
   symbols' sources and licences are listed in
   `images/aprs-symbols/COPYRIGHT.md` and `ATTRIBUTION.md`.
 - Symbol names: https://github.com/hessu/aprs-symbol-index (CC BY-SA 4.0).
+- Mic-E device codes: https://github.com/aprsorg/aprs-deviceid
+  (`tocalls.yaml`, CC BY-SA 2.0), the continuation of the aprs.org
+  mic-e-types list; generated into `lib/aprs/mice-devices.js`.
 - Send model after UISS by Guy Roels, ON6MU (https://qsl.net/on6mu/uiss.htm).

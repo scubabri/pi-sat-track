@@ -205,6 +205,36 @@
 
   APRS.__feed = onMessage; // tests / debugging
 
+  /* ---------- times: follow the app's UTC | local toggle (js/pass-ui.js) ---------- */
+  const isUtc = () => (typeof isUtcTimeMode === "function" ? isUtcTimeMode() : (localStorage.getItem("satTrackerTimeMode") || "utc") === "utc");
+  const two = (n) => String(n).padStart(2, "0");
+  /** "21:48:52 UTC" / "15:48:52 MT", same as the AOS/LOS times. */
+  APRS.fmtTime = (t) => {
+    if (typeof formatPassTime === "function" && typeof isUtcTimeMode === "function") return formatPassTime(t);
+    const d = new Date(t);
+    if (isUtc()) return two(d.getUTCHours()) + ":" + two(d.getUTCMinutes()) + ":" + two(d.getUTCSeconds()) + " UTC";
+    return two(d.getHours()) + ":" + two(d.getMinutes()) + ":" + two(d.getSeconds()) + " MT";
+  };
+  /** "21:48 UTC" / "15:48 MT" (chart / popup style). */
+  APRS.fmtTimeShort = (t) => {
+    if (typeof formatClockShort === "function" && typeof isUtcTimeMode === "function") return formatClockShort(t);
+    const d = new Date(t);
+    if (isUtc()) return two(d.getUTCHours()) + ":" + two(d.getUTCMinutes()) + " UTC";
+    return two(d.getHours()) + ":" + two(d.getMinutes()) + " MT";
+  };
+  /** Time without the zone (list rows); zone shown once in the window header. */
+  APRS.fmtClock = (t) => APRS.fmtTime(t).replace(/ (UTC|MT)$/, "");
+  /** Open Configure on the KISS / APRS tab. */
+  APRS.openKissConfig = () => {
+    const panel = document.getElementById("config-panel");
+    const btn = document.getElementById("btn-config");
+    if (panel && !panel.classList.contains("open") && btn) btn.click();
+    const tab = document.querySelector('#config-panel .cfg-tab[data-tab="kiss"]');
+    if (tab) tab.click();
+  };
+  APRS.zoneLabel = () => (isUtc() ? "UTC" : "MT");
+  if (typeof window.addEventListener === "function") window.addEventListener("time-mode-change", () => APRS.emit("time-mode", {}));
+
   /* ---------- symbol picker (Configure → KISS / APRS → Map symbol) ----------
    * Stores the 2-char table+code in the hidden #cfg-kiss-symbol (e.g. "/`").
    * Common symbols first, then the full primary and alternate tables;
@@ -461,6 +491,12 @@
       btn.classList.add(r.ok ? "test-ok" : "test-fail");
       btn.textContent = r.ok ? "Connected ✓" : "Failed ✗";
     }
+    const enabled = !!($("cfg-kiss-enabled") && $("cfg-kiss-enabled").checked);
+    const tip = $("cfg-kiss-test-tip");
+    if (tip) {
+      tip.hidden = !(r.ok && !enabled);
+      tip.textContent = 'Connection works — tick "Connect to a KISS TNC" and Save to stay connected.';
+    }
     if (out) {
       out.textContent = r.ok
         ? "Connected to " + r.target + " in " + r.ms + " ms" +
@@ -476,10 +512,16 @@
     const preset = $("cfg-kiss-preset");
     if (preset) {
       preset.addEventListener("change", () => {
+        // Only fill the port when it is empty or still another preset's default;
+        // never overwrite a port the user typed (e.g. Graywolf channel 2 on 8002).
         const p = PRESET_PORTS[preset.value];
-        if (p) setVal("cfg-kiss-port", p);
+        const cur = String(($("cfg-kiss-port") && $("cfg-kiss-port").value) || "").trim();
+        const isDefault = cur === "" || Object.values(PRESET_PORTS).map(String).includes(cur);
+        if (p && isDefault) setVal("cfg-kiss-port", p);
       });
     }
+    const en = $("cfg-kiss-enabled");
+    if (en) en.addEventListener("change", () => { if ($("cfg-kiss-test-tip") && en.checked) $("cfg-kiss-test-tip").hidden = true; });
     ["cfg-kiss-transport", "cfg-kiss-pos-source"].forEach((id) => {
       const e = $(id);
       if (e) e.addEventListener("change", updateVisibility);
@@ -509,6 +551,7 @@
           tbtn.textContent = "Test connection";
         }
         if ($("cfg-kiss-test-result")) $("cfg-kiss-test-result").textContent = "";
+        if ($("cfg-kiss-test-tip")) $("cfg-kiss-test-tip").hidden = true;
       });
     const save = $("btn-save-config");
     if (save) save.addEventListener("click", () => APRS.send({ type: "aprs-config", aprs: readTab() }));

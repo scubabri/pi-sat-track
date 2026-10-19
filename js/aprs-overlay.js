@@ -35,9 +35,16 @@
     if (s < 3600) return Math.round(s / 60) + " min";
     return (s / 3600).toFixed(1) + " h";
   }
+  /** "HH:MM UTC" / "HH:MM MT": follows the app's UTC | local toggle. */
   function hhmm(t) {
+    const A = APRS();
+    if (A && A.fmtTimeShort) return A.fmtTimeShort(t);
     const d = new Date(t);
-    return String(d.getUTCHours()).padStart(2, "0") + ":" + String(d.getUTCMinutes()).padStart(2, "0") + "Z";
+    return String(d.getUTCHours()).padStart(2, "0") + ":" + String(d.getUTCMinutes()).padStart(2, "0") + " UTC";
+  }
+  /** Same without the zone (dense rows; the zone is shown in the heading). */
+  function hhmmBare(t) {
+    return hhmm(t).replace(/ (UTC|MT)$/, "");
   }
   function ageOpacity(age) {
     const f = Math.min(1, Math.max(0, age / expireMs));
@@ -54,7 +61,7 @@
     const rows = (s.recent || [])
       .map(
         (r) =>
-          '<div class="aprs-pop-row ' + (r.dir === "tx" ? "tx" : "rx") + '"><span class="aprs-pop-t">' + hhmm(r.time) + "</span> " +
+          '<div class="aprs-pop-row ' + (r.dir === "tx" ? "tx" : "rx") + '"><span class="aprs-pop-t">' + hhmmBare(r.time) + "</span> " +
           '<span class="aprs-pop-k">' + esc(r.type) + "</span> " +
           (r.viaSat ? '<span class="aprs-badge-sat">SAT</span> ' : "") + esc(r.text) + "</div>",
       )
@@ -62,9 +69,13 @@
     const pos =
       s.posSource === "grid" ? "grid " + esc(s.grid) + " centre" : s.posSource === "last" ? "last known position" : s.posSource === "self" ? "your station" : s.lat.toFixed(4) + ", " + s.lon.toFixed(4);
     return (
-      '<div class="aprs-pop"><div class="aprs-pop-h"><b>' + esc(s.call) + "</b>" + (s.symbol ? ' <span class="aprs-pop-sym">' + esc(s.symbol) + "</span>" : "") +
+      '<div class="aprs-pop"><div class="aprs-pop-h"><b>' + esc(s.call) + "</b>" +
+      (s.symbol ? ' <span class="aprs-pop-sym" title="APRS symbol ' + esc(s.symbol) + '">' + esc(window.APRS_SYMBOLS && window.APRS_SYMBOLS.parse(s.symbol) ? window.APRS_SYMBOLS.name(s.symbol) : s.symbol) + "</span>" : "") +
       (s.viaSat ? ' <span class="aprs-badge-sat">via sat</span>' : "") + '<span class="aprs-pop-age">' + ago(now - s.lastHeard) + " ago</span></div>" +
-      '<div class="aprs-pop-pos">' + pos + " · " + (s.count || 1) + " pkt</div>" + rows +
+      '<div class="aprs-pop-pos">' + pos + " · " + (s.count || 1) + " pkt · last " + hhmm(s.lastHeard) + "</div>" +
+      (s.device ? '<div class="aprs-pop-dev" title="Radio / tracker, from the Mic-E device code (aprs-deviceid)">' + esc(s.device) + "</div>" : "") +
+      (s.comment ? '<div class="aprs-pop-cmt">' + esc(s.comment) + "</div>" : "") +
+      rows +
       '<div class="aprs-pop-act">' +
       '<a href="#" data-aprs-paste="for" data-call="' + esc(s.call) + '" title="Open Messages with For: ' + esc(s.call) + ' (APRS message)">Message…</a>' +
       '<a href="#" data-aprs-paste="to" data-call="' + esc(s.call) + '" title="Put ' + esc(s.call) + ' in To: (AX.25 destination)">To:</a>' +
@@ -226,6 +237,7 @@
     return (
       '<div class="aprs-st">' +
       '<div class="aprs-box-head"><span class="aprs-kiss-dot" id="aprs-kiss-dot"></span><span class="aprs-kiss-text" id="aprs-kiss-text">KISS off</span></div>' +
+      '<a href="#" role="button" class="aprs-kiss-off" id="aprs-kiss-off" hidden title="Open Configure on the KISS / APRS tab">KISS off — enable in Configure → KISS / APRS</a>' +
       '<div class="aprs-box-btns">' +
       '<a href="#" role="button" class="aprs-heard-btn" id="aprs-heard-btn">APRS Heard</a>' +
       '<a href="#" role="button" class="aprs-msgs-btn" id="aprs-msgs-btn" title="Open the APRS messages / packets window">Messages<span class="aprs-unread" id="aprs-unread" hidden></span></a>' +
@@ -237,7 +249,7 @@
       '<button type="button" class="aprs-send-pos" id="aprs-send-pos">Send position</button>' +
       '<div class="aprs-box-why" id="aprs-box-why" aria-live="polite"></div>' +
       "</div>" +
-      '<div class="aprs-box-sub">Recent stations <span class="aprs-hint" title="Click: show on map. Right-click: put the call in To / Via / For (like UISS MHeard)">ⓘ</span></div>' +
+      '<div class="aprs-box-sub">Recent stations <span class="aprs-zone" id="aprs-hl-zone"></span> <span class="aprs-hint" title="Click: show on map. Right-click: put the call in To / Via / For (like UISS MHeard)">ⓘ</span></div>' +
       '<div class="aprs-box-heard" id="aprs-box-heard"></div>' +
       "</div>"
     );
@@ -261,6 +273,8 @@
       label: "APRS station",
       lsKey: "aprsStationWin",
       width: 250,
+      minW: 230,
+      minH: 220,
       defaultX: (w) => Math.max(8, window.innerWidth - w - 400),
       defaultY: 150,
     });
@@ -272,6 +286,11 @@
       localStorage.setItem(LS_ON, on ? "1" : "0");
       render();
       notify();
+    });
+    box.querySelector("#aprs-kiss-off").addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation(); // config.js closes the panel on any outside click
+      if (APRS() && APRS().openKissConfig) APRS().openKissConfig();
     });
     box.querySelector("#aprs-msgs-btn").addEventListener("click", (e) => {
       e.preventDefault();
@@ -380,6 +399,7 @@
     txt.textContent =
       !st || !st.enabled ? "KISS off" : state === "connected" ? "KISS connected" : state === "waiting" ? "KISS down, retrying" : "KISS " + state;
     txt.title = st && APRS().statusText ? APRS().statusText(st) : "";
+    box.querySelector("#aprs-kiss-off").hidden = !!(st && st.enabled);
     syncHdrFields();
     if (st) {
       const viaEl = box.querySelector("#aprs-box-via");
@@ -404,7 +424,9 @@
     if (!win) return;
     const el = win.el.querySelector("#aprs-box-heard");
     const now = Date.now() + skewMs;
-    const rx = stations.filter((s) => s.posSource !== "self").slice(0, 6);
+    const rx = stations.filter((s) => s.posSource !== "self").slice(0, win.st.h ? 40 : 6);
+    const z = win.el.querySelector("#aprs-hl-zone");
+    if (z) z.textContent = "(" + hhmm(0).replace(/^.* /, "") + ")";
     el.innerHTML = rx.length
       ? rx
           .map(
@@ -412,7 +434,7 @@
               '<div class="aprs-hl" data-call="' + esc(s.call) + '" title="' + esc(tipText(s, now - s.lastHeard)) + '">' +
               '<span class="aprs-hl-call">' + esc(s.call) + "</span>" +
               (s.viaSat ? '<span class="aprs-badge-sat">SAT</span>' : "") +
-              '<span class="aprs-hl-age">' + ago(now - s.lastHeard) + "</span></div>",
+              '<span class="aprs-hl-age" title="Last heard ' + esc(hhmm(s.lastHeard)) + '">' + esc(hhmmBare(s.lastHeard)) + " · " + ago(now - s.lastHeard) + "</span></div>",
           )
           .join("")
       : '<div class="aprs-hl-empty">No stations heard yet</div>';
@@ -462,6 +484,10 @@
         syncBox();
       });
       A.on("aprs-send-result", onSendResult);
+      A.on("time-mode", () => {
+        render();
+        renderHeardList();
+      });
       if (A.heard) apply(A.heard);
       return true;
     };

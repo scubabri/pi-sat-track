@@ -87,3 +87,24 @@ test("successful send remembers To / Via / For; heard call pastes into For / To 
   A.pasteCall("ka0abc", "to");
   assert.strictEqual(A.getTo(), "KA0ABC");
 });
+
+test("APRS times follow the app's UTC | local toggle (isUtcTimeMode)", () => {
+  const { A, ctx } = load();
+  const t = Date.UTC(2026, 9, 19, 21, 48, 52);
+  ctx.isUtcTimeMode = () => true;
+  assert.strictEqual(A.fmtTime(t), "21:48:52 UTC");
+  assert.strictEqual(A.fmtTimeShort(t), "21:48 UTC");
+  assert.strictEqual(A.fmtClock(t), "21:48:52");
+  assert.strictEqual(A.zoneLabel(), "UTC");
+  ctx.isUtcTimeMode = () => false;
+  const d = new Date(t);
+  const two = (n) => String(n).padStart(2, "0");
+  assert.strictEqual(A.fmtTime(t), two(d.getHours()) + ":" + two(d.getMinutes()) + ":" + two(d.getSeconds()) + " MT");
+  assert.strictEqual(A.zoneLabel(), "MT");
+});
+
+test("without pass-ui.js the stored satTrackerTimeMode is used", () => {
+  const { A } = load({ satTrackerTimeMode: "local" });
+  assert.strictEqual(A.zoneLabel(), "MT");
+  assert.strictEqual(load({}).A.zoneLabel(), "UTC");
+});

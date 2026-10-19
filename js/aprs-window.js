@@ -3,11 +3,15 @@
  * state / tab / send type kept in localStorage "aprsWindow"). Opened from the
  * APRS window's Messages button.
  *
- *  - Messages: sent + received messages / status / UI text in one list
- *    (time, from > to, via, text; SENT vs RECEIVED, RS0ISS-digipeated
- *    flagged). Click a callsign: For (reply, like UISS's MHeard double-click);
+ *  - One decoded traffic list, newest first: time (app UTC | local toggle),
+ *    RX/TX, symbol, call, type badge and the decoded text (position +
+ *    cleaned comment, status, "→ ADDR: text", weather...). Sent items too.
+ *  - Type filter chips (Messages, Positions, Status/Beacons, Objects/Items,
+ *    Weather, Telemetry, Other; all on by default) and an opt-in Raw toggle
+ *    that adds the raw CALL>DEST,PATH:info line; kept in localStorage.
+ *  - Click a callsign: For (reply, like UISS's MHeard double-click);
  *    right-click: To / Via / For menu.
- *  - Packets: every packet (position reports first-class), newest first.
+ *  - Resizable (edges / bottom corners); size kept with the position.
  *
  * Send form, modelled on UISS (ON6MU): one header To (AX.25 destination,
  * default CQ) + Via (path), shared with the APRS window, and a send type:
@@ -17,7 +21,28 @@
  */
 (function () {
   const LS = "aprsWindow";
-  const MSG_TYPES = new Set(["message", "ack", "rej", "status", "other", "nmea"]);
+  /** Filter chips, in display order (category ids from lib/aprs/describe.js). */
+  const CATS = [
+    ["message", "Messages", "APRS messages, acks, UI text and what you sent"],
+    ["position", "Positions", "Position reports incl. Mic-E and NMEA"],
+    ["status", "Status/Beacons", "Status reports and plain-text beacons"],
+    ["object", "Objects/Items", "APRS objects and items"],
+    ["weather", "Weather", "Weather reports"],
+    ["telemetry", "Telemetry", "Telemetry (T#, PARM/UNIT/EQNS/BITS)"],
+    ["other", "Other", "Anything else (unknown formats, header-only frames)"],
+  ];
+  const LABEL = { message: "MSG", position: "POS", status: "STATUS", object: "OBJ", weather: "WX", telemetry: "TLM", other: "OTHER" };
+  /** Category for a packet record (server sets p.category; fallback for old ones). */
+  function catOf(p) {
+    if (p.category) return p.category;
+    if (p.dir === "tx" && (p.kind === "text" || p.kind === "header" || p.kind === "message")) return "message";
+    const t = p.type;
+    if (t === "message" || t === "ack" || t === "rej") return "message";
+    if (t === "position" || t === "mic-e" || t === "nmea") return "position";
+    if (t === "object" || t === "item") return "object";
+    if (t === "weather" || t === "telemetry" || t === "status") return t;
+    return p.text ? "status" : "other";
+  }
   const MODES = { text: "UI text", message: "APRS message", header: "Header only" };
   let w = null;
   let win = null;
@@ -26,10 +51,13 @@
     String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   const A = () => window.APRS || null;
   const $ = (id) => win && win.querySelector("#" + id);
+  /** "HH:MM:SS UTC" / "HH:MM:SS MT", following the app's UTC | local toggle. */
   function hhmmss(t) {
+    if (A() && A().fmtTime) return A().fmtTime(t);
     const d = new Date(t);
-    return [d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()].map((n) => String(n).padStart(2, "0")).join(":") + "Z";
+    return [d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()].map((n) => String(n).padStart(2, "0")).join(":") + " UTC";
   }
+  const bare = (t) => hhmmss(t).replace(/ (UTC|MT)$/, "");
   /** UISS max TX-data length (lib/aprs/build.js maxUiText). */
   function maxUiText(n) {
     return n === 0 ? 255 : Math.max(10, 80 - 10 * (n - 1));
@@ -44,18 +72,30 @@
       title: "APRS Messages",
       label: "APRS messages",
       lsKey: LS,
-      width: 440,
+      width: 460,
+      minW: 340,
+      minH: 260,
       defaultX: (wd) => Math.max(8, window.innerWidth - wd - 380),
       defaultY: 90,
       headHtml:
-        '<span class="aprs-win-tabs"><button type="button" data-tab="messages">Messages</button><button type="button" data-tab="packets">Packets</button></span>' +
         '<span class="aprs-win-kiss" id="aprs-win-kiss"></span>' +
         '<button type="button" class="aprs-win-clear" id="aprs-win-clear" title="Clear the packet list and heard stations">Clear</button>',
     });
     win = w.el;
-    if (!w.st.tab) w.st.tab = "messages";
+    delete w.st.tab; // old Messages / Packets tabs
     if (!MODES[w.st.mode]) w.st.mode = "text";
+    if (!w.st.filters || typeof w.st.filters !== "object") w.st.filters = {};
+    CATS.forEach(([k]) => {
+      if (typeof w.st.filters[k] !== "boolean") w.st.filters[k] = true;
+    });
+    w.st.raw = w.st.raw === true;
     w.body.innerHTML =
+      '<div class="aprs-win-filters" id="aprs-win-filters" role="group" aria-label="Show packet types">' +
+      CATS.map(([k, v, tip]) => '<button type="button" class="aprs-chip c-' + k + '" data-cat="' + k + '" aria-pressed="true" title="' + esc(tip) + '">' + esc(v) + '<span class="aprs-chip-n" data-n="' + k + '"></span></button>').join("") +
+      '<span class="aprs-filt-sp"></span>' +
+      '<button type="button" class="aprs-chip aprs-raw" id="aprs-win-raw" aria-pressed="false" title="Also show the raw packet (CALL&gt;DEST,PATH:info)">Raw</button>' +
+      '<span class="aprs-win-zone" id="aprs-win-zone"></span>' +
+      "</div>" +
       '<div class="aprs-win-list" id="aprs-win-list" aria-live="polite"></div>' +
       '<form class="aprs-win-send" id="aprs-win-send" autocomplete="off">' +
       '<div class="aprs-win-row aprs-hdr-row">' +
@@ -71,14 +111,21 @@
       '<button type="submit" id="aprs-msg-send">Send</button></div>' +
       '<div class="aprs-win-why" id="aprs-win-why" aria-live="polite"></div>' +
       "</form>";
-    win.querySelectorAll(".aprs-win-tabs button").forEach((b) =>
-      b.addEventListener("click", () => {
-        w.st.tab = b.dataset.tab;
+    win.querySelectorAll("[data-cat]").forEach((b) =>
+      b.addEventListener("click", (e) => {
+        const k = b.dataset.cat;
+        if (e.shiftKey || e.altKey) CATS.forEach(([c]) => (w.st.filters[c] = c === k)); // solo
+        else w.st.filters[k] = !w.st.filters[k];
+        if (!CATS.some(([c]) => w.st.filters[c])) CATS.forEach(([c]) => (w.st.filters[c] = true));
         w.save();
         renderList();
-        sync();
       }),
     );
+    $("aprs-win-raw").addEventListener("click", () => {
+      w.st.raw = !w.st.raw;
+      w.save();
+      renderList();
+    });
     win.querySelectorAll("[data-mode]").forEach((b) =>
       b.addEventListener("click", () => {
         setMode(b.dataset.mode);
@@ -167,48 +214,65 @@
   function callSpan(call, cls) {
     return '<span class="' + cls + ' aprs-call" data-call="' + esc(call) + '" title="Click: message ' + esc(call) + ' (For). Right-click: To / Via / For">' + esc(call) + "</span>";
   }
-  function rowMsg(p) {
-    const tx = p.dir === "tx";
-    const isMsg = p.type === "message" || p.type === "ack" || p.type === "rej";
-    const text = p.type === "message" ? p.msgText : p.text;
-    const via = (p.via || []).join(",");
-    return (
-      '<div class="aprs-m ' + (tx ? "sent" : "recv") + (p.ownEcho ? " echo" : "") + '">' +
-      '<div class="aprs-m-meta"><span class="aprs-m-dir">' + (tx ? "SENT" : p.ownEcho ? "ECHO" : "RCVD") + "</span>" +
-      '<span class="aprs-m-t">' + hhmmss(p.time) + "</span>" +
-      callSpan(p.src, "aprs-m-from") +
-      '<span class="aprs-m-arrow">&gt;</span><span class="aprs-m-dst" title="To (AX.25 destination)">' + esc(p.dst) + "</span>" +
-      '<span class="aprs-m-via" title="Via">' + esc(via || "direct") + "</span>" +
-      (p.viaSat ? '<span class="aprs-badge-sat" title="Digipeated by ' + esc(p.viaSat) + '">' + esc(p.viaSat) + "</span>" : "") +
-      (isMsg && p.to ? '<span class="aprs-m-for" title="APRS message addressee (For)">→ ' + esc(p.to) + "</span>" : "") +
-      (p.ownEcho ? '<span class="aprs-m-ok" title="Your packet was heard back">✓ digipeated</span>' : "") +
-      "</div>" +
-      '<div class="aprs-m-text">' + (text ? esc(p.type === "ack" || p.type === "rej" ? p.text : text) : '<i class="aprs-m-hdr">(header only)</i>') + "</div></div>"
-    );
+  function symHtml(p) {
+    const S = window.APRS_SYMBOLS;
+    return p.symbol && S && S.parse(p.symbol) ? S.html(p.symbol, 16, "aprs-row-sym") : '<span class="aprs-row-sym aprs-row-nosym"></span>';
   }
-  function rowPkt(p) {
+  function decodedText(p, cat) {
+    if (p.type === "message" && p.dir === "tx") return "→ " + (p.to || "") + ": " + (p.msgText || "");
+    if (p.dir === "tx" && cat === "message") return p.kind === "header" || !(p.text || "").trim() ? "" : p.text;
+    if (p.decoded != null && p.decoded !== "") return p.decoded;
+    if (p.type === "message") return "→ " + (p.to || "") + ": " + (p.msgText || "");
+    return p.text || "";
+  }
+  function row(p) {
     const tx = p.dir === "tx";
-    const pos = p.lat != null ? (p.posSource === "grid" ? "grid " + (p.grid || "") : "pos") : p.plotSource ? p.plotSource : "";
+    const cat = catOf(p);
+    const txt = decodedText(p, cat);
+    const via = (p.via || []).join(",");
+    const tip = p.tnc2 + (p.device ? "\nDevice: " + p.device : "");
     return (
-      '<div class="aprs-p ' + (tx ? "sent" : "recv") + " t-" + esc(p.type) + '" title="' + esc(p.tnc2) + '">' +
-      '<span class="aprs-m-t">' + hhmmss(p.time) + "</span>" +
-      '<span class="aprs-p-dir">' + (tx ? "TX" : "RX") + "</span>" +
+      '<div class="aprs-r ' + (tx ? "sent" : "recv") + " c-" + cat + (p.ownEcho ? " echo" : "") + '" title="' + esc(tip) + '">' +
+      '<div class="aprs-r-main">' +
+      '<span class="aprs-m-t">' + esc(bare(p.time)) + "</span>" +
+      '<span class="aprs-r-dir">' + (tx ? "TX" : "RX") + "</span>" +
+      symHtml(p) +
       callSpan(p.src, "aprs-m-from") +
-      (p.viaSat ? '<span class="aprs-badge-sat">' + esc(p.viaSat) + "</span>" : "") +
-      '<span class="aprs-p-type">' + esc(p.type === "other" && !p.text ? "header" : p.type) + (pos ? " · " + esc(pos) : "") + "</span>" +
-      '<span class="aprs-p-text">' + esc(p.text) + "</span></div>"
+      '<span class="aprs-badge c-' + cat + '" title="' + esc(p.type) + '">' + LABEL[cat] + "</span>" +
+      (p.viaSat ? '<span class="aprs-badge-sat" title="Digipeated by ' + esc(p.viaSat) + '">' + esc(p.viaSat) + "</span>" : "") +
+      (p.ownEcho ? '<span class="aprs-m-ok" title="Your packet was heard back">✓ digipeated</span>' : "") +
+      '<span class="aprs-r-text">' + (txt ? esc(txt) : '<i class="aprs-m-hdr">(header only)</i>') + "</span>" +
+      (p.device ? '<span class="aprs-r-dev">' + esc(p.device) + "</span>" : "") +
+      "</div>" +
+      (w.st.raw ? '<div class="aprs-r-raw">' + esc(p.tnc2 || p.src + ">" + p.dst + (via ? "," + via : "") + ":") + "</div>" : "") +
+      "</div>"
     );
   }
   function renderList() {
     if (!win) return;
     const list = $("aprs-win-list");
     const pk = (A() && A().packets) || [];
-    const msgs = w.st.tab === "messages";
-    const rows = msgs ? pk.filter((p) => MSG_TYPES.has(p.type)).slice(0, 150).reverse() : pk.slice(0, 200);
+    const n = {};
+    pk.forEach((p) => {
+      const c = catOf(p);
+      n[c] = (n[c] || 0) + 1;
+    });
+    win.querySelectorAll("[data-cat]").forEach((b) => {
+      const on = !!w.st.filters[b.dataset.cat];
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    win.querySelectorAll("[data-n]").forEach((e) => (e.textContent = n[e.dataset.n] ? " " + n[e.dataset.n] : ""));
+    const raw = $("aprs-win-raw");
+    raw.classList.toggle("active", w.st.raw);
+    raw.setAttribute("aria-pressed", w.st.raw ? "true" : "false");
+    $("aprs-win-zone").textContent = A() && A().zoneLabel ? A().zoneLabel() : "UTC";
+    const rows = pk.filter((p) => w.st.filters[catOf(p)]).slice(0, 300);
+    const keep = list.scrollTop;
     list.innerHTML = rows.length
-      ? rows.map(msgs ? rowMsg : rowPkt).join("")
-      : '<div class="aprs-empty">' + (msgs ? "No messages yet. Position reports are under Packets and on the map." : "No packets yet.") + "</div>";
-    list.scrollTop = msgs ? list.scrollHeight : 0;
+      ? rows.map(row).join("")
+      : '<div class="aprs-empty">' + (pk.length ? "Nothing matches the selected types (" + pk.length + " hidden)." : "No packets yet.") + "</div>";
+    list.scrollTop = keep > 4 ? keep : 0;
   }
   function syncCount() {
     const t = $("aprs-msg-text");
@@ -235,8 +299,6 @@
   }
   function sync() {
     if (!win) return;
-    win.querySelectorAll(".aprs-win-tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === w.st.tab));
-    $("aprs-win-send").hidden = w.st.tab !== "messages";
     win.querySelectorAll("[data-mode]").forEach((b) => {
       const on = b.dataset.mode === w.st.mode;
       b.classList.toggle("active", on);
@@ -280,7 +342,6 @@
   function open(o) {
     if (!win && !build()) return;
     if (o && o.for) {
-      w.st.tab = "messages";
       setMode("message");
       if (A()) A().setHdr({ for: o.for }, "open");
     }
@@ -304,13 +365,14 @@
       a.on("aprs-packets", () => renderList());
       a.on("aprs-packet", (m) => {
         const p = m.packet;
-        if (p && p.dir === "rx" && MSG_TYPES.has(p.type) && (!w.st.open || w.st.min)) unread++;
+        if (p && p.dir === "rx" && catOf(p) === "message" && (!w.st.open || w.st.min)) unread++;
         renderList();
         sync();
       });
       a.on("aprs-status", sync);
       a.on("hdr", syncHdr);
       a.on("aprs-send-result", onResult);
+      a.on("time-mode", renderList);
       renderList();
       sync();
     }, 200);
