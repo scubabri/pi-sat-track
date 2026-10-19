@@ -92,6 +92,16 @@
         L.DomEvent.disableScrollPropagation(el);
       }
       ["pointerdown", "mousedown", "touchstart", "dblclick", "contextmenu"].forEach((ev) => el.addEventListener(ev, (e) => e.stopPropagation()));
+      // A user drag (rotate / pan) of the globe ends follow mode; a click or wheel zoom doesn't.
+      let downAt = null;
+      el.addEventListener("pointerdown", (e) => { downAt = { x: e.clientX, y: e.clientY }; });
+      el.addEventListener("pointermove", (e) => {
+        if (!downAt || !follow.key || !e.buttons) return;
+        if (Math.abs(e.clientX - downAt.x) + Math.abs(e.clientY - downAt.y) > 4) { downAt = null; stopFollow(); }
+      });
+      const up = () => { downAt = null; };
+      el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);
       G = Globe({ rendererConfig: { antialias: false, alpha: false, powerPreference: "low-power" } })(el)
         .backgroundColor("#000000")
         .backgroundImageUrl(VENDOR + "night-sky.jpg")
@@ -223,20 +233,90 @@
     return out;
   };
 
-  /** Map center buttons call this while the globe is showing. Returns true if handled. */
-  window.globeCenterOn = function (lat, lng) {
-    if (mode !== "globe" || !G || !Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+  function centerOn(lat, lng) {
     const pov = G.pointOfView();
     G.pointOfView({ lat, lng, altitude: (pov && pov.altitude) || 2.2 }, 800);
     setTimeout(() => G.__savePov && G.__savePov(), 900);
+  }
+  /**
+   * Map center buttons (station / mid-Atlantic) call this while the globe is
+   * showing; it ends follow mode. opts.preview (pass preview start): while
+   * following, the live sat stays centered, so it's handled without moving.
+   * Returns true if handled.
+   */
+  window.globeCenterOn = function (lat, lng, opts) {
+    if (mode !== "globe" || !G || !Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+    if (opts && opts.preview && follow.key) return true;
+    stopFollow();
+    centerOn(lat, lng);
     return true;
   };
 
-  /** Profile chart click: once that sat's position arrives, spin the globe to it. */
+  /**
+   * Follow mode: after a profile-chart click spins the globe to a sat, the
+   * camera keeps that sat's live sub-point centered and the globe turns
+   * underneath it (altitude / zoom stay the user's). Off by default, never
+   * persisted. Ends on a user drag of the globe, the center buttons, Map view,
+   * or another sat being selected elsewhere. Wheel / pinch zoom keeps following.
+   * Cheap: a ~15 Hz timer (only while following and visible) eases the camera
+   * toward the sub-point extrapolated from the last two 1 s state positions.
+   */
+  const FOLLOW_TICK_MS = 66;
+  const follow = { key: null, timer: null, since: 0, samples: [], lat: null, lng: null };
+  function wrap180(x) { return ((((x + 180) % 360) + 360) % 360) - 180; }
+  function startFollow(key) {
+    follow.key = key;
+    follow.since = Date.now() + 900; // let the 800 ms snap tween finish first
+    follow.samples = [];
+    follow.lat = follow.lng = null;
+    if (lastState && lastState.sat === key) followSample(lastState);
+    if (!follow.timer) follow.timer = setInterval(followTick, FOLLOW_TICK_MS);
+  }
+  function stopFollow() {
+    follow.key = null;
+    follow.samples = [];
+    if (follow.timer) { clearInterval(follow.timer); follow.timer = null; }
+    if (G && G.__savePov) G.__savePov();
+  }
+  function followSample(msg) {
+    const p = msg && msg.position; // live position (a pass preview only highlights)
+    if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return;
+    const q = follow.samples;
+    q.push({ t: Date.now(), lat: p.lat, lng: p.lon });
+    if (q.length > 2) q.shift();
+  }
+  function followTarget(now) {
+    const q = follow.samples;
+    if (!q.length) return null;
+    const b = q[q.length - 1];
+    if (q.length < 2) return { lat: b.lat, lng: b.lng };
+    const a = q[0];
+    const dt = b.t - a.t;
+    if (!(dt > 0)) return { lat: b.lat, lng: b.lng };
+    const k = Math.min(now - b.t, 3000) / dt; // extrapolate at most 3 s past the last sample
+    return { lat: b.lat + (b.lat - a.lat) * k, lng: wrap180(b.lng + wrap180(b.lng - a.lng) * k) };
+  }
+  function followTick() {
+    if (!follow.key || !G || mode !== "globe" || document.hidden) return;
+    const now = Date.now();
+    if (now < follow.since) return;
+    const tg = followTarget(now);
+    if (!tg) return;
+    const pov = G.pointOfView();
+    if (follow.lat == null) { follow.lat = pov.lat; follow.lng = pov.lng; }
+    // Ease toward the target (no jumps when a new sample corrects the extrapolation).
+    follow.lat += (tg.lat - follow.lat) * 0.25;
+    follow.lng = wrap180(follow.lng + wrap180(tg.lng - follow.lng) * 0.25);
+    G.pointOfView({ lat: follow.lat, lng: follow.lng, altitude: pov.altitude }, 0);
+  }
+  window.globeFollowing = () => follow.key;
+
+  /** Profile chart click: once that sat's position arrives, spin the globe to it, then follow it. */
   let snapKey = null;
   window.globeSnapTo = function (key) {
     if (mode !== "globe" || !key) return;
     snapKey = key;
+    startFollow(key);
     applyState(true);
   };
 
@@ -559,7 +639,9 @@
       footprint.pts = footprintPts(p.lat, p.lng, st.position.heightKm || 0);
       if (snapKey && snapKey === st.sat) {
         snapKey = null;
-        window.globeCenterOn(p.lat, p.lng);
+        const lp = (lastState && lastState.position) || st.position; // live sub-point (follow tracks the live sat)
+        centerOn(lp.lat, lp.lon);
+        if (follow.key === st.sat) { follow.since = Date.now() + 900; follow.lat = follow.lng = null; }
       }
       fpShade.geometry.coordinates = [footprint.pts.map((q) => [q[1], q[0]])];
       G.polygonsData([fpShade]);
@@ -621,6 +703,7 @@
         setMode("map", true);
       });
     } else {
+      stopFollow();
       if (el) el.hidden = true;
       if (G) G.pauseAnimation();
       if (orbitTimer) { clearInterval(orbitTimer); orbitTimer = null; }
@@ -671,6 +754,10 @@
         } else if (msg.type === "state") {
           const satChanged = !lastState || lastState.sat !== msg.sat;
           lastState = msg;
+          if (follow.key) {
+            if (msg.sat === follow.key) followSample(msg);
+            else if (snapKey !== msg.sat && Date.now() - follow.since > 5000) stopFollow(); // another sat picked elsewhere
+          }
           if (satChanged) { requestOrbits(); applyState(true); }
           else applyState(false);
         }
