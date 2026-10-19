@@ -196,7 +196,7 @@ test("persistence: the log survives a restart (reload newest first) and exports 
   assert.strictEqual(p.entries[0].info, b.info, "newest first");
   const csv = svc.digipeatsCsv();
   const rows = csv.trim().split(/\r?\n/);
-  assert.match(rows[0], /^time,src,dst,path,digis,viaSat,sat,satAboveHorizon,satEl,conn,txConn,lat,lon,info,raw$/);
+  assert.match(rows[0], /^time,src,dst,path,digis,viaSat,sat,satAboveHorizon,satEl,conn,txConn,lat,lon,retry,info,raw$/);
   assert.strictEqual(rows.length, 3);
   assert.ok(rows.some((r) => r.includes('">b, ""quoted"""')), "CSV quoting");
   assert.strictEqual(digipeatsCsv([]).trim().split(/\r?\n/).length, 1);

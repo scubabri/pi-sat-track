@@ -359,3 +359,4 @@
 .aprs-win-q-x:hover { color: #e6edf3; }
 .aprs-win-q-n { font-size: 10.5px; color: #8b949e; white-space: nowrap; }
 mark.aprs-qhl { color: #0d1117; background: #e3b341; border-radius: 2px; padding: 0 1px; }
+.aprs-retry { padding: 0 5px; font: 700 10px system-ui, sans-serif; color: #e6edf3; background: #6e40c9; border-radius: 8px; }

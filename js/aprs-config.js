@@ -561,6 +561,7 @@
     setVal("cfg-kiss-default-to", c.defaultTo || "CQ");
     setVal("cfg-kiss-satpaths", satPathsToText(c.satPaths));
     setChk("cfg-kiss-req-radio", c.txRequireRadioOn !== false);
+    setChk("cfg-kiss-retry-tag", c.retryTag !== false);
     setVal("cfg-kiss-digi-timeout", c.digiTimeoutS || 30);
     setVal("cfg-kiss-dupe", c.dupeWindowS || 30);
     setChk("cfg-kiss-log", c.logToFile !== false);
@@ -593,6 +594,7 @@
       defaultTo: v("cfg-kiss-default-to").trim().toUpperCase(),
       satPaths: textToSatPaths(v("cfg-kiss-satpaths")),
       txRequireRadioOn: ck("cfg-kiss-req-radio"),
+      retryTag: ck("cfg-kiss-retry-tag"),
       digiTimeoutS: numOrNull("cfg-kiss-digi-timeout"),
       dupeWindowS: numOrNull("cfg-kiss-dupe"),
       logToFile: ck("cfg-kiss-log"),

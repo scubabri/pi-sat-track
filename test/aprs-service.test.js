@@ -232,10 +232,10 @@ test("UISS model: To = AX.25 destination (default CQ), Via = path; message / pos
   const r3 = svc.send({ kind: "beacon", to: "aprs" });
   assert.ok(r3.ok, "identical beacon right away is sent too: " + JSON.stringify(r3));
   assert.ok(await until(() => tnc.rx.length === 4));
-  assert.strictEqual(tnc.rx[3].data.toString("hex"), tnc.rx[2].data.toString("hex"), "packet content not altered on resend");
-  // Graywolf preset (row 1 default): resend of an identical frame within 30 s gets a note
+  // retry number (default on): the quick identical resend carries " #2"
+  assert.strictEqual(ax25.toTnc2(ax25.decode(tnc.rx[3].data)), "K0TEST>APRS,ARISS:=4030.00N/11100.00W`Pi Sat Track #2");
   assert.strictEqual(b.note, undefined, "first send: no note");
-  assert.match(r3.note || "", /Graywolf drops identical frames within 30 s/);
+  assert.strictEqual(r3.note, undefined, "no Graywolf note while the retry tag is on");
   svc.stop();
   await tnc.close();
 });

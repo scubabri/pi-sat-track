@@ -213,12 +213,24 @@ different thing: it only affects digipeating other stations' packets. The
 per-channel TX rate limits (packets per 1 / 5 min) are configurable and
 default to unlimited.
 
-Pi Sat Track never changes a packet to get around this. When you resend an
-identical frame through a connection with the Graywolf preset within 30 s,
-it is still sent unchanged and the "Sent …" line adds a note that Graywolf
-may not transmit it; the digipeat line will then show *No digipeat heard*.
-Change the text (or To) yourself if you need it on the air again, or send
-that packet through Direwolf.
+**Retry number** (*Configure → KISS / APRS → Add retry number to repeated
+sends*, default on): when you send a position or UI text with the same To and
+content as a send in the last 30 s, Pi Sat Track appends a short tag to the
+comment / text: ` #2`, ` #3`, ... (the first send has none). That makes each
+repeat a different frame for Graywolf and for digipeaters' dupe filters. The
+counter resets after 30 s without a resend, or as soon as the To, comment or
+position changes (the Via path is not part of it). The tag is never cut: if
+the comment would exceed 43 characters (or UI text its UISS length limit),
+the end of your text is dropped instead. APRS messages are not changed (a
+message retry is the same message and id), and neither are header-only
+frames. The digipeat confirmation matches the tagged frame, the APRS window
+shows e.g. `Sent #3 17:31:10 MT — waiting for digipeat…`, the TX row gets a
+`#3` badge and the digipeat log / CSV has a `retry` column.
+
+With the option off, repeats are sent byte-for-byte identical; through a
+connection with the Graywolf preset a repeat within 30 s then gets a note in
+the "Sent …" line that Graywolf may not transmit it (the digipeat line will
+show *No digipeat heard*).
 
 ## Digipeat confirmation and the digipeat log
 

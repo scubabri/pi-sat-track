@@ -400,9 +400,10 @@
    * "Sent 17:05:45 MT — waiting for digipeat…", "Sent … — no digipeat heard". */
   function lastTxText(last, fmt) {
     const d = last.digi;
-    if (d && d.state === "digipeated") return "✓ " + (d.viaSat ? "Heard via " : "Digipeated by ") + d.by.join(", ") + " · " + fmt(d.firstMs || last.time);
-    if (d && d.state === "none") return "Sent " + fmt(last.time) + " — no digipeat heard (" + (d.timeoutS || 30) + " s)";
-    return "Sent " + fmt(last.time) + " — waiting for digipeat…";
+    if (d && d.state === "digipeated") return "✓ " + (last.retry > 1 ? "#" + last.retry + " " : "") + (d.viaSat ? "Heard via " : "Digipeated by ") + d.by.join(", ") + " · " + fmt(d.firstMs || last.time);
+    const sent = "Sent " + (last.retry > 1 ? "#" + last.retry + " " : "") + fmt(last.time);
+    if (d && d.state === "none") return sent + " — no digipeat heard (" + (d.timeoutS || 30) + " s)";
+    return sent + " — waiting for digipeat…";
   }
   function syncBox() {
     syncBtn();

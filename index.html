@@ -1108,6 +1108,11 @@
                   <input type="checkbox" id="cfg-kiss-req-radio" checked />
                   Only send while Radio is ON (tracker is tuning the radio)
                 </label>
+                <label class="cfg-check-label" for="cfg-kiss-retry-tag">
+                  <input type="checkbox" id="cfg-kiss-retry-tag" checked />
+                  Add retry number to repeated sends
+                </label>
+                <div class="form-hint">Resending the same position / UI text within 30 s appends “ #2”, “ #3”… so Graywolf (drops identical frames within 30 s) and digipeater dupe filters pass it. Messages are not changed.</div>
               </div>
               <div class="form-row-2">
                 <div>

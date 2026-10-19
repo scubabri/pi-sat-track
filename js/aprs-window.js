@@ -366,6 +366,7 @@
       '<span class="aprs-badge c-' + cat + '" title="' + esc(p.type) + '">' + LABEL[cat] + "</span>" +
       (!tx && n > 1 ? '<button type="button" class="aprs-dup" data-grp="' + g.id + '" title="' + n + " copies within " + dupeS() + ' s (different paths / connections). Click to ' + (open ? "collapse" : "expand") + '">×' + n + "</button>" : "") +
       (p.viaSat ? '<span class="aprs-badge-sat" title="Digipeated by ' + esc(p.viaSat) + '">' + esc(p.viaSat) + "</span>" : "") +
+      (tx && p.retry > 1 ? '<span class="aprs-retry" title="Retry ' + p.retry + (p.retryTagged ? ' (“ #' + p.retry + '” added to the comment / text)' : " (sent identical: retry number off)") + '">#' + p.retry + "</span>" : "") +
       (dt ? '<span class="aprs-digi ' + dt.cls + '"' + (sub.length ? ' data-grp="' + g.id + '"' : "") + ' title="' + esc(dt.text + (sub.length ? " · " + sub.length + " echo" + (sub.length > 1 ? "es" : "") + " heard, click to " + (open ? "hide" : "show") : "")) + '">' + (dt.cls === "ok" ? "✓ " : dt.cls === "none" ? "⚠ " : "… ") + esc(dt.text) + (sub.length ? " ×" + sub.length : "") + "</span>" : "") +
       (p.ownEcho && !tx ? '<span class="aprs-m-ok" title="Your packet was heard back">' + (p.echoDigis && p.echoDigis.length ? "✓ via " + esc(p.echoDigis.join(",")) : "own packet") + "</span>" : "") +
       '<span class="aprs-r-text">' + (txt ? esc(txt) : '<i class="aprs-m-hdr">(header only)</i>') + "</span>" +
@@ -393,6 +394,7 @@
       '<span class="aprs-m-t">' + esc(A() && A().fmtTimeShort ? bare(t) : e.time) + "</span>" +
       (e.viaSat ? '<span class="aprs-badge-sat">SAT</span>' : '<span class="aprs-badge c-message">DIGI</span>') +
       '<span class="aprs-dg-by">' + (e.viaSat ? "Heard via " : "Digipeated by ") + "<b>" + esc(by) + "</b></span>" +
+      (e.retry > 1 ? '<span class="aprs-retry" title="Retry number of the send">#' + e.retry + "</span>" : "") +
       (e.sat && e.viaSat ? '<span class="aprs-dg-sat">' + esc(e.sat) + (e.satEl != null ? " el " + e.satEl + "°" : "") + (e.satAboveHorizon === false ? " (below horizon)" : "") + "</span>" : "") +
       '<span class="aprs-r-conn">[' + esc(e.conn || "?") + "]</span>" +
       "</div>" +
