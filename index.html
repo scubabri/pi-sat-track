@@ -17,6 +17,7 @@
     <link rel="stylesheet" href="css/layout.css" />
     <link rel="stylesheet" href="css/sidebar.css" />
     <link rel="stylesheet" href="css/qso-log.css" />
+    <link rel="stylesheet" href="css/aprs.css" />
     <link rel="stylesheet" href="css/amsat-report.css" />
     <link rel="stylesheet" href="css/decode-overlay.css" />
     <link rel="stylesheet" href="css/schedule.css" />
@@ -111,6 +112,7 @@
             <button type="button" class="cfg-tab" data-tab="radio" role="tab">Radio<span class="cfg-tab-dot" aria-hidden="true"></span></button>
             <button type="button" class="cfg-tab" data-tab="rotor" role="tab">Rotor<span class="cfg-tab-dot" aria-hidden="true"></span></button>
             <button type="button" class="cfg-tab" data-tab="logging" role="tab">Logging &amp; WSJT-X<span class="cfg-tab-dot" aria-hidden="true"></span></button>
+            <button type="button" class="cfg-tab" data-tab="kiss" role="tab">KISS / APRS<span class="cfg-tab-dot" aria-hidden="true"></span></button>
           </nav>
           <div class="cfg-tab-content">
             <section class="cfg-tab-pane" data-tab="station" role="tabpanel">
@@ -963,6 +965,183 @@
             </div>
 
             </section>
+            <section class="cfg-tab-pane" data-tab="kiss" role="tabpanel" hidden>
+            <div class="form-section" id="cfg-kiss-section">
+              <div class="form-section-title">KISS TNC</div>
+              <div class="form-row">
+                <label class="cfg-check-label" for="cfg-kiss-enabled">
+                  <input type="checkbox" id="cfg-kiss-enabled" />
+                  Connect to a KISS TNC (Graywolf, Direwolf, hardware TNC)
+                </label>
+                <p class="form-hint">Only connects (and reconnects) while this is on. Turning it off closes the connection.</p>
+              </div>
+              <div class="form-row-2">
+                <div>
+                  <label for="cfg-kiss-preset">Software / TNC</label>
+                  <select id="cfg-kiss-preset" class="cfg-select">
+                    <option value="graywolf">Graywolf (KISS TCP 6700)</option>
+                    <option value="direwolf">Direwolf (KISS TCP 8001)</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="cfg-kiss-transport">Connection</label>
+                  <select id="cfg-kiss-transport" class="cfg-select">
+                    <option value="tcp">Network (KISS over TCP)</option>
+                    <option value="serial">Serial (Bluetooth /dev/rfcomm0, USB TNC)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row-2" id="cfg-kiss-tcp-row">
+                <div>
+                  <label for="cfg-kiss-host">Host</label>
+                  <input type="text" id="cfg-kiss-host" placeholder="localhost (or remote IP / hostname)" autocomplete="off" spellcheck="false" />
+                </div>
+                <div>
+                  <label for="cfg-kiss-port">Port</label>
+                  <input type="number" id="cfg-kiss-port" placeholder="6700" min="1" max="65535" step="1" />
+                </div>
+              </div>
+              <div class="form-row-2" id="cfg-kiss-serial-row" hidden>
+                <div>
+                  <label for="cfg-kiss-serial-device">Serial device</label>
+                  <input type="text" id="cfg-kiss-serial-device" placeholder="/dev/rfcomm0" autocomplete="off" spellcheck="false" />
+                </div>
+                <div>
+                  <label for="cfg-kiss-serial-baud">Baud</label>
+                  <input type="number" id="cfg-kiss-serial-baud" placeholder="9600" min="1200" step="1" />
+                </div>
+              </div>
+              <div class="form-row-2">
+                <div>
+                  <label for="cfg-kiss-kissport">KISS port (channel)</label>
+                  <input type="number" id="cfg-kiss-kissport" placeholder="0" min="0" max="15" step="1" />
+                </div>
+                <div>
+                  <label for="cfg-kiss-expire">Keep heard stations (min)</label>
+                  <input type="number" id="cfg-kiss-expire" placeholder="60" min="5" max="1440" step="1" />
+                </div>
+              </div>
+              <button type="button" class="btn-test" id="btn-test-kiss">Test connection</button>
+              <p class="form-hint" id="cfg-kiss-test-result" aria-live="polite"></p>
+              <p class="form-hint" id="cfg-kiss-status" aria-live="polite">KISS: off</p>
+              <details class="rigctld-help" id="cfg-kiss-help">
+                <summary>Graywolf / Direwolf setup</summary>
+                <p class="form-hint">
+                  <b>Graywolf</b> (remote host or this Pi): Interfaces → KISS TNC → <b>+ Add Interface</b>,
+                  Type <b>TCP (server)</b>, listen <code>0.0.0.0:6700</code>, Channel = your sat radio channel,
+                  <b>Mode = Modem</b> (Graywolf's modem keys the radio). Leave "Allow digipeater/beacon/iGate
+                  to transmit" alone (TNC mode only). Turn off Graywolf beacons / digipeater rules for the
+                  satellite channel. Graywolf drops a repeat of the same packet within 30 s.
+                  Enter Graywolf's IP above, port 6700.
+                </p>
+                <p class="form-hint">
+                  <b>Direwolf</b>: KISS TCP is on port 8001 by default (<code>KISSPORT 8001</code>).
+                  <b>Bluetooth TNC</b> (Mobilinkd, TH-D74/D75): pair once with <code>bluetoothctl</code>,
+                  then <code>sudo rfcomm bind 0 &lt;MAC&gt;</code> and pick Serial, <code>/dev/rfcomm0</code>.
+                </p>
+              </details>
+            </div>
+
+            <div class="form-section">
+              <div class="form-section-title">APRS station</div>
+              <div class="form-row-2">
+                <div>
+                  <label for="cfg-kiss-ssid">SSID (optional)</label>
+                  <input type="text" id="cfg-kiss-ssid" placeholder="none" maxlength="2" autocomplete="off" spellcheck="false" />
+                </div>
+                <div>
+                  <label for="cfg-kiss-symbol">Symbol (table + code)</label>
+                  <input type="text" id="cfg-kiss-symbol" placeholder="/`" maxlength="2" autocomplete="off" spellcheck="false" />
+                </div>
+              </div>
+              <p class="form-hint" id="cfg-kiss-source-hint">Source = your Station callsign (no SSID unless set).</p>
+              <div class="form-row">
+                <label for="cfg-kiss-comment">Beacon comment</label>
+                <input type="text" id="cfg-kiss-comment" maxlength="43" placeholder="e.g. Pi Sat Track via ISS" autocomplete="off" />
+              </div>
+              <div class="form-row-2">
+                <div>
+                  <label for="cfg-kiss-pos-source">Beacon position</label>
+                  <select id="cfg-kiss-pos-source" class="cfg-select">
+                    <option value="grid">Grid square centre (Station grid)</option>
+                    <option value="latlon">Exact latitude / longitude</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="cfg-kiss-ambiguity">Position ambiguity</label>
+                  <select id="cfg-kiss-ambiguity" class="cfg-select">
+                    <option value="0">None</option>
+                    <option value="1">0.01′ (~18 m)</option>
+                    <option value="2">0.1′ (~185 m)</option>
+                    <option value="3">1′ (~1.8 km)</option>
+                    <option value="4">10′ (~18 km)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row-2" id="cfg-kiss-latlon-row" hidden>
+                <div>
+                  <label for="cfg-kiss-lat">Latitude</label>
+                  <input type="number" id="cfg-kiss-lat" step="0.0001" min="-90" max="90" placeholder="39.7392" />
+                </div>
+                <div>
+                  <label for="cfg-kiss-lon">Longitude</label>
+                  <input type="number" id="cfg-kiss-lon" step="0.0001" min="-180" max="180" placeholder="-104.9903" />
+                </div>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <div class="form-section-title">Transmit</div>
+              <div class="form-row">
+                <label class="cfg-check-label" for="cfg-kiss-tx">
+                  <input type="checkbox" id="cfg-kiss-tx" />
+                  Enable transmit (position beacon / messages from the map APRS box)
+                </label>
+              </div>
+              <div class="form-row-2">
+                <div>
+                  <label for="cfg-kiss-path">Default Via (path)</label>
+                  <input type="text" id="cfg-kiss-path" placeholder="ARISS" autocomplete="off" spellcheck="false" />
+                </div>
+                <div>
+                  <label for="cfg-kiss-minel">Min sat elevation (°)</label>
+                  <input type="number" id="cfg-kiss-minel" placeholder="0" min="-5" max="90" step="1" />
+                </div>
+              </div>
+              <div class="form-row">
+                <label for="cfg-kiss-satpaths">Per-satellite Via (one per line: SAT=PATH)</label>
+                <textarea id="cfg-kiss-satpaths" rows="3" spellcheck="false" placeholder="ISS=ARISS&#10;SONATE-2=DP0SNX&#10;NO-44=W3ADO-1"></textarea>
+              </div>
+              <div class="form-row">
+                <label class="cfg-check-label" for="cfg-kiss-req-radio">
+                  <input type="checkbox" id="cfg-kiss-req-radio" checked />
+                  Only send while Radio is ON (tracker is tuning the radio)
+                </label>
+                <label class="cfg-check-label" for="cfg-kiss-req-mode">
+                  <input type="checkbox" id="cfg-kiss-req-mode" checked />
+                  Only send via a satellite when its APRS / packet mode is selected
+                </label>
+              </div>
+              <div class="form-row-2">
+                <div>
+                  <label for="cfg-kiss-beacon-int">Min seconds between beacons</label>
+                  <input type="number" id="cfg-kiss-beacon-int" placeholder="60" min="60" max="3600" step="1" />
+                </div>
+                <div>
+                  <label for="cfg-kiss-msg-int">Min seconds between messages</label>
+                  <input type="number" id="cfg-kiss-msg-int" placeholder="10" min="5" max="600" step="1" />
+                </div>
+              </div>
+              <div class="form-row">
+                <label class="cfg-check-label" for="cfg-kiss-log">
+                  <input type="checkbox" id="cfg-kiss-log" checked />
+                  Log all packets to ~/.rpitrack/aprs/aprs-YYYY-MM-DD.log (UTC)
+                </label>
+              </div>
+              <p class="form-hint">Destination (tocall) <code>APZPST</code> (experimental). No acks or retries in this version.</p>
+            </div>
+            </section>
           </div>
       </div>
       <div id="config-actions">
@@ -1370,6 +1549,9 @@
     <script src="js/qso-log.js"></script>
     <script src="js/qso-call-grid.js"></script>
     <script src="js/decode-overlay.js"></script>
+    <script src="js/aprs-config.js"></script>
+    <script src="js/aprs-overlay.js"></script>
+    <script src="js/aprs-window.js"></script>
     <script src="js/schedule.js"></script>
     <script src="js/fav-overlay.js"></script>
     <script src="js/pass-alerts-core.js"></script>

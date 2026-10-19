@@ -246,6 +246,28 @@ function applyWsjtxListener() {
   broadcastWsjtxStatus();
 }
 
+/**
+ * APRS / KISS TNC connector (lib/aprs/service.js). Config per profile under
+ * profile.config.aprs; RX packets -> list + "APRS Heard" layer + daily log
+ * in ~/.rpitrack/aprs/; TX (beacon / message) gated on radio + sat state.
+ */
+const aprsService = require("./lib/aprs/service").createService({
+  broadcast: (o) => broadcast(o),
+  getStation: () => stationFromProfile(),
+  getTxContext: () => {
+    let radioOn = false;
+    try {
+      const rs = radios.active().getRadioState();
+      radioOn = !!(rs && rs.radioOn);
+    } catch (_) {}
+    let sat = null;
+    try {
+      sat = state.getLogContext();
+    } catch (_) {}
+    return { radioOn, sat };
+  },
+});
+
 function applyProfileToRuntime(prof) {
   if (!prof) return;
   // Spinner/fine offsets are stored per profile — switch store + re-apply live.
@@ -264,6 +286,7 @@ function applyProfileToRuntime(prof) {
   console.log("Radio update:", config.RADIO_UPDATE_MS, "ms");
   if (typeof state.forceRadioPush === "function") state.forceRadioPush();
   applyWsjtxListener();
+  aprsService.configure(cfg.aprs);
 }
 
 function broadcastProfiles() {
@@ -544,6 +567,9 @@ wss.on("connection", (ws, req) => {
     }),
   );
   ws.send(JSON.stringify(decodeStore.payload()));
+  ws.send(JSON.stringify(aprsService.statusPayload()));
+  ws.send(JSON.stringify(aprsService.packetsPayload()));
+  ws.send(JSON.stringify(aprsService.heardPayload()));
   // Re-send shortly after: the sidebar logging script hooks the socket
   // asynchronously and can miss the first message.
   setTimeout(() => {
@@ -558,6 +584,8 @@ wss.on("connection", (ws, req) => {
           }),
         );
         ws.send(JSON.stringify(decodeStore.payload()));
+        ws.send(JSON.stringify(aprsService.statusPayload()));
+        ws.send(JSON.stringify(aprsService.heardPayload()));
       }
     } catch (_) {}
   }, 1500);
@@ -572,6 +600,38 @@ wss.on("connection", (ws, req) => {
   ws.on("message", (raw) => {
     try {
       const msg = JSON.parse(raw.toString());
+
+      if (msg.type === "aprs-config" && msg.aprs && typeof msg.aprs === "object") {
+        const c = aprsService.configure(msg.aprs);
+        profiles.updateActive({ config: { aprs: c } });
+        broadcastProfiles();
+        console.log("APRS config saved (" + (c.enabled ? c.transport + " " + (c.transport === "tcp" ? (c.host || "localhost") + ":" + c.port : c.serialDevice) : "disabled") + ")");
+      }
+      if (msg.type === "aprs-send") {
+        const r = aprsService.send(msg);
+        ws.send(JSON.stringify(Object.assign({ type: "aprs-send-result", reqId: msg.reqId }, r)));
+        if (!r.ok) console.log("APRS send blocked:", r.reasons.join("; "));
+      }
+      if (msg.type === "aprs-sat-path" && typeof msg.sat === "string") {
+        const cur = aprsService.getConfig();
+        const sp = Object.assign({}, cur.satPaths);
+        const key = msg.sat.trim().toUpperCase();
+        if (key) {
+          if (msg.via == null || String(msg.via).trim() === "") delete sp[key];
+          else sp[key] = String(msg.via).trim().toUpperCase();
+          const c = aprsService.configure(Object.assign({}, cur, { satPaths: sp }));
+          profiles.updateActive({ config: { aprs: c } });
+          broadcastProfiles();
+        }
+      }
+      if (msg.type === "aprs-clear") aprsService.clear();
+      if (msg.type === "aprs-reconnect") aprsService.reconnect();
+      if (msg.type === "aprs-test") {
+        // One-shot probe with the (unsaved) form values; never sends a frame.
+        aprsService.testTcp(msg.host, msg.port).then((r) => {
+          if (ws.readyState === 1) ws.send(JSON.stringify(Object.assign({ type: "aprs-test-result" }, r)));
+        });
+      }
 
       if (msg.type === "observer" && typeof msg.lat === "number") {
         state.setObserver(msg.lat, msg.lon, msg.elevM);
