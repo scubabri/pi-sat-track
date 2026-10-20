@@ -119,7 +119,8 @@
         if (tt) { hookHover(tt, f.key, "label"); }
         applyHighlight();
       } else { it.dot.setLatLng(ll); if (it.hit) it.hit.setLatLng(ll); }
-      const rM = typeof footprintRadiusM === "function" ? footprintRadiusM(p.heightKm) : 0;
+      // Moon (EME): no satellite-style footprint circle (it would cover half the Earth).
+      const rM = f.isMoon ? 0 : typeof footprintRadiusM === "function" ? footprintRadiusM(p.heightKm) : 0;
       if (rM > 0) {
         if (!it.circle) { it.circle = L.circle(ll, { radius: rM, color: it.color, weight: 1, opacity: 0.4, fillColor: it.color, fillOpacity: 0.03, interactive: false }).addTo(layer); applyHighlight(); }
         else { it.circle.setLatLng(ll); it.circle.setRadius(rM); }

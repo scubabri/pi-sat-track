@@ -50,11 +50,6 @@
     box.style.display = r ? "" : "none";
     const orbitRow = document.getElementById("sat-orbit");
     if (orbitRow && orbitRow.parentElement) orbitRow.parentElement.style.display = msg && msg.isMoon ? "none" : "";
-    // The Moon is pinned in the menu: no favorite star / per-sat pass alert bell.
-    ["sat-fav-top", "sat-alert-top"].forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) el.style.visibility = msg && msg.isMoon ? "hidden" : "";
-    });
     if (!r) return;
     set("moon-dist", r.dist, r.distTitle);
     set("moon-dec", r.dec, r.decTitle);
