@@ -213,6 +213,12 @@ function satHorizonClass(s) {
   return "sat-down";
 }
 
+/** The Moon (EME) is always offered, first, in both list modes (not a favorite). */
+function pinMoonFirst(list, moonRow) {
+  const rest = list.filter((s) => s && !s.isMoon);
+  return moonRow ? [moonRow].concat(rest) : rest;
+}
+
 function menuStructureKey(quickKeys, favs, listMode, sortMode) {
   return listMode + "|" + sortMode + "|" + quickKeys.join(",") + "|" + favs.join(",");
 }
@@ -245,7 +251,8 @@ function renderSatMenu(payload) {
     sats.filter((s) => s.heard).forEach(addPreview);
     if (currentSatKey) addPreview(sats.find((s) => s.key === currentSatKey));
   }
-  quickPreview = sortHeardList(quickPreview).slice(0, 60);
+  const moonRow = sats.find((s) => s && s.isMoon) || null;
+  quickPreview = pinMoonFirst(sortHeardList(quickPreview), moonRow).slice(0, 60);
   const structKey = menuStructureKey(
     quickPreview.map((s) => s.key),
     favs,
@@ -340,9 +347,9 @@ function renderSatMenu(payload) {
     if (currentSatKey) add(sats.find((s) => s.key === currentSatKey));
   }
 
-  quick = sortHeardList(quick);
+  quick = pinMoonFirst(sortHeardList(quick), moonRow);
 
-  if (quick.length === 0) {
+  if (!quick.some((s) => !s.isMoon)) {
     const empty = document.createElement("div");
     empty.className = "sat-menu-empty";
     empty.textContent =
@@ -364,7 +371,8 @@ function renderSatMenu(payload) {
     star.textContent = favSet.has(s.key) ? "★" : "☆";
     star.title = favSet.has(s.key) ? "Remove favorite" : "Add favorite";
     // Clicks handled by menu event delegation (survives re-renders)
-    wrap.appendChild(star);
+    // The Moon (EME) is pinned, not a favorite, and has no per-sat pass alerts.
+    if (!s.isMoon) wrap.appendChild(star);
 
     // Pass alerts for every pass of this sat (js/pass-alerts.js handles clicks)
     const bell = document.createElement("button");
@@ -372,7 +380,8 @@ function renderSatMenu(payload) {
     bell.className = "sat-alert";
     bell.dataset.alert = "sat";
     bell.dataset.sat = s.key;
-    wrap.appendChild(bell);
+    if (!s.isMoon) wrap.appendChild(bell);
+    else wrap.classList.add("sat-chip-moon");
 
     const btn = document.createElement("button");
     btn.type = "button";
@@ -383,7 +392,7 @@ function renderSatMenu(payload) {
     btn.dataset.sat = s.key;
     btn.textContent = s.name;
 
-    let tip = s.name + "  (NORAD " + s.norad + ")";
+    let tip = s.isMoon ? s.name + "  (Earth–Moon–Earth, own echoes)" : s.name + "  (NORAD " + s.norad + ")";
     if (s.above) tip += " — above horizon";
     else if (
       typeof s.secToAos === "number" &&
@@ -418,8 +427,9 @@ function renderSatMenu(payload) {
     if (match) setSatButtonLabel(match.name);
     else if (!currentSatLabel) setSatButtonLabel(currentSatKey);
   } else if (quick.length) {
-    currentSatKey = quick[0].key;
-    setSatButtonLabel(quick[0].name);
+    const first = quick.find((s) => !s.isMoon) || quick[0];
+    currentSatKey = first.key;
+    setSatButtonLabel(first.name);
   }
   menu.dataset.structKey = structKey;
   if (window.PassAlerts) window.PassAlerts.paint(menu);

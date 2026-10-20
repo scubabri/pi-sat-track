@@ -1276,6 +1276,29 @@
           <div class="status-item">
             <span class="label">Orbit</span><span id="sat-orbit">-</span>
           </div>
+          <div id="moon-eme-info" class="moon-eme-info" style="display: none" title="Moon / EME (Meeus ch. 47 ephemeris + topocentric parallax)">
+            <div class="status-item" title="Earth-centre distance (Range above is from your station)">
+              <span class="label">Geo. distance</span><span id="moon-dist">-</span>
+            </div>
+            <div class="status-item" title="Geocentric apparent declination / right ascension">
+              <span class="label">Declination</span><span id="moon-dec">-</span>
+            </div>
+            <div class="status-item" title="Illuminated fraction and phase">
+              <span class="label">Illumination</span><span id="moon-illum">-</span>
+            </div>
+            <div class="status-item" title="Own-echo Doppler 2·(dR/dt)·f/c at the RX frequency (negative = Moon receding). Applied to RX only; TX stays on the dial.">
+              <span class="label">Echo Doppler</span><span id="moon-echo">-</span>
+            </div>
+            <div class="status-item" title="Round-trip echo delay 2R/c">
+              <span class="label">Echo delay</span><span id="moon-delay">-</span>
+            </div>
+            <div class="status-item" title="APPROXIMATE two-way EME path loss (radar equation, lunar reflectivity 0.065), see lib/moon.js">
+              <span class="label">Path loss</span><span id="moon-loss">-</span>
+            </div>
+            <div class="status-item" title="Point on Earth with the Moon at the zenith">
+              <span class="label">Sub-lunar</span><span id="moon-sub">-</span>
+            </div>
+          </div>
           <div class="status-item">
             <span class="label">TLE age</span><span id="status-tle">-</span>
           </div>
@@ -1361,6 +1384,7 @@
     <script src="js/pass-panel.js"></script>
     <script src="js/pass-ui.js"></script>
     <script src="js/dl-band.js"></script>
+    <script src="js/moon-panel.js"></script>
     <script src="js/tracker.js"></script>
     <script src="js/fine-ctcss.js"></script>
     <script src="js/update-rate.js"></script>

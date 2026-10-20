@@ -138,7 +138,7 @@ const amsatAuto = require("./lib/amsat-auto").createAutoHeard({
 });
 /** Fire-and-forget after a successful log; never blocks or fails the log. */
 function autoAmsatHeard(ctx, station, time, source) {
-  if (!config.LOG_AMSAT_HEARD || !ctx) return;
+  if (!config.LOG_AMSAT_HEARD || !ctx || ctx.isMoon) return; // Moon (EME): no AMSAT report
   setImmediate(() => {
     amsatAuto.fromQso({ ctx, station, time, source }).catch(() => {});
   });
@@ -176,7 +176,7 @@ const wsjtx = wsjtxListener.createListener({
           "from",
           q.clientId,
           q.source,
-          e.enriched ? "+ " + e.fields.SAT_NAME : "(pass-through)",
+          e.enriched ? "+ " + (e.fields.SAT_NAME || e.fields.PROP_MODE) : "(pass-through)",
           r.ok ? "-> " + r.method + " " + r.target : "FAILED: " + r.error,
           rec.warnings.length ? rec.warnings.join("; ") : "",
         );
@@ -376,7 +376,8 @@ const server = http.createServer((req, res) => {
       res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify(o));
     };
-    const ctx = state.getLogContext();
+    const lc = state.getLogContext();
+    const ctx = lc && lc.isMoon ? null : lc; // Moon (EME) is not an AMSAT satellite
     return amsatReport
       .getSatNames()
       .then((list) => {
@@ -418,7 +419,8 @@ const server = http.createServer((req, res) => {
       } catch (_) {
         return json(400, { error: "invalid JSON" });
       }
-      const btnCtx = state.getLogContext();
+      const lc = state.getLogContext();
+      const btnCtx = lc && lc.isMoon ? null : lc; // Moon (EME) is not an AMSAT satellite
       amsatReport
         .getSatNames()
         .then((list) =>

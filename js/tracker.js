@@ -307,15 +307,17 @@ function applyFreqAndLook(msg) {
     if (base != null) dlDop = dlHz - base;
   }
 
+  // Moon (EME): TX stays on the dial; RX carries the station's own echo Doppler.
+  const dopWord = msg.isMoon ? "Echo Doppler " : "Doppler ";
   if (ulDopEl)
     ulDopEl.textContent =
-      ulDop != null ? "Doppler " + fmtDopplerKHz(ulDop) : "";
+      msg.isMoon ? "No Doppler (TX on dial)" : ulDop != null ? "Doppler " + fmtDopplerKHz(ulDop) : "";
   if (dlDopEl)
     dlDopEl.textContent =
-      dlDop != null ? "Doppler " + fmtDopplerKHz(dlDop) : "";
+      dlDop != null ? dopWord + fmtDopplerKHz(dlDop) : "";
 
-  if (ulEl && ulDop != null) ulEl.title = "Doppler " + fmtDopplerKHz(ulDop);
-  if (dlEl && dlDop != null) dlEl.title = "Doppler " + fmtDopplerKHz(dlDop);
+  if (ulEl && ulDop != null) ulEl.title = msg.isMoon ? "TX on dial frequency (no Doppler applied)" : "Doppler " + fmtDopplerKHz(ulDop);
+  if (dlEl && dlDop != null) dlEl.title = dopWord + fmtDopplerKHz(dlDop);
   // Out-of-band indicator (visual only; see js/dl-band.js): red = satellite-frame
   // DL out of the passband, yellow = only the station (displayed) DL is out.
   if (dlEl) {
@@ -667,6 +669,7 @@ function connectTracker() {
       if (typeof updateProfile === "function") updateProfile(msg);
       if (typeof updateSidebar === "function") updateSidebar(msg);
       updateSatelliteStatus(msg);
+      if (typeof updateMoonPanel === "function") updateMoonPanel(msg);
       if (typeof updateFavPanelFromState === "function")
         updateFavPanelFromState(msg);
     } catch (e) {

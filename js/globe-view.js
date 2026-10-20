@@ -31,6 +31,9 @@
   // map's observer marker). Same altitude as the Log-box DX dot and its
   // great-circle line, so the line meets both markers exactly.
   const MARK_ALT = 0.006; // above the footprint fill (polygonAltitude 0.004)
+  // Moon (EME): ~60 Earth radii out, so its marker sits just above the
+  // sub-lunar point instead; the footprint still uses the real distance.
+  const MOON_MARK_ALT = 0.02;
   const stLabel = { kind: "station", lat: 0, lng: 0, alt: MARK_ALT, text: "\u2302 Station" };
   const dxMark = { kind: "dx", lat: 0, lng: 0, alt: MARK_ALT, text: "" };
   const dxPath = { key: "__dx", footprint: true, color: "#ffd34d", w: 0.6, pts: [] };
@@ -302,7 +305,8 @@
     const p = msg && msg.position; // live position (a pass preview only highlights)
     if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return;
     const now = Date.now();
-    const alt = (Number.isFinite(p.heightKm) ? p.heightKm : 0) / RE_KM;
+    const alt = msg.isMoon ? MOON_MARK_ALT : (Number.isFinite(p.heightKm) ? p.heightKm : 0) / RE_KM;
+    follow.fpKm = msg.isMoon && Number.isFinite(p.heightKm) ? p.heightKm : null;
     const q = follow.samples;
     q.push({ t: now, lat: p.lat, lng: p.lon, alt: alt });
     if (q.length > 2) q.shift();
@@ -368,7 +372,7 @@
     if (p && p.sel) {
       p.lat = follow.lat; p.lng = follow.lng; p.alt = follow.alt;
       selLabel.lat = follow.lat; selLabel.lng = follow.lng; selLabel.alt = follow.alt;
-      orientFpMesh(follow.lat, follow.lng, follow.alt * RE_KM);
+      orientFpMesh(follow.lat, follow.lng, follow.fpKm != null ? follow.fpKm : follow.alt * RE_KM);
     }
   }
   window.globeFollowing = () => follow.key;
@@ -809,14 +813,15 @@
       // server sample can't snap the marker (the rAF loop owns lat/lng/alt).
       const fp = (follow.key === st.sat && !pT) ? followPos() : null;
       const use = fp || st.position;
-      p.lat = use.lat; p.lng = use.lon; p.alt = (use.heightKm || 0) / RE_KM;
+      const fpKm = st.isMoon ? st.position.heightKm || 0 : use.heightKm || 0;
+      p.lat = use.lat; p.lng = use.lon; p.alt = st.isMoon ? MOON_MARK_ALT : (use.heightKm || 0) / RE_KM;
       p.color = selColor(); p.sel = true; p.display = st.display || st.sat;
       keep.add(st.sat);
       selLabel.lat = p.lat; selLabel.lng = p.lng; selLabel.alt = p.alt;
       selLabel.text = selLabelText(st, pT);
       if (pT) p.color = "#e3b341";
       paintSelLabel();
-      footprint.pts = footprintPts(p.lat, p.lng, use.heightKm || 0); // kept for any fallback path consumers
+      footprint.pts = footprintPts(p.lat, p.lng, fpKm); // kept for any fallback path consumers
       if (snapKey && snapKey === st.sat) {
         snapKey = null;
         const lp = (lastState && lastState.position) || st.position; // live sub-point (follow tracks the live sat)
@@ -830,7 +835,7 @@
           if (lastState) followSample(lastState);
         }
       }
-      orientFpMesh(p.lat, p.lng, use.heightKm || 0);
+      orientFpMesh(p.lat, p.lng, fpKm);
       try { G.polygonsData([]); } catch (_) {}
     } else {
       hideFpMesh();
@@ -850,7 +855,7 @@
     for (const k of [...pts.keys()]) if (!keep.has(k)) pts.delete(k);
     pts.forEach(styleDot);
     const extra = [];
-    if (pT && lastState.position) { ghost.lat = lastState.position.lat; ghost.lng = lastState.position.lon; ghost.alt = (lastState.position.heightKm || 0) / RE_KM; extra.push(ghost); }
+    if (pT && lastState.position) { ghost.lat = lastState.position.lat; ghost.lng = lastState.position.lon; ghost.alt = lastState.isMoon ? MOON_MARK_ALT : (lastState.position.heightKm || 0) / RE_KM; extra.push(ghost); }
     const dx = dxItems();
     if (dx) extra.push(dx.mk);
     if (sunMark.lat || sunMark.lng) extra.push(sunMark);
