@@ -314,17 +314,18 @@ test("optional SSID is used when set", async () => {
   await tnc.close();
 });
 
-test("config: default To CQ (UISS), Connection TCP / Bluetooth (old 'serial' maps to Bluetooth)", () => {
+test("config: default To CQ (UISS), Connection TCP / Bluetooth (MAC) / Serial device (older path-only rows)", () => {
   const d = normalizeConfig(null);
   assert.strictEqual(d.defaultTo, "CQ");
   const row = (r) => normalizeConfig(r).connections[0];
   assert.strictEqual(row(null).transport, "tcp");
   assert.strictEqual(normalizeConfig({ defaultTo: "aprsat" }).defaultTo, "APRSAT");
   assert.strictEqual(normalizeConfig({ defaultTo: "not a call" }).defaultTo, "CQ");
-  assert.strictEqual(row({ transport: "serial" }).transport, "bluetooth");
-  assert.strictEqual(row({ transport: "bluetooth" }).transport, "bluetooth");
+  assert.strictEqual(row({ transport: "serial" }).transport, "serial");
+  assert.strictEqual(row({ transport: "bluetooth" }).transport, "serial", "older path-only Bluetooth row");
+  assert.strictEqual(row({ connections: [{ transport: "bluetooth", btAddress: "" }] }).transport, "bluetooth");
   assert.strictEqual(row({ transport: "bogus" }).transport, "tcp");
-  assert.strictEqual(row({ connections: [{ transport: "serial" }] }).transport, "bluetooth");
+  assert.strictEqual(row({ connections: [{ transport: "serial" }] }).transport, "serial");
   assert.strictEqual(row({ transport: "bluetooth" }).serialDevice, "/dev/rfcomm0");
   const { createTransport } = require("../lib/kiss/client");
   for (const t of ["bluetooth", "serial"]) {

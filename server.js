@@ -645,11 +645,18 @@ wss.on("connection", (ws, req) => {
           broadcastProfiles();
         }
       }
+      if (msg.type === "aprs-bt-devices") {
+        // Paired Bluetooth devices (bluetoothctl) for Configure's picker
+        aprsService.btDevices().then((r) => {
+          if (ws.readyState === 1) ws.send(JSON.stringify(Object.assign({ type: "aprs-bt-devices", id: typeof msg.id === "string" ? msg.id.slice(0, 16) : "" }, r)));
+        });
+      }
       if (msg.type === "aprs-clear") aprsService.clear();
       if (msg.type === "aprs-reconnect") aprsService.reconnect();
       if (msg.type === "aprs-test") {
         // One-shot probe with the (unsaved) form values; never sends a frame.
-        aprsService.testTcp(msg.host, msg.port).then((r) => {
+        const probe = msg.transport === "bluetooth" ? aprsService.testBt(msg.btAddress, msg.btChannel) : aprsService.testTcp(msg.host, msg.port);
+        probe.then((r) => {
           // id = the Configure connection row that asked (several KISS connections)
           const id = typeof msg.id === "string" ? msg.id.slice(0, 16) : "";
           if (ws.readyState === 1) ws.send(JSON.stringify(Object.assign({ type: "aprs-test-result", id }, r)));

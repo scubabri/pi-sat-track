@@ -22,12 +22,15 @@ Configure → **KISS / APRS**:
   | Direwolf 9600 | Direwolf | pc:8003 | RX + TX | 9600 G3RUH |
 
   Each row: **Enabled**, **Name** (shown on packets, in Raw view and popups),
-  **Software** (Graywolf / Direwolf / Custom: fills the port only when it is
-  empty or still another preset's default, never over a port you typed),
-  **Connection** TCP (**Host**, empty = localhost, + **Port**) or Bluetooth
-  (serial **Device**, default `/dev/rfcomm0`, + **Baud**; pair the TNC and
-  `sudo rfcomm bind 0 <TNC MAC>`; Mobilinkd TNC3/TNC4, TH-D74/D75; BLE not
-  supported), **Role** (RX only / TX only / RX + TX), **Speed** (1200 AFSK /
+  **Software** (Graywolf / Direwolf / Kenwood TH-D74/D75 / Custom: fills the
+  port only when it is empty or still another preset's default, never over a
+  port you typed; TH-D74/D75 sets Bluetooth, RFCOMM channel 2 and 1200),
+  **Connection** TCP (**Host**, empty = localhost, + **Port**), Bluetooth
+  (the radio's **Bluetooth address**, or pick it under **Paired devices**;
+  **Advanced → RFCOMM channel**, default 2; see
+  [Bluetooth KISS](#bluetooth-kiss-kenwood-th-d74--d75)) or Serial device
+  (**Device** such as `/dev/ttyACM0` or an rfcomm-bound `/dev/rfcomm0`,
+  + **Baud**; rows saved before the Bluetooth address field load as this), **Role** (RX only / TX only / RX + TX), **Speed** (1200 AFSK /
   9600 G3RUH = the modem on that channel), **Advanced → KISS port**
   (Direwolf / multi-port TNCs only; leave 0 for Graywolf), a live status
   (connected · RX n · TX n, or the error and retry time), **Test** and **×**
@@ -106,6 +109,91 @@ KISSPORT 8003
 Then add a row: Software Direwolf, host = that PC, port 8003, Role RX + TX,
 Speed **9600 G3RUH**. KISS port (Advanced) stays 0 unless that Direwolf
 serves several channels on one KISS TCP port.
+
+### Bluetooth KISS (Kenwood TH-D74 / D75)
+
+The TH-D74 / D75 built-in TNC speaks KISS over Bluetooth Classic SPP
+(serial port profile, RFCOMM). Pi Sat Track connects to it by MAC address:
+no `rfcomm bind`, no root. A small standard-library Python helper
+(`lib/kiss/rfcomm-bridge.py`) owns the RFCOMM socket; the server spawns it
+and reconnects with backoff (2 s doubling to 60 s) when the link drops, so
+turning the radio off and on again reconnects by itself. Any SPP KISS TNC
+works the same way (Mobilinkd classic, BTECH UV-Pro, ...); only the RFCOMM
+channel differs. BLE-only TNCs are not supported.
+
+**On the Pi** (Raspberry Pi OS / Debian / Ubuntu with BlueZ; built-in
+Bluetooth on a Pi 3 / 4 / 5 or a USB dongle). `./install-pi.sh --update`
+installs `bluez`, enables the `bluetooth` service, unblocks it with rfkill and
+adds your user to the `bluetooth` group (needed to list paired devices; log
+out and in again once). Then pair once (the radio must be in pairing mode,
+see below):
+
+```
+bluetoothctl
+  power on
+  agent on
+  default-agent
+  scan on            # wait for "TH-D74" / "TH-D75", note the MAC
+  scan off
+  pair AA:BB:CC:DD:EE:FF
+  trust AA:BB:CC:DD:EE:FF
+  quit
+```
+
+`trust` lets it reconnect without a prompt. Desktop Bluetooth tools may
+report "No usable services" after pairing; that is fine (the SPP port is
+opened by RFCOMM channel, not by a profile). Do not leave a manual
+`rfcomm connect` / `rfcomm bind` running for the same radio: the radio's SPP
+port takes one connection, and the status then shows *busy*.
+
+**On the radio** (menu numbers from the Kenwood *TH-D74A/E Operating Tips*
+and user write-ups; check your manual, the D75 and firmware versions may
+differ):
+
+1. Bluetooth on: Menu 930 (Configuration → Bluetooth; one write-up says 931). The MAC address is
+   shown under Menu 935 (Device Information).
+2. Pairing mode: Menu 934 (visible for about 60 s), then pair from the Pi.
+3. Configuration → Interface → **KISS = Bluetooth** (Menu 983).
+4. Data band: APRS → Basic Settings → Data Band (Menu 506) selects which
+   band (A or B) the TNC uses; in single-band display the data band must be
+   the one shown, or the radio will not transmit.
+5. Put the TNC in KISS mode: press **F** then **5** (repeat) until the
+   display shows **KISS12** (1200 AFSK). KISS96 is 9600 GMSK (Menu 505 Data
+   Speed); match the connection's **Speed**. While in KISS mode the radio's
+   own APRS menu settings (500 – 580) do not apply. KISS mode is a radio
+   state: if the radio comes back in APRS or off mode after a power cycle,
+   set KISS12 again (not verified on hardware here).
+
+In Configure → KISS / APRS: **+ Add connection**, Software **Kenwood
+TH-D74/D75** (sets Bluetooth, channel 2, 1200), pick the radio under
+**Paired devices** or type its MAC, Role (RX + TX), **Test**, then tick
+**Enabled** and **Save**. The Bluetooth baud rate does not matter.
+
+Channel: the D74 / D75 SPP service is RFCOMM channel **2** (KI4HDU, habets.se,
+SQ5T on the TH-D74 groups.io list). For another TNC, `sdptool records <MAC>`
+(where available) lists its Serial Port channel, or see its manual.
+
+Status / Test errors:
+
+| Shown | Meaning / fix |
+| --- | --- |
+| radio not reachable | Radio off, out of range, Bluetooth off on the radio |
+| refused on RFCOMM channel N | Wrong channel, or the radio's KISS interface is not set to Bluetooth |
+| not paired / permission denied | Pair and trust with `bluetoothctl` (above) |
+| busy | Another computer / phone holds the radio's serial port, or an `rfcomm` bind |
+| no Bluetooth adapter | BlueZ not running or blocked: `sudo systemctl enable --now bluetooth`, `sudo rfkill unblock bluetooth` |
+| no Bluetooth socket support | Kernel / Python without BlueZ sockets (not Raspberry Pi OS) |
+| python3 not found | `sudo apt install python3` |
+| link lost | The radio was turned off or went out of range; it reconnects by itself |
+
+Sources: Kenwood, *TH-D74A/E Operating Tips* (KISS commands, KISS12 / KISS96,
+Bluetooth SPP, Menu 930, 505);
+[habets.se: Amateur packet radio walkthrough](https://blog.habets.se/2020/06/Amateur-packet-radio-walkthrough.html)
+(Menu 983, 934, RFCOMM channel 2, KISS12);
+[KI4HDU: TH-D74 to Raspberry Pi via Bluetooth](https://ki4hdu.com/amateur-radio/packet/connect-th-d74-to-raspberry-pi-via-bluetooth/)
+(channel 2, Menu 935); [APRSISCE/32 TH-D74/D75](http://aprsisce.wikidot.com/th-d74-d75)
+(Menu 983 KISS = Bluetooth, F 5 → KISS12 by hand);
+[B.B. Link manual](https://go.islandmagic.co/docs/B.B.%20Link%20Operator%20Manual.pdf) (Data Band, Menu 506).
 
 ## Operating (UISS model)
 

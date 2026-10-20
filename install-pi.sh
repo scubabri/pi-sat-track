@@ -15,6 +15,9 @@
 #   --no-nginx    Skip nginx reverse-proxy setup
 #   --no-service  Skip systemd user service
 #   --update      Refresh npm + rewrite/restart user service WorkingDirectory
+#   --no-bluetooth  Skip Bluetooth setup (bluez, bluetooth service + group) for
+#                 Bluetooth KISS TNCs such as the Kenwood TH-D74/D75
+#                 (runs on full install and --update; idempotent)
 # =============================================================================
 
 set -euo pipefail
@@ -27,6 +30,7 @@ NGINX_SITE="sat-tracker"
 INSTALL_NGINX=1
 INSTALL_SERVICE=1
 UPDATE_ONLY=0
+INSTALL_BLUETOOTH=1
 
 die()  { echo "ERROR: $*" >&2; exit 1; }
 log()  { echo; echo "==> $*"; }
@@ -54,8 +58,9 @@ while [[ $# -gt 0 ]]; do
     --no-nginx)   INSTALL_NGINX=0 ;;
     --no-service) INSTALL_SERVICE=0 ;;
     --update)     UPDATE_ONLY=1 ;;
+    --no-bluetooth) INSTALL_BLUETOOTH=0 ;;
     -h|--help)
-      sed -n '2,20p' "$0"
+      sed -n '2,21p' "$0"
       exit 0
       ;;
     *)
@@ -139,6 +144,49 @@ if [[ $UPDATE_ONLY -eq 0 ]]; then
       warn "dialout membership applies on next login (or: newgrp dialout)"
     fi
   fi
+fi
+
+# -------------------- Bluetooth (KISS over RFCOMM) --------------------
+# Bluetooth KISS TNCs (Kenwood TH-D74/D75, ...) are opened by MAC address
+# through lib/kiss/rfcomm-bridge.py (python3 standard library RFCOMM socket):
+# needs BlueZ running and unblocked; the bluetooth group lets the app list
+# paired devices (bluetoothctl). No root, no rfcomm bind, no capabilities.
+# Runs on full install and --update; every step checks first (idempotent).
+if [[ $INSTALL_BLUETOOTH -eq 1 ]]; then
+  log "Bluetooth (KISS TNCs over RFCOMM)"
+  BT_PKGS=()
+  dpkg -s bluez >/dev/null 2>&1 || BT_PKGS+=(bluez)
+  dpkg -s python3 >/dev/null 2>&1 || BT_PKGS+=(python3)
+  if [[ ${#BT_PKGS[@]} -gt 0 ]]; then
+    echo "    installing: ${BT_PKGS[*]}"
+    need_sudo apt-get install -y --no-install-recommends "${BT_PKGS[@]}" || warn "Could not install ${BT_PKGS[*]} (Bluetooth KISS needs them)"
+  else
+    echo "    bluez + python3 present"
+  fi
+  if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files bluetooth.service >/dev/null 2>&1; then
+    if systemctl is-enabled --quiet bluetooth 2>/dev/null && systemctl is-active --quiet bluetooth 2>/dev/null; then
+      echo "    bluetooth service enabled + running"
+    else
+      need_sudo systemctl enable --now bluetooth || warn "Could not start the bluetooth service"
+    fi
+  fi
+  if command -v rfkill >/dev/null 2>&1 && rfkill list bluetooth 2>/dev/null | grep -qi "soft blocked: yes"; then
+    log "Unblocking Bluetooth (rfkill)"
+    need_sudo rfkill unblock bluetooth || true
+  fi
+  if getent group bluetooth >/dev/null 2>&1; then
+    if id -nG "${APP_USER}" | tr ' ' '\n' | grep -qx bluetooth; then
+      echo "    ${APP_USER} already in bluetooth"
+    else
+      log "Adding ${APP_USER} to bluetooth (list paired Bluetooth TNCs)"
+      need_sudo usermod -aG bluetooth "${APP_USER}"
+      warn "bluetooth membership applies on next login / service restart after re-login"
+    fi
+  fi
+  if command -v python3 >/dev/null 2>&1 && ! python3 -c "import socket; socket.AF_BLUETOOTH; socket.BTPROTO_RFCOMM" >/dev/null 2>&1; then
+    warn "python3 has no Bluetooth RFCOMM sockets here; Bluetooth KISS connections will not work"
+  fi
+  echo "    pair the radio once: bluetoothctl → pair <MAC> → trust <MAC> (docs/APRS.md)"
 fi
 
 # -------------------- Node.js --------------------
@@ -350,6 +398,10 @@ cat <<SUM
   Serial radios
     User should be in dialout. Re-login if you were just added.
     Devices are often /dev/ttyACM0 or /dev/ttyUSB0
+
+  Bluetooth KISS (TH-D74/D75)
+    Pair once: bluetoothctl → pair <MAC> → trust <MAC>; then Configure →
+    KISS / APRS → Kenwood TH-D74/D75. Details: docs/APRS.md
 
 ============================================================
 SUM

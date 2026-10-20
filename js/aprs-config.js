@@ -217,6 +217,8 @@
       if (p && Array.isArray(msg.conns)) p.conns = msg.conns;
     } else if (msg.type === "aprs-heard") {
       APRS.heard = msg;
+    } else if (msg.type === "aprs-bt-devices") {
+      showBtDevices(msg);
     } else if (msg.type === "aprs-test-result") {
       showTest(msg);
     } else if (msg.type === "aprs-send-result" && msg.ok && msg.packet) {
@@ -433,7 +435,11 @@
   /* ---------- KISS connections list (one row per TNC channel / port) ---------- */
   const ROLE_LABEL = { rxtx: "RX + TX", rx: "RX only", tx: "TX only" };
   const SPEED_LABEL = { 1200: "1200 AFSK", 9600: "9600 G3RUH" };
-  const PRESET_LABEL = { graywolf: "Graywolf", direwolf: "Direwolf", custom: "Custom" };
+  const PRESET_LABEL = { graywolf: "Graywolf", direwolf: "Direwolf", "th-d74": "Kenwood TH-D74/D75", custom: "Custom" };
+  const TRANSPORT_LABEL = { tcp: "TCP", bluetooth: "Bluetooth", serial: "Serial device" };
+  const BT_HINT =
+    "Pair the radio first (Pi: <code>bluetoothctl</code> &rarr; <code>pair &lt;MAC&gt;</code>, <code>trust &lt;MAC&gt;</code>), or pick it under Paired. " +
+    "TH-D74/D75: KISS interface = Bluetooth, then F + 5 until KISS12 shows (docs/APRS.md). Reconnects by itself when the radio comes back.";
   const opt = (map, v) => Object.entries(map).map(([k, l]) => '<option value="' + k + '"' + (String(k) === String(v) ? " selected" : "") + ">" + l + "</option>").join("");
   const escA = (x) => String(x == null ? "" : x).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
   /** Graywolf has only AFSK / PSK modems: no 9600 G3RUH. A Graywolf row at 9600 shows (and saves) 1200. */
@@ -455,7 +461,9 @@
   }
   APRS._gwNo9600 = gwNo9600;
   function connRowHtml(c) {
-    const bt = c.transport === "bluetooth";
+    const tr = TRANSPORT_LABEL[c.transport] ? c.transport : "tcp";
+    const bt = tr === "bluetooth";
+    const ser = tr === "serial";
     return (
       '<div class="kiss-conn" data-id="' + escA(c.id) + '">' +
       '<div class="kc-head">' +
@@ -467,21 +475,28 @@
       "</div>" +
       '<div class="kc-grid">' +
       '<label>Software<select class="cfg-select" data-f="preset">' + opt(PRESET_LABEL, c.preset || "graywolf") + "</select></label>" +
-      '<label>Connection<select class="cfg-select" data-f="transport">' + opt({ tcp: "TCP", bluetooth: "Bluetooth" }, bt ? "bluetooth" : "tcp") + "</select></label>" +
+      '<label>Connection<select class="cfg-select" data-f="transport">' + opt(TRANSPORT_LABEL, tr) + "</select></label>" +
       '<label>Role<select class="cfg-select" data-f="role">' + opt(ROLE_LABEL, c.role || "rxtx") + "</select></label>" +
       '<label>Speed<select class="cfg-select" data-f="speed">' + opt(SPEED_LABEL, gwNo9600(c.preset || "graywolf", c.speed || 1200)) + "</select></label>" +
       "</div>" +
-      '<div class="kc-grid kc-tcp"' + (bt ? " hidden" : "") + ">" +
+      '<div class="kc-grid kc-tcp"' + (tr === "tcp" ? "" : " hidden") + ">" +
       '<label>Host<input type="text" data-f="host" placeholder="localhost (or remote IP / hostname)" autocomplete="off" spellcheck="false" value="' + escA(c.host) + '" /></label>' +
       '<label>Port<input type="number" data-f="port" min="1" max="65535" step="1" placeholder="6700" value="' + escA(c.port || PRESET_PORTS[c.preset || "graywolf"] || 6700) + '" /></label>' +
       "</div>" +
-      '<div class="kc-grid kc-bt"' + (bt ? "" : " hidden") + ">" +
+      '<div class="kc-grid kc-btmac"' + (bt ? "" : " hidden") + ">" +
+      '<label>Bluetooth address<input type="text" data-f="btAddress" maxlength="17" placeholder="AA:BB:CC:DD:EE:FF (TH-D74: Menu 935)" autocomplete="off" spellcheck="false" value="' + escA(c.btAddress || "") + '" /></label>' +
+      '<label>Paired devices<span class="kc-bt-pick"><select class="cfg-select" data-bt-pick><option value="">' + (c.btAddress ? "Paired… (refresh)" : "Paired…") + '</option></select>' +
+      '<button type="button" class="btn-test" data-act="bt-scan" title="List devices paired with this computer (bluetoothctl)">Refresh</button></span></label>' +
+      "</div>" +
+      '<div class="kc-grid kc-bt"' + (ser ? "" : " hidden") + ">" +
       '<label>Device<input type="text" data-f="serialDevice" placeholder="/dev/rfcomm0" autocomplete="off" spellcheck="false" value="' + escA(c.serialDevice || "/dev/rfcomm0") + '" /></label>' +
       '<label>Baud<input type="number" data-f="serialBaud" min="1200" step="1" placeholder="9600" value="' + escA(c.serialBaud || 9600) + '" /></label>' +
       "</div>" +
-      '<p class="form-hint kc-bt-hint"' + (bt ? "" : " hidden") + '>Pair the TNC first and bind it with rfcomm, e.g. <code>sudo rfcomm bind 0 &lt;TNC MAC&gt;</code> &rarr; <code>/dev/rfcomm0</code> (Bluetooth Classic / SPP). Test checks TCP only.</p>' +
-      '<details class="kc-adv"' + (c.kissPort ? " open" : "") + "><summary>Advanced</summary>" +
+      '<p class="form-hint kc-btmac-hint"' + (bt ? "" : " hidden") + ">" + BT_HINT + "</p>" +
+      '<p class="form-hint kc-bt-hint"' + (ser ? "" : " hidden") + '>A serial KISS TNC: USB (<code>/dev/ttyACM0</code>) or a Bluetooth port bound with <code>sudo rfcomm bind 0 &lt;MAC&gt; &lt;channel&gt;</code> &rarr; <code>/dev/rfcomm0</code>. Test checks TCP and Bluetooth only.</p>' +
+      '<details class="kc-adv"' + (c.kissPort || (bt && c.btChannel && c.btChannel !== 2) ? " open" : "") + "><summary>Advanced</summary>" +
       '<label class="kc-kp">KISS port (channel)<input type="number" data-f="kissPort" min="0" max="15" step="1" placeholder="0" value="' + escA(c.kissPort || 0) + '" /></label>' +
+      '<label class="kc-kp kc-btch"' + (bt ? "" : " hidden") + ' title="Bluetooth SPP channel of the radio / TNC. TH-D74/D75: 2. Others: see sdptool records &lt;MAC&gt; or the TNC manual.">RFCOMM channel<input type="number" data-f="btChannel" min="1" max="30" step="1" placeholder="2" value="' + escA(c.btChannel || 2) + '" /></label>' +
       '<span class="form-hint">Direwolf/multi-port TNCs only; leave 0 for Graywolf</span></details>' +
       '<p class="form-hint kc-test" data-t aria-live="polite"></p>' +
       "</div>"
@@ -511,6 +526,8 @@
       port: num("port"),
       serialDevice: f("serialDevice").value.trim(),
       serialBaud: num("serialBaud"),
+      btAddress: f("btAddress").value.trim(),
+      btChannel: num("btChannel") || 2,
       kissPort: num("kissPort") || 0,
       role: f("role").value,
       speed: Number(f("speed").value) === 9600 ? 9600 : 1200,
@@ -540,8 +557,41 @@
   /** Migrate an older single-endpoint config (also done server-side). */
   function connsOf(c) {
     if (Array.isArray(c.connections)) return c.connections;
-    return [{ id: "c1", name: PRESET_LABEL[c.preset] === "Custom" ? "TNC" : PRESET_LABEL[c.preset || "graywolf"] || "Graywolf", enabled: true, preset: c.preset || "graywolf", transport: c.transport === "bluetooth" || c.transport === "serial" ? "bluetooth" : "tcp", host: c.host || "", port: c.port || PRESET_PORTS[c.preset || "graywolf"] || 6700, serialDevice: c.serialDevice, serialBaud: c.serialBaud, kissPort: c.kissPort || 0, role: "rxtx", speed: 1200 }];
+    return [{ id: "c1", name: PRESET_LABEL[c.preset] === "Custom" ? "TNC" : PRESET_LABEL[c.preset || "graywolf"] || "Graywolf", enabled: true, preset: c.preset || "graywolf", transport: c.transport === "bluetooth" || c.transport === "serial" ? "serial" : "tcp", host: c.host || "", port: c.port || PRESET_PORTS[c.preset || "graywolf"] || 6700, serialDevice: c.serialDevice, serialBaud: c.serialBaud, kissPort: c.kissPort || 0, role: "rxtx", speed: 1200 }];
   }
+  function syncTransport(r) {
+    const v = r.querySelector('[data-f="transport"]').value;
+    r.querySelector(".kc-tcp").hidden = v !== "tcp";
+    r.querySelector(".kc-btmac").hidden = v !== "bluetooth";
+    r.querySelector(".kc-btmac-hint").hidden = v !== "bluetooth";
+    r.querySelector(".kc-btch").hidden = v !== "bluetooth";
+    r.querySelector(".kc-bt").hidden = v !== "serial";
+    r.querySelector(".kc-bt-hint").hidden = v !== "serial";
+    const tb = r.querySelector('[data-act="test"]');
+    if (tb) tb.title = v === "bluetooth" ? "One-shot Bluetooth connect to this radio (unsaved values); sends nothing" : "One-shot connect to this host / port (unsaved values); sends nothing";
+  }
+  function requestBtDevices(r) {
+    r.dataset.btListed = "1";
+    const out = r.querySelector("[data-t]");
+    if (!APRS.send({ type: "aprs-bt-devices", id: r.dataset.id })) {
+      if (out) out.textContent = "Not connected to the tracker server";
+      return;
+    }
+    if (out) out.textContent = "Listing paired Bluetooth devices…";
+  }
+  function showBtDevices(m) {
+    const r = m.id ? document.querySelector('#cfg-kiss-conns .kiss-conn[data-id="' + String(m.id).replace(/"/g, "") + '"]') : null;
+    if (!r) return;
+    const sel = r.querySelector("[data-bt-pick]");
+    const out = r.querySelector("[data-t]");
+    const cur = r.querySelector('[data-f="btAddress"]').value.trim().toUpperCase();
+    const list = Array.isArray(m.devices) ? m.devices : [];
+    sel.innerHTML =
+      '<option value="">' + (list.length ? "Paired… (" + list.length + ")" : "No paired devices") + "</option>" +
+      list.map((d) => '<option value="' + escA(d.mac) + '" data-name="' + escA(d.name || "") + '"' + (d.mac === cur ? " selected" : "") + ">" + escA((d.name || "?") + "  " + d.mac) + "</option>").join("");
+    if (out) out.textContent = m.error ? "Bluetooth: " + m.error : list.length ? "" : "No paired devices: pair the radio with bluetoothctl first (docs/APRS.md).";
+  }
+  APRS._showBtDevices = showBtDevices;
   function onConnsEvent(e) {
     const r = e.target.closest && e.target.closest(".kiss-conn");
     if (!r) return;
@@ -557,12 +607,30 @@
       syncSpeedOpts(r);
       refreshDefaultTx();
     }
-    if (e.type === "change" && f === "transport") {
-      const bt = e.target.value === "bluetooth";
-      r.querySelector(".kc-tcp").hidden = bt;
-      r.querySelector(".kc-bt").hidden = !bt;
-      r.querySelector(".kc-bt-hint").hidden = !bt;
+    if (e.type === "change" && f === "preset" && e.target.value === "th-d74") {
+      // Kenwood TH-D74 / D75: built-in TNC over Bluetooth SPP (RFCOMM channel 2), 1200 AFSK
+      const set = (k, v) => {
+        const el = r.querySelector('[data-f="' + k + '"]');
+        if (el) el.value = v;
+      };
+      set("transport", "bluetooth");
+      set("speed", "1200");
+      set("btChannel", "2");
+      syncTransport(r);
     }
+    if (e.type === "change" && f === "transport") syncTransport(r);
+    if (e.type === "change" && e.target.hasAttribute && e.target.hasAttribute("data-bt-pick") && e.target.value) {
+      r.querySelector('[data-f="btAddress"]').value = e.target.value;
+      const ne = r.querySelector('[data-f="name"]');
+      const o = e.target.selectedOptions && e.target.selectedOptions[0];
+      if (o && o.dataset.name && (!ne.value.trim() || Object.values(PRESET_LABEL).concat(["TNC", "TH-D74"]).includes(ne.value.trim()))) ne.value = o.dataset.name.slice(0, 24);
+      refreshDefaultTx();
+    }
+    if (e.type === "click" && e.target.dataset.act === "bt-scan") {
+      e.preventDefault();
+      requestBtDevices(r);
+    }
+    if (e.type === "focusin" && e.target.hasAttribute && e.target.hasAttribute("data-bt-pick") && !r.dataset.btListed) requestBtDevices(r);
     if (f === "name" || f === "role" || f === "speed" || f === "enabled") refreshDefaultTx();
     if (e.type === "click" && e.target.dataset.act === "remove") {
       e.preventDefault();
@@ -575,14 +643,19 @@
       const c = readConnRow(r);
       const tb = e.target;
       const out = r.querySelector("[data-t]");
-      if (c.transport === "bluetooth") {
-        out.textContent = "Test checks TCP only; for Bluetooth save and watch the status.";
+      if (c.transport === "serial") {
+        out.textContent = "Test checks TCP and Bluetooth only; for a serial device save and watch the status.";
         return;
       }
       tb.disabled = true;
       tb.classList.remove("test-ok", "test-fail");
       tb.classList.add("test-busy");
       tb.textContent = "Testing…";
+      if (c.transport === "bluetooth") {
+        out.textContent = "Connecting to " + (c.btAddress || "?") + " (RFCOMM " + c.btChannel + ") … up to 15 s";
+        if (!APRS.send({ type: "aprs-test", id: c.id, transport: "bluetooth", btAddress: c.btAddress, btChannel: c.btChannel })) showTest({ id: c.id, ok: false, target: "Bluetooth " + c.btAddress, error: "not connected to the tracker server" });
+        return;
+      }
       out.textContent = "Connecting to " + (c.host || "localhost") + ":" + c.port + " …";
       if (!APRS.send({ type: "aprs-test", id: c.id, host: c.host, port: c.port })) showTest({ id: c.id, ok: false, target: (c.host || "localhost") + ":" + c.port, error: "not connected to the tracker server" });
     }
@@ -831,6 +904,7 @@
       box.addEventListener("change", onConnsEvent);
       box.addEventListener("input", (e) => e.target.dataset && e.target.dataset.f === "name" && refreshDefaultTx());
       box.addEventListener("click", onConnsEvent);
+      box.addEventListener("focusin", onConnsEvent);
     }
     const add = $("cfg-kiss-add");
     if (add)

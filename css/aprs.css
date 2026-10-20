@@ -312,7 +312,10 @@
 #config-panel .kc-rm { width: 26px; height: 26px; padding: 0; font: 700 15px/24px system-ui, sans-serif; color: #8b949e; background: transparent; border: 1px solid var(--border, #30363d); border-radius: 5px; cursor: pointer; }
 #config-panel .kc-rm:hover { color: #f85149; border-color: #f85149; }
 #config-panel .kc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px 8px; margin-bottom: 4px; }
-#config-panel .kc-grid.kc-tcp, #config-panel .kc-grid.kc-bt { grid-template-columns: 2fr 1fr; }
+#config-panel .kc-grid.kc-tcp, #config-panel .kc-grid.kc-bt, #config-panel .kc-grid.kc-btmac { grid-template-columns: 2fr 1fr; }
+#config-panel .kc-bt-pick { display: flex; gap: 6px; align-items: center; }
+#config-panel .kc-bt-pick select { flex: 1 1 auto; min-width: 0; }
+#config-panel .kc-adv .kc-kp { display: inline-flex; margin-right: 16px; }
 #config-panel .kc-grid label, #config-panel .kc-kp { display: flex; flex-direction: column; gap: 2px; margin: 0; font-size: 11px; color: #8b949e; }
 #config-panel .kc-grid[hidden], #config-panel .kc-bt-hint[hidden] { display: none !important; }
 #config-panel .kc-adv summary { font-size: 11px; color: #8b949e; cursor: pointer; }

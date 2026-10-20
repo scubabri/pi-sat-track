@@ -74,9 +74,9 @@ test("migration: the old single endpoint becomes row 1 (RX+TX, 1200), host/port/
   );
   assert.strictEqual(r.name, "Graywolf");
   assert.ok(!("host" in c) && !("port" in c), "top-level endpoint fields are gone");
-  // bluetooth (old "serial") migrates too
+  // a serial device path (old "serial" / "bluetooth" + /dev/rfcomm1) migrates to "serial"
   const b = normalizeConfig({ transport: "serial", serialDevice: "/dev/rfcomm1", serialBaud: 19200 }).connections[0];
-  assert.deepStrictEqual([b.transport, b.serialDevice, b.serialBaud], ["bluetooth", "/dev/rfcomm1", 19200]);
+  assert.deepStrictEqual([b.transport, b.serialDevice, b.serialBaud], ["serial", "/dev/rfcomm1", 19200]);
   // round-trip is stable
   assert.deepStrictEqual(normalizeConfig(c), c);
 });
