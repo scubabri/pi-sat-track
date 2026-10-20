@@ -17,7 +17,8 @@
     };
     let cfg = {};
     try { cfg = typeof loadConfig === "function" ? loadConfig() : {}; } catch (e) {}
-    set("cfg-sum-profile", txt(document.getElementById("cfg-profile")));
+    // the active profile, not an unsaved pick in Configure
+    set("cfg-sum-profile", (typeof activeProfileName !== "undefined" && activeProfileName) || txt(document.getElementById("cfg-profile")));
     set("cfg-sum-grid", cfg.grid || document.getElementById("cfg-grid")?.value);
     // Serial connections use make/model; the TCP "Radio / software" select is stale then.
     const radioName = (side) => {

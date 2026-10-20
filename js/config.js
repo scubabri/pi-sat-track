@@ -8,6 +8,12 @@ let activeProfileName = localStorage.getItem(PROFILE_CACHE_KEY) || null;
 let profileNames = [];
 let profilesReady = false;
 let migratedLocalToServer = false;
+/**
+ * Profile picked in Configure but not saved yet: its values are shown in the
+ * form (from the server's profile-peek), nothing is persisted or applied until
+ * Save; Cancel / closing Configure goes back to the active profile.
+ */
+let pendingProfileName = null;
 
 function sideToServerFields(side, s) {
   return s;
@@ -151,7 +157,35 @@ function fillProfileSelect() {
     opt.textContent = n;
     el.appendChild(opt);
   });
-  if (activeProfileName) el.value = activeProfileName;
+  if (pendingProfileName || activeProfileName) el.value = pendingProfileName || activeProfileName;
+}
+
+function sendProfilePeek(name) {
+  if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN)
+    return;
+  ws.send(JSON.stringify({ type: "profile-peek", name: name }));
+}
+
+/** Server reply to profile-peek: show that profile's values (not saved). */
+function applyProfilePeek(msg) {
+  if (!msg || msg.type !== "profile-peek" || !pendingProfileName) return;
+  if (msg.name !== pendingProfileName) return; // a newer pick is in flight
+  if (msg.error) {
+    revertPendingProfile();
+    return;
+  }
+  const cfg = msg.config && typeof msg.config === "object" ? msg.config : {};
+  fillForm(migrateLegacy(Object.assign(defaultsEndpoints(), cfg)));
+  if (window.APRS && typeof window.APRS.fillTab === "function") window.APRS.fillTab(msg.aprs || null);
+}
+
+/** Drop a pending (unsaved) profile pick: form back to the active profile. */
+function revertPendingProfile() {
+  if (!pendingProfileName) return;
+  pendingProfileName = null;
+  fillProfileSelect();
+  fillForm(migrateLegacy(loadConfig()));
+  if (window.APRS && typeof window.APRS.fillTab === "function") window.APRS.fillTab(window.APRS.cfg || null);
 }
 
 function applyProfilesMessage(msg) {
@@ -196,7 +230,10 @@ function applyProfilesMessage(msg) {
     }
   }
 
-  if (hasServerCfg) {
+  if (hasServerCfg && pendingProfileName) {
+    // Configure shows an unsaved profile pick: keep the cache current, not the form.
+    saveConfig(migrateLegacy(Object.assign(defaultsEndpoints(), cfg)));
+  } else if (hasServerCfg) {
     const merged = migrateLegacy(Object.assign(defaultsEndpoints(), cfg));
     saveConfig(merged);
     fillForm(merged);
@@ -215,8 +252,44 @@ function initProfileControls() {
   if (profileSel) {
     profileSel.addEventListener("change", () => {
       const name = profileSel.value;
-      if (name && name !== activeProfileName) sendProfileSelect(name);
+      if (!name) return;
+      if (name === activeProfileName) {
+        revertPendingProfile();
+        return;
+      }
+      // Only load it into the form; Save switches (profile-select) and saves.
+      pendingProfileName = name;
+      sendProfilePeek(name);
     });
+  }
+  // Save: switch to the picked profile first, so the profile-save / aprs-config
+  // messages that the Save handlers send next land in it (server handles a
+  // socket's messages in order). Capture phase = before those handlers.
+  document.addEventListener(
+    "click",
+    (e) => {
+      if (!e.target || !e.target.closest || !e.target.closest("#btn-save-config")) return;
+      if (!pendingProfileName) return;
+      const name = pendingProfileName;
+      pendingProfileName = null;
+      if (name !== activeProfileName) {
+        sendProfileSelect(name);
+        activeProfileName = name;
+      }
+    },
+    true,
+  );
+  // Closing Configure any other way (Cancel, ×, Esc, backdrop) = no switch.
+  const cfgPanel = document.getElementById("config-panel");
+  if (cfgPanel && typeof MutationObserver === "function") {
+    new MutationObserver(() => {
+      if (!cfgPanel.classList.contains("open")) revertPendingProfile();
+    }).observe(cfgPanel, { attributes: true, attributeFilter: ["class"] });
+  }
+  for (const id of ["btn-profile-new", "btn-profile-rename", "btn-profile-delete"]) {
+    // these act on the active profile: drop an unsaved pick first
+    const b = document.getElementById(id);
+    if (b) b.addEventListener("click", revertPendingProfile, true);
   }
   const btnNew = document.getElementById("btn-profile-new");
   if (btnNew) {
