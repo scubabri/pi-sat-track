@@ -883,7 +883,7 @@
       for (const f of st.favorites || []) {
         if (!f || !f.position || f.key === st.sat || (ok && !ok.has(f.key))) continue;
         const p = point(f.key);
-        p.lat = f.position.lat; p.lng = f.position.lon; p.alt = (f.position.heightKm || 0) / RE_KM;
+        p.lat = f.position.lat; p.lng = f.position.lon; p.alt = f.isMoon ? MOON_MARK_ALT : (f.position.heightKm || 0) / RE_KM;
         p.color = colorOf(f.key); p.sel = false; p.display = f.display || f.key;
         keep.add(f.key);
       }

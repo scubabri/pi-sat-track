@@ -349,7 +349,8 @@ function renderSatMenu(payload) {
 
   quick = pinMoonFirst(sortHeardList(quick), moonRow);
 
-  if (!quick.some((s) => !s.isMoon)) {
+  // The pinned Moon row alone is not "a favorite" unless it is starred.
+  if (!quick.some((s) => !s.isMoon || favSet.has(s.key))) {
     const empty = document.createElement("div");
     empty.className = "sat-menu-empty";
     empty.textContent =
@@ -370,9 +371,9 @@ function renderSatMenu(payload) {
     star.dataset.sat = s.key;
     star.textContent = favSet.has(s.key) ? "★" : "☆";
     star.title = favSet.has(s.key) ? "Remove favorite" : "Add favorite";
-    // Clicks handled by menu event delegation (survives re-renders)
-    // The Moon (EME) is pinned, not a favorite, and has no per-sat pass alerts.
-    if (!s.isMoon) wrap.appendChild(star);
+    // Clicks handled by menu event delegation (survives re-renders).
+    // The Moon (EME) is pinned first and can be a favorite like any sat (key "MOON").
+    wrap.appendChild(star);
 
     // Pass alerts for every pass of this sat (js/pass-alerts.js handles clicks)
     const bell = document.createElement("button");
@@ -380,8 +381,8 @@ function renderSatMenu(payload) {
     bell.className = "sat-alert";
     bell.dataset.alert = "sat";
     bell.dataset.sat = s.key;
-    if (!s.isMoon) wrap.appendChild(bell);
-    else wrap.classList.add("sat-chip-moon");
+    wrap.appendChild(bell);
+    if (s.isMoon) wrap.classList.add("sat-chip-moon");
 
     const btn = document.createElement("button");
     btn.type = "button";

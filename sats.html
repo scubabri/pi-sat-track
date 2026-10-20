@@ -252,7 +252,7 @@
             e.stopPropagation();
             toggleFavorite(s.key);
           });
-          if (!s.isMoon) favTd.appendChild(favBtn); // Moon (EME): pinned, never a favorite
+          favTd.appendChild(favBtn); // Moon (EME) too: favorite key "MOON"
           tr.appendChild(favTd);
 
           const nameTd = document.createElement("td");
