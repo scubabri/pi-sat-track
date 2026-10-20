@@ -17,6 +17,7 @@
     <link rel="stylesheet" href="css/layout.css" />
     <link rel="stylesheet" href="css/sidebar.css" />
     <link rel="stylesheet" href="css/qso-log.css" />
+    <link rel="stylesheet" href="css/aprs.css" />
     <link rel="stylesheet" href="css/amsat-report.css" />
     <link rel="stylesheet" href="css/decode-overlay.css" />
     <link rel="stylesheet" href="css/schedule.css" />
@@ -111,6 +112,7 @@
             <button type="button" class="cfg-tab" data-tab="radio" role="tab">Radio<span class="cfg-tab-dot" aria-hidden="true"></span></button>
             <button type="button" class="cfg-tab" data-tab="rotor" role="tab">Rotor<span class="cfg-tab-dot" aria-hidden="true"></span></button>
             <button type="button" class="cfg-tab" data-tab="logging" role="tab">Logging &amp; WSJT-X<span class="cfg-tab-dot" aria-hidden="true"></span></button>
+            <button type="button" class="cfg-tab" data-tab="kiss" role="tab">KISS / APRS<span class="cfg-tab-dot" aria-hidden="true"></span></button>
           </nav>
           <div class="cfg-tab-content">
             <section class="cfg-tab-pane" data-tab="station" role="tabpanel">
@@ -963,6 +965,178 @@
             </div>
 
             </section>
+            <section class="cfg-tab-pane" data-tab="kiss" role="tabpanel" hidden>
+            <div class="form-section" id="cfg-kiss-section">
+              <div class="form-section-title">KISS TNC</div>
+              <div class="form-row">
+                <label class="cfg-check-label" for="cfg-kiss-enabled">
+                  <input type="checkbox" id="cfg-kiss-enabled" />
+                  Connect to a KISS TNC (Graywolf, Direwolf, hardware TNC)
+                </label>
+                <p class="form-hint">Only connects (and reconnects) while this is on. Turning it off closes the connection.</p>
+              </div>
+              <div class="kiss-conns" id="cfg-kiss-conns" aria-label="KISS connections"></div>
+              <div class="kiss-conns-foot">
+                <button type="button" class="btn-test" id="cfg-kiss-add">+ Add connection</button>
+                <span class="form-hint">One row per TNC channel: Graywolf binds one channel per KISS TCP port; 9600 G3RUH needs Direwolf (MODEM 9600).</span>
+              </div>
+              <p class="kiss-test-tip" id="cfg-kiss-test-tip" role="status" hidden></p>
+              <div class="form-row-2">
+                <div>
+                  <label for="cfg-kiss-default-tx">Default TX connection</label>
+                  <select id="cfg-kiss-default-tx" class="cfg-select" title="Used with no satellite selected or a terrestrial Via (WIDEn-N / direct)"></select>
+                </div>
+                <div>
+                  <label for="cfg-kiss-expire">Keep heard stations (min)</label>
+                  <input type="number" id="cfg-kiss-expire" placeholder="60" min="5" max="1440" step="1" />
+                </div>
+              </div>
+              <p class="form-hint">Satellite sends go out on a TX-capable connection whose speed matches the satellite (Per-satellite speed under Transmit); with no satellite, on the Default TX connection.</p>
+              <p class="form-hint" id="cfg-kiss-status" aria-live="polite">KISS: off</p>
+              <details class="rigctld-help" id="cfg-kiss-help">
+                <summary>Graywolf / Direwolf setup</summary>
+                <p class="form-hint">
+                  <b>Graywolf</b> (remote host or this Pi): Interfaces → KISS TNC → <b>+ Add Interface</b>,
+                  Type <b>TCP (server)</b>, listen <code>0.0.0.0:6700</code>, Channel = your sat radio channel,
+                  <b>Mode = Modem</b> (Graywolf's modem keys the radio). Leave "Allow digipeater/beacon/iGate
+                  to transmit" alone (TNC mode only). Turn off Graywolf beacons / digipeater rules for the
+                  satellite channel. Graywolf drops a repeat of the same packet within 30 s.
+                  Graywolf binds <b>one channel per KISS TCP port</b> (e.g. 8001 = FLEX ch1 with TX,
+                  8002 = VHF Dax 3 RX only): add one row per port. Graywolf only has 1200 AFSK / PSK modems.
+                </p>
+                <p class="form-hint">
+                  <b>Direwolf</b> for 9600 G3RUH sats: <code>MODEM 9600</code> on the 9600 channel and e.g.
+                  <code>KISSPORT 8003</code>; add a row with Speed 9600 G3RUH (see docs/APRS.md).
+                  KISS port (Advanced) is only for multi-channel Direwolf / multi-port TNCs.
+                  <b>Bluetooth TNC</b> (Mobilinkd, TH-D74/D75): pair once with <code>bluetoothctl</code>,
+                  then <code>sudo rfcomm bind 0 &lt;MAC&gt;</code> and pick Serial, <code>/dev/rfcomm0</code>.
+                </p>
+              </details>
+            </div>
+
+            <div class="form-section">
+              <div class="form-section-title">APRS station</div>
+              <div class="form-row-2">
+                <div>
+                  <label for="cfg-kiss-ssid">SSID (optional)</label>
+                  <input type="text" id="cfg-kiss-ssid" placeholder="none" maxlength="2" autocomplete="off" spellcheck="false" />
+                </div>
+                <div>
+                  <label for="cfg-kiss-symbol-btn">Map symbol</label>
+                  <input type="hidden" id="cfg-kiss-symbol" />
+                  <button type="button" id="cfg-kiss-symbol-btn" class="aprs-sym-field" aria-expanded="false" aria-controls="cfg-kiss-symbol-pop"></button>
+                </div>
+              </div>
+              <div class="form-row aprs-sym-pop" id="cfg-kiss-symbol-pop" hidden>
+                <input type="search" id="cfg-kiss-symbol-q" placeholder="Search symbols: car, house, tent, weather, satellite…" autocomplete="off" spellcheck="false" aria-label="Search APRS symbols" />
+                <div class="aprs-sym-list" id="cfg-kiss-symbol-list" role="listbox" aria-label="APRS symbols"></div>
+                <div class="aprs-sym-foot">
+                  <label for="cfg-kiss-symbol-ov">Overlay character (alternate-table symbols only)</label>
+                  <input type="text" id="cfg-kiss-symbol-ov" maxlength="1" placeholder="none" autocomplete="off" spellcheck="false" />
+                  <span class="aprs-sym-credit">Icons: aprs.fi symbol set by OH7LZB (CC BY-SA), see docs/APRS.md</span>
+                </div>
+              </div>
+              <p class="form-hint" id="cfg-kiss-source-hint">Source = your Station callsign (no SSID unless set).</p>
+              <div class="form-row">
+                <label for="cfg-kiss-comment">Beacon comment</label>
+                <input type="text" id="cfg-kiss-comment" maxlength="43" placeholder="e.g. Pi Sat Track via ISS" autocomplete="off" />
+              </div>
+              <div class="form-row-2">
+                <div>
+                  <label for="cfg-kiss-pos-source">Beacon position</label>
+                  <select id="cfg-kiss-pos-source" class="cfg-select">
+                    <option value="grid">Grid square centre (Station grid)</option>
+                    <option value="latlon">Exact latitude / longitude</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="cfg-kiss-ambiguity">Position ambiguity</label>
+                  <select id="cfg-kiss-ambiguity" class="cfg-select">
+                    <option value="0">None</option>
+                    <option value="1">0.01′ (~18 m)</option>
+                    <option value="2">0.1′ (~185 m)</option>
+                    <option value="3">1′ (~1.8 km)</option>
+                    <option value="4">10′ (~18 km)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row-2" id="cfg-kiss-latlon-row" hidden>
+                <div>
+                  <label for="cfg-kiss-lat">Latitude</label>
+                  <input type="number" id="cfg-kiss-lat" step="0.0001" min="-90" max="90" placeholder="39.7392" />
+                </div>
+                <div>
+                  <label for="cfg-kiss-lon">Longitude</label>
+                  <input type="number" id="cfg-kiss-lon" step="0.0001" min="-180" max="180" placeholder="-104.9903" />
+                </div>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <div class="form-section-title">Transmit</div>
+              <div class="form-row">
+                <label class="cfg-check-label" for="cfg-kiss-tx">
+                  <input type="checkbox" id="cfg-kiss-tx" />
+                  Enable transmit (position, UI text and messages from the APRS windows)
+                </label>
+              </div>
+              <div class="form-row-2">
+                <div>
+                  <label for="cfg-kiss-path">Default Via (path)</label>
+                  <input type="text" id="cfg-kiss-path" placeholder="ARISS" autocomplete="off" spellcheck="false" />
+                </div>
+                <div class="form-hint" style="align-self:end">Sending is never blocked by the selected satellite's elevation or mode.</div>
+              </div>
+              <div class="form-row-2">
+                <div>
+                  <label for="cfg-kiss-default-to">Default To (AX.25 destination)</label>
+                  <input type="text" id="cfg-kiss-default-to" placeholder="CQ" maxlength="9" autocomplete="off" spellcheck="false" />
+                </div>
+                <div class="form-hint" style="align-self:end">Like UISS: To / Via form the header of every packet (CQ VIA ARISS). Change them per send in the APRS windows.</div>
+              </div>
+              <div class="form-row">
+                <label for="cfg-kiss-satpaths">Per-satellite Via (one per line: SAT=PATH)</label>
+                <textarea id="cfg-kiss-satpaths" rows="3" spellcheck="false" placeholder="ISS=ARISS&#10;SONATE-2=DP0SNX&#10;NO-44=W3ADO-1"></textarea>
+              </div>
+              <div class="form-row">
+                <label for="cfg-kiss-satspeeds">Per-satellite speed (one per line: SAT=1200 or SAT=9600)</label>
+                <textarea id="cfg-kiss-satspeeds" rows="2" spellcheck="false" placeholder="CROCUBE=9600&#10;ISS=1200"></textarea>
+                <p class="form-hint" id="cfg-kiss-satspeeds-hint">Empty = from the AMSAT digipeater list (ISS, IO-86, NO-44, SONATE-2 = 1200; CroCube, GRBBeta, KNACKSAT-2, KOSTKA, LASARsat, Marina = 9600), else the selected mode (9k6 / G3RUH = 9600), else 1200.</p>
+              </div>
+              <div class="form-row">
+                <label class="cfg-check-label" for="cfg-kiss-req-radio">
+                  <input type="checkbox" id="cfg-kiss-req-radio" checked />
+                  Only send while Radio is ON (tracker is tuning the radio)
+                </label>
+                <label class="cfg-check-label" for="cfg-kiss-retry-tag">
+                  <input type="checkbox" id="cfg-kiss-retry-tag" checked />
+                  Add retry number to repeated sends
+                </label>
+                <div class="form-hint">Resending the same position / UI text within 30 s appends “ #2”, “ #3”… so Graywolf (drops identical frames within 30 s) and digipeater dupe filters pass it. Messages are not changed.</div>
+              </div>
+              <div class="form-row-2">
+                <div>
+                  <label for="cfg-kiss-digi-timeout">Digipeat wait (s)</label>
+                  <input type="number" id="cfg-kiss-digi-timeout" placeholder="30" min="5" max="600" step="1" title="After this long without hearing your packet repeated, it is marked No digipeat heard" />
+                </div>
+                <div class="form-hint" style="align-self:end">Your packet heard back with a used (*) digipeater = digipeated; logged to ~/.rpitrack/aprs/digipeats.jsonl.</div>
+              </div>
+              <div class="form-row-2">
+                <div>
+                  <label for="cfg-kiss-dupe">Duplicate window (s)</label>
+                  <input type="number" id="cfg-kiss-dupe" placeholder="30" min="1" max="600" step="1" title="Same source + same info within this many seconds is shown as one row with a ×N badge" />
+                </div>
+                <div class="form-hint" style="align-self:end">Copies of one packet (direct and via digipeaters, any connection) collapse into one ×N row; click it to see each path.</div>
+              </div>
+              <div class="form-row">
+                <label class="cfg-check-label" for="cfg-kiss-log">
+                  <input type="checkbox" id="cfg-kiss-log" checked />
+                  Log all packets to ~/.rpitrack/aprs/aprs-YYYY-MM-DD.log (UTC)
+                </label>
+              </div>
+              <p class="form-hint">Header = <code>CALL&gt;To,Via</code> (UISS style). APRS messages are sent without ack request (UISS default); no retries.</p>
+            </div>
+            </section>
           </div>
       </div>
       <div id="config-actions">
@@ -1078,6 +1252,7 @@
             <dt>Radio</dt><dd id="cfg-sum-radio">-</dd>
             <dt>Rotor</dt><dd id="cfg-sum-rotor">-</dd>
             <dt>Logging</dt><dd id="cfg-sum-log">-</dd>
+            <dt id="cfg-sum-aprs-dt" hidden>APRS</dt><dd id="cfg-sum-aprs" hidden>-</dd>
           </dl>
         </section>
         <section class="panel-section qso-log-section">
@@ -1370,6 +1545,13 @@
     <script src="js/qso-log.js"></script>
     <script src="js/qso-call-grid.js"></script>
     <script src="js/decode-overlay.js"></script>
+    <script src="js/aprs-symbols.js"></script>
+    <script src="js/aprs-combo.js"></script>
+    <script src="js/aprs-digi-badge.js"></script>
+    <script src="js/aprs-config.js"></script>
+    <script src="js/aprs-float.js"></script>
+    <script src="js/aprs-overlay.js"></script>
+    <script src="js/aprs-window.js"></script>
     <script src="js/schedule.js"></script>
     <script src="js/fav-overlay.js"></script>
     <script src="js/pass-alerts-core.js"></script>
