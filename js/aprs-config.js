@@ -393,6 +393,7 @@
     syncSymbolField();
   }
   APRS.syncSymbolField = syncSymbolField;
+  APRS.fillTab = (c) => fillTab(c);
 
   function patchWs() {
     if (typeof ws === "undefined" || !ws || ws.__aprsPatched) return;

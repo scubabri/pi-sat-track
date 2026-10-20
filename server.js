@@ -251,6 +251,7 @@ function applyWsjtxListener() {
  * profile.config.aprs; RX packets -> list + "APRS Heard" layer + daily log
  * in ~/.rpitrack/aprs/; TX (beacon / message) gated on radio + sat state.
  */
+const aprsNormalize = require("./lib/aprs/service").normalizeConfig;
 const aprsService = require("./lib/aprs/service").createService({
   broadcast: (o) => broadcast(o),
   getStation: () => stationFromProfile(),
@@ -295,6 +296,14 @@ function broadcastProfiles() {
 
 // Load named profiles from ~/.rpitrack/profiles.json and apply active one
 profiles.load();
+// KISS / APRS settings are per profile (config.aprs): a profile saved before it
+// had any gets a copy of the active profile's, so switching never goes blank.
+try {
+  const n = profiles.backfillConfigKey("aprs");
+  if (n) console.log("Profiles: copied KISS / APRS settings into", n, "profile(s)");
+} catch (e) {
+  console.warn("Profiles: APRS backfill failed:", e.message);
+}
 // Offsets store initialized as "default" in state.init (before profiles were
 // loaded): switch it to the real active profile now, before any sat loads.
 if (typeof state.setOffsetsProfile === "function")
@@ -1159,6 +1168,22 @@ wss.on("connection", (ws, req) => {
               }),
             );
           });
+        return;
+      }
+
+      // Configure's profile selector: load a profile's values into the form only.
+      // Nothing is saved or applied (radio / rotor / KISS / logging) until Save,
+      // which then sends profile-select.
+      if (msg.type === "profile-peek" && msg.name) {
+        const p = profiles.getProfile(msg.name);
+        const cfg = p && p.config && typeof p.config === "object" ? p.config : {};
+        ws.send(
+          JSON.stringify(
+            p
+              ? { type: "profile-peek", name: profiles.sanitizeName(msg.name), config: cfg, aprs: aprsNormalize(cfg.aprs) }
+              : { type: "profile-peek", name: msg.name, error: "Unknown profile" },
+          ),
+        );
         return;
       }
 
