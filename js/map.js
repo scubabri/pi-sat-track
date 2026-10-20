@@ -192,6 +192,32 @@ function updateSunLayer() {
   } else sunMarker.setLatLng([sun.lat, sun.lon]);
 }
 
+/**
+ * Moon (EME) visibility footprint: where the Moon is above the horizon, i.e. the
+ * hemisphere centred on the sub-lunar point (geometric, ~1 deg parallax ignored).
+ * Same construction as the night polygon, with the Moon in place of the Sun.
+ */
+let moonFootprint = null;
+function moonFootprintRing(sub) {
+  const term = window.sunCalc.terminator(sub, -540, 540, 2);
+  const pole = sub.lat < 0 ? -90 : 90; // the pole that sees the Moon
+  return term.concat([[pole, 540], [pole, -540]]);
+}
+function updateMoonFootprint(sub) {
+  if (!map) return;
+  if (!sub || !window.sunCalc) {
+    if (moonFootprint && map.hasLayer(moonFootprint)) map.removeLayer(moonFootprint);
+    return;
+  }
+  const ring = moonFootprintRing(sub);
+  if (!moonFootprint) {
+    moonFootprint = L.polygon(ring, { color: "#c9d1d9", weight: 1, opacity: 0.5, fillColor: "#c9d1d9", fillOpacity: 0.06, interactive: false, smoothFactor: 1 }).addTo(map);
+  } else {
+    moonFootprint.setLatLngs(ring);
+    if (!map.hasLayer(moonFootprint)) moonFootprint.addTo(map);
+  }
+}
+
 /** Geometric horizon footprint radius (meters) from sat altitude */
 function footprintRadiusM(heightKm) {
   if (!Number.isFinite(heightKm) || heightKm <= 0) return 0;
@@ -305,6 +331,7 @@ function clearMapTracking() {
     map.removeLayer(nowGhost);
     nowGhost = null;
   }
+  updateMoonFootprint(null);
   if (footprintCircle && map) {
     map.removeLayer(footprintCircle);
     footprintCircle = null;
@@ -433,11 +460,14 @@ function updateMapTracking(state) {
       }
       const pT = pv && window.passPreview.get();
       const label = selSatLabelHtml(state, pT);
-      satMarker.setStyle(pv ? { fillColor: "#e3b341", color: "#fff" } : { fillColor: "#58a6ff", color: "#fff" });
+      satMarker.setStyle(pv ? { fillColor: "#e3b341", color: "#fff" } : state.isMoon ? { fillColor: "#e6edf3", color: "#8b949e" } : { fillColor: "#58a6ff", color: "#fff" });
       setSelSatLabel(label);
 
       const hKm = state.position.heightKm;
-      const rM = footprintRadiusM(hKm);
+      // Moon (EME): its "footprint" is nearly a hemisphere (Leaflet circles break
+      // past ~80 deg), so draw it as a polygon bounded by its own terminator.
+      const rM = state.isMoon ? 0 : footprintRadiusM(hKm);
+      updateMoonFootprint(state.isMoon ? { lat: lat, lon: lon } : null);
       if (rM > 0) {
         if (!footprintCircle) {
           footprintCircle = L.circle([lat, lon], {

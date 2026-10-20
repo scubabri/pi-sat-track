@@ -252,7 +252,7 @@
             e.stopPropagation();
             toggleFavorite(s.key);
           });
-          favTd.appendChild(favBtn);
+          if (!s.isMoon) favTd.appendChild(favBtn); // Moon (EME): pinned, never a favorite
           tr.appendChild(favTd);
 
           const nameTd = document.createElement("td");
@@ -270,7 +270,7 @@
           tr.appendChild(nameTd);
 
           const cells = [
-            s.norad,
+            s.norad == null ? "\u2014" : s.norad,
             escapeHtml(s.mode || "—"),
             escapeHtml(s.uplink || "—"),
             escapeHtml(s.downlink || "—"),

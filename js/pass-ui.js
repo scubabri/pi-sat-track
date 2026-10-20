@@ -212,7 +212,10 @@ function updateSidebar(state) {
       const durSec = (los - aos) / 1000;
       const durMin = Math.floor(durSec / 60);
       const durS = Math.floor(durSec % 60);
-      durEl.textContent = durMin + "m " + durS + "s";
+      durEl.textContent =
+        durSec >= 3600 // Moon (EME): hours-long passes
+          ? Math.floor(durSec / 3600) + "h " + String(Math.floor((durSec % 3600) / 60)).padStart(2, "0") + "m"
+          : durMin + "m " + durS + "s";
     }
 
     tickCountdown();
