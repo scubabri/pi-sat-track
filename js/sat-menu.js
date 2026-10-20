@@ -213,10 +213,43 @@ function satHorizonClass(s) {
   return "sat-down";
 }
 
-/** The Moon (EME) is always offered, first, in both list modes (not a favorite). */
-function pinMoonFirst(list, moonRow) {
-  const rest = list.filter((s) => s && !s.isMoon);
-  return moonRow ? [moonRow].concat(rest) : rest;
+/**
+ * Menu rows for the current list mode (pure; also used by tests).
+ *   quick — the main section: Favorites (sorted AOS / A–Z) or Heard on AMSAT.
+ *   extra — rows shown under a separate "Moon (EME)" heading.
+ * The Moon (EME, key "MOON") is a favorite only when starred: then it is in
+ * the Favorites section, sorted like any favorite (no pinning). Unstarred it
+ * is never listed as a favorite; in Favorites mode it sits in its own section
+ * below (empty star, selectable, can be starred there). In Heard mode it is
+ * pinned first either way, as before favorites support (it has no AMSAT reports).
+ */
+function satMenuLists(sats, favs, listMode, curKey) {
+  sats = sats || [];
+  favs = favs || [];
+  const quick = [];
+  const seen = new Set();
+  function add(s) {
+    if (!s || !s.key || seen.has(s.key)) return;
+    seen.add(s.key);
+    quick.push(s);
+  }
+  const moonRow = sats.find((s) => s && s.isMoon) || null;
+  if (listMode === "favorites") {
+    favs.forEach((key) => {
+      const match = sats.find((s) => s.key === key);
+      add(match || { key: key, name: key, norad: "?", heard: false });
+    });
+    const sorted = sortHeardList(quick);
+    const starred = moonRow && favs.indexOf(moonRow.key) >= 0;
+    return { quick: sorted, extra: moonRow && !starred ? [moonRow] : [] };
+  }
+  sats.filter((s) => s.heard && !s.isMoon).forEach(add);
+  if (curKey) {
+    const cur = sats.find((s) => s.key === curKey);
+    if (cur && !cur.isMoon) add(cur);
+  }
+  const sorted = sortHeardList(quick);
+  return { quick: moonRow ? [moonRow].concat(sorted) : sorted, extra: [] };
 }
 
 function menuStructureKey(quickKeys, favs, listMode, sortMode) {
@@ -232,29 +265,12 @@ function renderSatMenu(payload) {
   const favs = loadFavorites();
   const favSet = new Set(favs);
 
-  // Build the same quick list we will display, so we can skip a full wipe
+  // Build the same lists we will display, so we can skip a full wipe
   // when only horizon/AOS numbers changed (common during open-menu ticks).
-  let quickPreview = [];
-  const seenPreview = new Set();
-  function addPreview(s) {
-    if (!s || !s.key || seenPreview.has(s.key)) return;
-    seenPreview.add(s.key);
-    quickPreview.push(s);
-  }
-  if (satListMode === "favorites") {
-    favs.forEach((key) => {
-      const match = sats.find((s) => s.key === key);
-      if (match) addPreview(match);
-      else addPreview({ key: key, name: key, norad: "?", heard: false });
-    });
-  } else {
-    sats.filter((s) => s.heard).forEach(addPreview);
-    if (currentSatKey) addPreview(sats.find((s) => s.key === currentSatKey));
-  }
-  const moonRow = sats.find((s) => s && s.isMoon) || null;
-  quickPreview = pinMoonFirst(sortHeardList(quickPreview), moonRow).slice(0, 60);
+  const lists = satMenuLists(sats, favs, satListMode, currentSatKey);
+  const quickPreview = lists.quick.slice(0, 60).concat(lists.extra);
   const structKey = menuStructureKey(
-    quickPreview.map((s) => s.key),
+    quickPreview.map((s) => s.key).concat(lists.extra.length ? ["|extra"] : []),
     favs,
     satListMode,
     satSortMode,
@@ -320,37 +336,10 @@ function renderSatMenu(payload) {
   headRow.appendChild(sortBtn);
   menu.appendChild(headRow);
 
-  let quick = [];
-  const seen = new Set();
+  const quick = lists.quick;
 
-  function add(s) {
-    if (!s || !s.key || seen.has(s.key)) return;
-    seen.add(s.key);
-    quick.push(s);
-  }
-
-  if (satListMode === "favorites") {
-    favs.forEach((key) => {
-      const match = sats.find((s) => s.key === key);
-      if (match) add(match);
-      else
-        add({
-          key: key,
-          name: key,
-          norad: "?",
-          heard: false,
-        });
-    });
-  } else {
-    const heard = sats.filter((s) => s.heard);
-    heard.forEach(add);
-    if (currentSatKey) add(sats.find((s) => s.key === currentSatKey));
-  }
-
-  quick = pinMoonFirst(sortHeardList(quick), moonRow);
-
-  // The pinned Moon row alone is not "a favorite" unless it is starred.
-  if (!quick.some((s) => !s.isMoon || favSet.has(s.key))) {
+  // Heard mode: the pinned Moon row alone is not an AMSAT report.
+  if (satListMode === "favorites" ? !quick.length : !quick.some((s) => !s.isMoon)) {
     const empty = document.createElement("div");
     empty.className = "sat-menu-empty";
     empty.textContent =
@@ -360,7 +349,7 @@ function renderSatMenu(payload) {
     menu.appendChild(empty);
   }
 
-  quick.slice(0, 60).forEach((s) => {
+  function appendChip(s) {
     const wrap = document.createElement("span");
     wrap.className = "sat-chip";
     wrap.dataset.sat = s.key;
@@ -372,7 +361,7 @@ function renderSatMenu(payload) {
     star.textContent = favSet.has(s.key) ? "★" : "☆";
     star.title = favSet.has(s.key) ? "Remove favorite" : "Add favorite";
     // Clicks handled by menu event delegation (survives re-renders).
-    // The Moon (EME) is pinned first and can be a favorite like any sat (key "MOON").
+    // The Moon (EME) can be a favorite like any sat (key "MOON").
     wrap.appendChild(star);
 
     // Pass alerts for every pass of this sat (js/pass-alerts.js handles clicks)
@@ -415,7 +404,18 @@ function renderSatMenu(payload) {
     wrap.appendChild(btn);
 
     menu.appendChild(wrap);
-  });
+  }
+  quick.slice(0, 60).forEach(appendChip);
+  if (lists.extra.length) {
+    // Unstarred Moon in Favorites mode: own section (not a favorite), still
+    // selectable and starrable from here.
+    const sec = document.createElement("div");
+    sec.className = "sat-menu-section sat-menu-section-moon";
+    sec.textContent = "Moon (EME) \u2014 not a favorite";
+    sec.title = "Star it to add the Moon to your favorites";
+    menu.appendChild(sec);
+    lists.extra.forEach(appendChip);
+  }
 
   const statusCat = document.getElementById("status-catalog");
   if (statusCat) {
@@ -428,7 +428,7 @@ function renderSatMenu(payload) {
     if (match) setSatButtonLabel(match.name);
     else if (!currentSatLabel) setSatButtonLabel(currentSatKey);
   } else if (quick.length) {
-    const first = quick.find((s) => !s.isMoon) || quick[0];
+    const first = quick.find((s) => !s.isMoon) || quick[0] || lists.extra[0];
     currentSatKey = first.key;
     setSatButtonLabel(first.name);
   }
