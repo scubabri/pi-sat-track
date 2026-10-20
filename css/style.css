@@ -144,13 +144,6 @@ body {
   padding: 0 2px;
 }
 
-/* Unstarred Moon (EME) in Favorites mode: its own row below the favorites */
-.sat-menu-section.sat-menu-section-moon {
-  flex-basis: 100%;
-  width: 100%;
-  margin-top: 10px;
-}
-
 .sat-sort-btn {
   flex-shrink: 0;
   background: var(--bg-elevated);

@@ -214,14 +214,11 @@ function satHorizonClass(s) {
 }
 
 /**
- * Menu rows for the current list mode (pure; also used by tests).
- *   quick — the main section: Favorites (sorted AOS / A–Z) or Heard on AMSAT.
- *   extra — rows shown under a separate "Moon (EME)" heading.
- * The Moon (EME, key "MOON") is a favorite only when starred: then it is in
- * the Favorites section, sorted like any favorite (no pinning). Unstarred it
- * is never listed as a favorite; in Favorites mode it sits in its own section
- * below (empty star, selectable, can be starred there). In Heard mode it is
- * pinned first either way, as before favorites support (it has no AMSAT reports).
+ * Chips for the current list mode (pure; also used by tests): Favorites
+ * (the starred keys) or Heard on AMSAT (heard sats + the selected sat),
+ * sorted AOS / A–Z. The Moon (EME, key "MOON") gets no special placement:
+ * it is a normal favorite chip when starred, otherwise it is reached via
+ * "Browse full catalog..." like any other object.
  */
 function satMenuLists(sats, favs, listMode, curKey) {
   sats = sats || [];
@@ -233,23 +230,16 @@ function satMenuLists(sats, favs, listMode, curKey) {
     seen.add(s.key);
     quick.push(s);
   }
-  const moonRow = sats.find((s) => s && s.isMoon) || null;
   if (listMode === "favorites") {
     favs.forEach((key) => {
       const match = sats.find((s) => s.key === key);
       add(match || { key: key, name: key, norad: "?", heard: false });
     });
-    const sorted = sortHeardList(quick);
-    const starred = moonRow && favs.indexOf(moonRow.key) >= 0;
-    return { quick: sorted, extra: moonRow && !starred ? [moonRow] : [] };
+  } else {
+    sats.filter((s) => s.heard).forEach(add);
+    if (curKey) add(sats.find((s) => s.key === curKey));
   }
-  sats.filter((s) => s.heard && !s.isMoon).forEach(add);
-  if (curKey) {
-    const cur = sats.find((s) => s.key === curKey);
-    if (cur && !cur.isMoon) add(cur);
-  }
-  const sorted = sortHeardList(quick);
-  return { quick: moonRow ? [moonRow].concat(sorted) : sorted, extra: [] };
+  return sortHeardList(quick);
 }
 
 function menuStructureKey(quickKeys, favs, listMode, sortMode) {
@@ -267,10 +257,10 @@ function renderSatMenu(payload) {
 
   // Build the same lists we will display, so we can skip a full wipe
   // when only horizon/AOS numbers changed (common during open-menu ticks).
-  const lists = satMenuLists(sats, favs, satListMode, currentSatKey);
-  const quickPreview = lists.quick.slice(0, 60).concat(lists.extra);
+  const quick = satMenuLists(sats, favs, satListMode, currentSatKey);
+  const quickPreview = quick.slice(0, 60);
   const structKey = menuStructureKey(
-    quickPreview.map((s) => s.key).concat(lists.extra.length ? ["|extra"] : []),
+    quickPreview.map((s) => s.key),
     favs,
     satListMode,
     satSortMode,
@@ -336,10 +326,7 @@ function renderSatMenu(payload) {
   headRow.appendChild(sortBtn);
   menu.appendChild(headRow);
 
-  const quick = lists.quick;
-
-  // Heard mode: the pinned Moon row alone is not an AMSAT report.
-  if (satListMode === "favorites" ? !quick.length : !quick.some((s) => !s.isMoon)) {
+  if (!quick.length) {
     const empty = document.createElement("div");
     empty.className = "sat-menu-empty";
     empty.textContent =
@@ -371,7 +358,6 @@ function renderSatMenu(payload) {
     bell.dataset.alert = "sat";
     bell.dataset.sat = s.key;
     wrap.appendChild(bell);
-    if (s.isMoon) wrap.classList.add("sat-chip-moon");
 
     const btn = document.createElement("button");
     btn.type = "button";
@@ -406,16 +392,6 @@ function renderSatMenu(payload) {
     menu.appendChild(wrap);
   }
   quick.slice(0, 60).forEach(appendChip);
-  if (lists.extra.length) {
-    // Unstarred Moon in Favorites mode: own section (not a favorite), still
-    // selectable and starrable from here.
-    const sec = document.createElement("div");
-    sec.className = "sat-menu-section sat-menu-section-moon";
-    sec.textContent = "Moon (EME) \u2014 not a favorite";
-    sec.title = "Star it to add the Moon to your favorites";
-    menu.appendChild(sec);
-    lists.extra.forEach(appendChip);
-  }
 
   const statusCat = document.getElementById("status-catalog");
   if (statusCat) {
@@ -428,7 +404,7 @@ function renderSatMenu(payload) {
     if (match) setSatButtonLabel(match.name);
     else if (!currentSatLabel) setSatButtonLabel(currentSatKey);
   } else if (quick.length) {
-    const first = quick.find((s) => !s.isMoon) || quick[0] || lists.extra[0];
+    const first = quick[0];
     currentSatKey = first.key;
     setSatButtonLabel(first.name);
   }
