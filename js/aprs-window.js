@@ -298,7 +298,7 @@
       syncCount();
       const t = r.packet ? r.packet.type : "";
       const as = r.kind === "text" ? (t === "other" ? " (plain text on APRS maps)" : t ? " (APRS sees: " + t + ")" : "") : "";
-      showWhy("Sent " + hhmmss(Date.now()) + ": " + (r.packet ? r.packet.tnc2 : "") + as + (r.note ? " · Note: " + r.note : ""), true);
+      showWhy("Sent " + hhmmss(Date.now()) + (r.packet && r.packet.conn ? " via " + r.packet.conn : "") + ": " + (r.packet ? r.packet.tnc2 : "") + as + (r.note ? " · Note: " + r.note : ""), true);
     } else showWhy((r.reasons || ["failed"]).join("; "), false);
   }
 

@@ -52,6 +52,19 @@ def main(argv):
         err(errno.EINVAL, "EINVAL", "RFCOMM channel must be 1-30")
         return 2
     timeout = float(argv[3]) if len(argv) > 3 else 15.0
+    # Tests only (test/aprs-bt-bridge.test.js): the same relay loop over a
+    # local TCP socket, since CI has no Bluetooth adapter.
+    test_inet = os.environ.get("PST_RFCOMM_BRIDGE_TEST_INET", "")
+    if test_inet:
+        host, _, port = test_inet.rpartition(":")
+        try:
+            s = socket.create_connection((host or "127.0.0.1", int(port)), timeout)
+        except OSError as e:
+            oserr(e)
+            return 4
+        s.settimeout(None)
+        status("OK connected")
+        return relay(s)
     if not hasattr(socket, "AF_BLUETOOTH") or not hasattr(socket, "BTPROTO_RFCOMM"):
         err(0, "ENOBTSOCK", "this Python has no Bluetooth socket support")
         return 3
@@ -71,6 +84,12 @@ def main(argv):
         return 4
     s.settimeout(None)
     status("OK connected")
+    return relay(s)
+
+
+def relay(s):
+    """Radio <-> app, unbuffered: every recv() is written to stdout at once
+    (os.write on the raw fd, no Python buffering, binary, no line mode)."""
     inp = sys.stdin.buffer.fileno()
     out = sys.stdout.buffer.fileno()
     try:
@@ -97,7 +116,6 @@ def main(argv):
             s.close()
         except Exception:
             pass
-
 
 if __name__ == "__main__":
     try:

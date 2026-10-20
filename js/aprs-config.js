@@ -899,13 +899,21 @@
   APRS.textToSatSpeeds = textToSatSpeeds;
   APRS.textToSatPaths = textToSatPaths;
 
+  const fmtBytes = (n) => {
+    n = Number(n) || 0;
+    return n < 1000 ? n + " B" : n < 1e6 ? (n / 1000).toFixed(1) + " kB" : (n / 1e6).toFixed(1) + " MB";
+  };
   /** One connection's state, e.g. "connected · RX 12 · TX 1" / "refused — retrying in 4 s". */
   function connStateText(x) {
     if (!x) return "not saved";
     if (!x.enabled) return "disabled";
     switch (x.state) {
       case "connected":
-        return "connected · RX " + (x.rx || 0) + " · TX " + (x.tx || 0);
+        return (
+          "connected · RX " + (x.rx || 0) + " frame" + (x.rx === 1 ? "" : "s") + " · " + fmtBytes(x.rxBytes) + " raw · TX " + (x.tx || 0) +
+          (x.diag === "no-kiss" ? " · receiving data but no KISS frames: is the radio in KISS mode (KISS12)?" : "") +
+          (x.diag === "no-data" ? " · Connected, no data from radio — check KISS12 and data band (Menu 506)" : "")
+        );
       case "connecting":
         return "connecting…";
       case "waiting":
@@ -924,7 +932,7 @@
     if (!list.length) return "KISS: no connection enabled";
     if (list.length === 1) return "KISS " + list[0].name + " " + (list[0].target || "") + ": " + connStateText(list[0]);
     const up = list.filter((x) => x.state === "connected").length;
-    return "KISS " + up + "/" + list.length + " connected · RX " + (st.rx || 0) + " · TX " + (st.tx || 0) + (st.error ? " · " + st.error : "");
+    return "KISS " + up + "/" + list.length + " connected · RX " + (st.rx || 0) + " frames · " + fmtBytes(st.rxBytes) + " raw · TX " + (st.tx || 0) + (st.error ? " · " + st.error : "");
   }
   APRS.statusText = statusText;
   /** Info field of a packet record (TNC2 text after the first ":"). */

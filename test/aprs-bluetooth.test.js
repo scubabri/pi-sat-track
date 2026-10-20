@@ -85,7 +85,7 @@ test("KISS over RFCOMM: helper args, RX frames decoded, TX frames written as KIS
   assert.ok(await until(() => t.state === "connected"));
   const cp = f.spawned[0];
   assert.strictEqual(cp.cmd, "python3");
-  assert.deepStrictEqual(cp.args, [HELPER, MAC, "2", "15"]);
+  assert.deepStrictEqual(cp.args, ["-u", HELPER, MAC, "2", "15"]);
   assert.strictEqual(t.describe(), "bluetooth " + MAC + " ch 2");
   // a frame split across two reads
   const enc = kiss.encode(frameBuf("N0CALL-7>APRS,WIDE2-1:>hello"), { port: 0 });

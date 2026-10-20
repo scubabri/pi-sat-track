@@ -222,8 +222,21 @@ Connection settings: Bluetooth address (filled in by Pair, or pick under
 **Enabled** and **Save**. The Bluetooth baud rate does not matter.
 
 Channel: the D74 / D75 SPP service is RFCOMM channel **2** (KI4HDU, habets.se,
-SQ5T on the TH-D74 groups.io list). For another TNC, `sdptool records <MAC>`
-(where available) lists its Serial Port channel, or see its manual.
+SQ5T on the TH-D74 groups.io list). A successful connect only proves *a*
+serial port answered; to see which services the radio offers run
+`sdptool browse <MAC>` (or `sdptool records <MAC>`; package `bluez`, on newer
+BlueZ builds possibly `bluez-deprecated`) and use the **Channel:** under the
+"Serial Port" entry; set it under Advanced → RFCOMM channel. With no
+sdptool, try channels 1, 2, 3 in turn: on the right one the row shows raw
+bytes (RX … raw) as soon as packets are heard in KISS12.
+
+Connected but RX 0 frames · 0 B raw and TX frames do not key the radio:
+the link is up but the radio's TNC is not on it. Check, in order: KISS12 shows
+on the display (F 5); **Menu 983 KISS = Bluetooth** (if it is USB, the
+Bluetooth serial port connects but the TNC never talks on it); Menu 506 data
+band is the band tuned to 144.390 / the satellite; then the channel (above).
+TX frames are counted when written to the link: KISS has no acknowledgement,
+so "TX 4" with no transmission means the radio ignored them.
 
 Status / Test errors:
 
@@ -237,6 +250,8 @@ Status / Test errors:
 | no Bluetooth socket support | Kernel / Python without BlueZ sockets (not Raspberry Pi OS) |
 | python3 not found | `sudo apt install python3` |
 | link lost | The radio was turned off or went out of range; it reconnects by itself |
+| connected · RX 0 frames · 1.2 kB raw · receiving data but no KISS frames | The radio sends text, not KISS: it is in its own APRS / TNC mode. Press **F 5** until **KISS12** shows. The server log has the first bytes (hex / ASCII) |
+| Connected, no data from radio | Connected 2+ min and not one byte: check KISS12 and the data band (Menu 506; in single-band display the data band must be the one shown), and that packets are heard on that band |
 
 Sources: Kenwood, *TH-D74A/E Operating Tips* (KISS commands, KISS12 / KISS96,
 Bluetooth SPP, Menu 930, 505);

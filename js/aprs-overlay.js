@@ -401,7 +401,7 @@
   function lastTxText(last, fmt) {
     const d = last.digi;
     if (d && d.state === "digipeated") return "✓ " + (last.retry > 1 ? "#" + last.retry + " " : "") + (d.viaSat ? "Heard via " : "Digipeated by ") + d.by.join(", ") + " · " + fmt(d.firstMs || last.time);
-    const sent = "Sent " + (last.retry > 1 ? "#" + last.retry + " " : "") + fmt(last.time);
+    const sent = "Sent " + (last.retry > 1 ? "#" + last.retry + " " : "") + fmt(last.time) + (last.conn ? " via " + last.conn : "");
     if (d && d.state === "none") return sent + " — no digipeat heard (" + (d.timeoutS || 30) + " s)";
     return sent + " — waiting for digipeat…";
   }
@@ -494,7 +494,7 @@
     why.dataset.result = String(Date.now());
     why.classList.toggle("ok", !!r.ok);
     why.classList.toggle("blocked", !r.ok);
-    why.textContent = r.ok ? "Sent " + hhmm(Date.now()) + ": " + (r.packet ? r.packet.tnc2 : "") + (r.note ? " · Note: " + r.note : "") : (r.reasons || ["failed"]).join("; ");
+    why.textContent = r.ok ? "Sent " + hhmm(Date.now()) + (r.packet && r.packet.conn ? " via " + r.packet.conn : "") + ": " + (r.packet ? r.packet.tnc2 : "") + (r.note ? " · Note: " + r.note : "") : (r.reasons || ["failed"]).join("; ");
     why.title = why.textContent;
   }
 
