@@ -173,11 +173,15 @@
     }
     if (msg.type.indexOf("aprs-") !== 0) return;
     if (msg.type === "aprs-status") {
-      const prevSat = APRS.status && APRS.status.sat ? APRS.status.sat.key : undefined;
       APRS.status = msg;
-      const satKey = msg.sat ? msg.sat.key : null;
-      // New satellite: Via follows its default again (UISS keeps one Via box; we re-default per sat).
-      if (prevSat !== undefined && prevSat !== satKey && APRS.hdr.via != null) APRS.setHdr({ via: null }, "sat");
+      const satKey = msg.sat ? msg.sat.key || msg.sat.name || "" : null;
+      // New satellite (or first status after a reload, or no sat): Via follows the
+      // server default for it again (per-sat override > built-in > configured
+      // path), dropping any manual edit. Typing is kept while the same sat stays.
+      if (APRS.hdr.viaSat !== satKey) {
+        APRS.hdr.viaSat = satKey;
+        APRS.setHdr({ via: null }, "sat");
+      }
       refreshDatalists();
       // The live (normalised) config rides on every status, so a client that
       // hooked the socket after the first "profiles" message still has it.

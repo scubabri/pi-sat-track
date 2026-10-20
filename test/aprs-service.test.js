@@ -204,6 +204,18 @@ test("per-satellite Via override falls back to the default path, then ARISS", ()
   assert.strictEqual(viaForSat(normalizeConfig({ path: "" }), null), "ARISS");
 });
 
+test("Via follows the sat: per-sat override > built-in (ISS=ARISS, SONATE-2=DP0SNX) > configured path", () => {
+  const c = normalizeConfig({ path: "WIDE2-1" });
+  assert.strictEqual(viaForSat(c, { satKey: "SONATE-2", satName: "SONATE-2", norad: 59112 }), "DP0SNX");
+  assert.strictEqual(viaForSat(c, { satKey: "sonate2" }), "DP0SNX");
+  assert.strictEqual(viaForSat(c, { satKey: "X", norad: 59112 }), "DP0SNX");
+  assert.strictEqual(viaForSat(c, { satKey: "ISS", norad: 25544 }), "ARISS");
+  assert.strictEqual(viaForSat(c, { satKey: "AO-91" }), "WIDE2-1");
+  assert.strictEqual(viaForSat(c, null), "WIDE2-1");
+  const o = normalizeConfig({ path: "WIDE2-1", satPaths: { "SONATE-2": "DP0SNX-11" } });
+  assert.strictEqual(viaForSat(o, { satKey: "SONATE-2" }), "DP0SNX-11");
+});
+
 test("UISS model: To = AX.25 destination (default CQ), Via = path; message / position / UI text / header frames", async () => {
   const tnc = await fakeTnc();
   const { svc } = makeSvc(tnc, ISS_UP);
