@@ -370,8 +370,11 @@
     if (!btn) return;
     const open = !!(win && win.isOpen());
     const st = APRS() && APRS().status;
-    // same "active" (orange) as Favorites / WSJT Heard: APRS enabled or its window open
-    btn.classList.toggle("active", open || !!(st && st.enabled));
+    // shared "active" (orange, decode-toggle-btn.active) only while the APRS window
+    // is open, like Sked Finder with its panel. Minimised still counts as open:
+    // its title bar stays on screen and the button restores it rather than opening
+    // a new one. APRS / KISS state is shown by the dot, not the button colour.
+    btn.classList.toggle("active", open);
     btn.setAttribute("aria-pressed", open ? "true" : "false");
     const state = st ? (st.enabled ? st.state : "off") : "off";
     btn.querySelector("#aprs-btn-dot").className = "aprs-btn-dot kiss-" + state;
