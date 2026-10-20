@@ -435,6 +435,24 @@
   const PRESET_LABEL = { graywolf: "Graywolf", direwolf: "Direwolf", custom: "Custom" };
   const opt = (map, v) => Object.entries(map).map(([k, l]) => '<option value="' + k + '"' + (String(k) === String(v) ? " selected" : "") + ">" + l + "</option>").join("");
   const escA = (x) => String(x == null ? "" : x).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+  /** Graywolf has only AFSK / PSK modems: no 9600 G3RUH. A Graywolf row at 9600 shows (and saves) 1200. */
+  const GW_NO9600 = "Graywolf has no 9600 modem — use Direwolf (MODEM 9600)";
+  const gwNo9600 = (preset, speed) => (preset === "graywolf" && Number(speed) === 9600 ? 1200 : speed);
+  function syncSpeedOpts(r) {
+    const pre = r.querySelector('[data-f="preset"]');
+    const sp = r.querySelector('[data-f="speed"]');
+    if (!pre || !sp) return;
+    const gw = pre.value === "graywolf";
+    const o = sp.querySelector('option[value="9600"]');
+    if (o) {
+      o.disabled = gw;
+      o.title = gw ? GW_NO9600 : "";
+      o.textContent = SPEED_LABEL[9600] + (gw ? " (not in Graywolf)" : "");
+    }
+    if (gw && sp.value === "9600") sp.value = "1200";
+    sp.title = gw ? GW_NO9600 : "";
+  }
+  APRS._gwNo9600 = gwNo9600;
   function connRowHtml(c) {
     const bt = c.transport === "bluetooth";
     return (
@@ -450,7 +468,7 @@
       '<label>Software<select class="cfg-select" data-f="preset">' + opt(PRESET_LABEL, c.preset || "graywolf") + "</select></label>" +
       '<label>Connection<select class="cfg-select" data-f="transport">' + opt({ tcp: "TCP", bluetooth: "Bluetooth" }, bt ? "bluetooth" : "tcp") + "</select></label>" +
       '<label>Role<select class="cfg-select" data-f="role">' + opt(ROLE_LABEL, c.role || "rxtx") + "</select></label>" +
-      '<label>Speed<select class="cfg-select" data-f="speed">' + opt(SPEED_LABEL, c.speed || 1200) + "</select></label>" +
+      '<label>Speed<select class="cfg-select" data-f="speed">' + opt(SPEED_LABEL, gwNo9600(c.preset || "graywolf", c.speed || 1200)) + "</select></label>" +
       "</div>" +
       '<div class="kc-grid kc-tcp"' + (bt ? " hidden" : "") + ">" +
       '<label>Host<input type="text" data-f="host" placeholder="localhost (or remote IP / hostname)" autocomplete="off" spellcheck="false" value="' + escA(c.host) + '" /></label>' +
@@ -504,6 +522,7 @@
     const box = $("cfg-kiss-conns");
     if (!box) return;
     box.innerHTML = list.length ? list.map(connRowHtml).join("") : '<p class="form-hint kc-empty">No connections. Add one (Graywolf port, Direwolf, Bluetooth TNC).</p>';
+    box.querySelectorAll(".kiss-conn").forEach(syncSpeedOpts);
     refreshDefaultTx();
     if (APRS.status) showStatus(APRS.status);
   }
@@ -534,6 +553,8 @@
       if (p && (cur === "" || Object.values(PRESET_PORTS).map(String).includes(cur))) pe.value = p;
       const ne = r.querySelector('[data-f="name"]');
       if (!ne.value.trim() || Object.values(PRESET_LABEL).concat(["TNC"]).some((l) => ne.value.trim().replace(/ \d+$/, "") === l)) ne.value = e.target.value === "custom" ? "TNC" : PRESET_LABEL[e.target.value];
+      syncSpeedOpts(r);
+      refreshDefaultTx();
     }
     if (e.type === "change" && f === "transport") {
       const bt = e.target.value === "bluetooth";

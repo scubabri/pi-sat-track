@@ -150,7 +150,7 @@ test("TX routing by role and speed; terrestrial uses the Default TX connection",
 });
 
 test("missing connection: 'No 9600 TX connection configured', RX-only does not count, none enabled", () => {
-  const c = normalizeConfig({ enabled: true, connections: [{ id: "a", name: "FLEX ch1", role: "rxtx" }, { id: "b", name: "DW", speed: 9600, role: "rx" }] });
+  const c = normalizeConfig({ enabled: true, connections: [{ id: "a", name: "FLEX ch1", role: "rxtx" }, { id: "b", name: "DW", preset: "direwolf", speed: 9600, role: "rx" }] });
   const r = routeTx(c, CROCUBE, "9A0CC", all);
   assert.strictEqual(r.ok, false);
   assert.match(r.reason, /^No 9600 TX connection configured for CroCube/);
@@ -226,7 +226,7 @@ test("service: TX goes out on the routed connection only; 9600 sat without a 960
     logToFile: false,
     connections: [
       { id: "gw", name: "FLEX ch1", host: "127.0.0.1", port: gw.port, role: "rxtx", speed: 1200 },
-      { id: "dw", name: "Direwolf 9600", host: "127.0.0.1", port: dw.port, role: "tx", speed: 9600 },
+      { id: "dw", name: "Direwolf 9600", host: "127.0.0.1", port: dw.port, role: "tx", preset: "direwolf", speed: 9600 },
     ],
   };
   svc.configure(base);
@@ -241,8 +241,9 @@ test("service: TX goes out on the routed connection only; 9600 sat without a 960
   const st = svc.statusPayload();
   assert.strictEqual(st.sat.speed, 9600);
   assert.strictEqual(st.txRoute.conn.name, "Direwolf 9600");
-  // configured path terrestrial: the sat route for a typed sat Via is still published
-  svc.configure(Object.assign({}, base, { path: "WIDE1-1,WIDE2-1" }));
+  // Via for this sat terrestrial (per-sat override; the built-in default would be 9A0CC):
+  // the sat route for a typed sat Via is still published
+  svc.configure(Object.assign({}, base, { path: "WIDE1-1,WIDE2-1", satPaths: { CROCUBE: "WIDE1-1,WIDE2-1" } }));
   assert.strictEqual(svc.statusPayload().txRoute.satRoute, false);
   assert.strictEqual(svc.statusPayload().txRouteSat.conn.name, "Direwolf 9600");
   assert.ok(!/No 9600/.test(svc.statusPayload().gateMessageSat.reasons.join()));

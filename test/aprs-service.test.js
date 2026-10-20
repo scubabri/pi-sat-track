@@ -212,6 +212,30 @@ test("Via follows the sat: per-sat override > built-in (ISS=ARISS, SONATE-2=DP0S
   assert.strictEqual(viaForSat(c, { satKey: "ISS", norad: 25544 }), "ARISS");
   assert.strictEqual(viaForSat(c, { satKey: "AO-91" }), "WIDE2-1");
   assert.strictEqual(viaForSat(c, null), "WIDE2-1");
+  // the rest of the AMSAT digipeater list (key / alias / NORAD from amsat_catalog.json)
+  const via = (sat) => viaForSat(c, sat);
+  assert.strictEqual(via({ satKey: "IO-86" }), "YB0X");
+  assert.strictEqual(via({ satKey: "x", satName: "LAPAN-A2" }), "YB0X");
+  assert.strictEqual(via({ satKey: "x", norad: 40931 }), "YB0X");
+  assert.strictEqual(via({ satKey: "NO-44" }), "W3ADO-1");
+  assert.strictEqual(via({ satKey: "PCSAT" }), "W3ADO-1");
+  assert.strictEqual(via({ satKey: "x", norad: 26931 }), "W3ADO-1");
+  assert.strictEqual(via({ satKey: "CroCube" }), "9A0CC");
+  assert.strictEqual(via({ satKey: "N60237", satName: "GRBBeta" }), "HA2GRB");
+  assert.strictEqual(via({ satKey: "x", norad: 60237 }), "HA2GRB");
+  assert.strictEqual(via({ satKey: "N69935", satName: "KOSTKA" }), "OK0KST");
+  assert.strictEqual(via({ satKey: "x", norad: 69935 }), "OK0KST");
+  assert.strictEqual(via({ satKey: "LASARsat" }), "OK0LSR");
+  assert.strictEqual(via({ satKey: "N69920", satName: "Marina" }), "OM9MAR");
+  assert.strictEqual(via({ satKey: "x", norad: 69920 }), "OM9MAR");
+  // no published Via: configured default
+  assert.strictEqual(via({ satKey: "KNACKSAT-2", norad: 67683 }), "WIDE2-1");
+  assert.strictEqual(via({ satKey: "GUARANISAT-2" }), "WIDE2-1");
+  for (const v of ["YB0X", "W3ADO-1", "PCSAT-1", "9A0CC", "HA2GRB", "OK0KST", "OK0LSR", "OM9MAR", "DP0SNX", "W3ADO-1*", "HA2GRB-1"])
+    assert.strictEqual(isSatPath(v), true, v);
+  // user override still wins over the built-in call
+  assert.strictEqual(viaForSat(normalizeConfig({ path: "WIDE2-1", satPaths: { "IO-86": "ARISS", "NO-44": "PCSAT-1" } }), { satKey: "IO-86" }), "ARISS");
+  assert.strictEqual(viaForSat(normalizeConfig({ path: "WIDE2-1", satPaths: { "IO-86": "ARISS", "NO-44": "PCSAT-1" } }), { satKey: "NO-44" }), "PCSAT-1");
   const o = normalizeConfig({ path: "WIDE2-1", satPaths: { "SONATE-2": "DP0SNX-11" } });
   assert.strictEqual(viaForSat(o, { satKey: "SONATE-2" }), "DP0SNX-11");
 });
@@ -342,4 +366,16 @@ test("one-shot Test: connects, counts KISS frames, sends nothing, closes; refuse
   assert.strictEqual(tnc.rx.length, 0);
   svc.stop();
   await tnc.close();
+});
+
+test("Graywolf has no 9600 modem: a Graywolf connection saved at 9600 is normalized to 1200", () => {
+  const c = normalizeConfig({
+    connections: [
+      { id: "a", name: "GW", preset: "graywolf", speed: 9600 },
+      { id: "b", name: "DW", preset: "direwolf", speed: 9600 },
+      { id: "c", name: "TNC", preset: "custom", speed: 9600 },
+      { id: "d", name: "GW2", preset: "graywolf", speed: 1200 },
+    ],
+  });
+  assert.deepStrictEqual(c.connections.map((x) => x.speed), [1200, 9600, 9600, 1200]);
 });
