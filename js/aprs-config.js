@@ -504,6 +504,7 @@
       '<label>Baud<input type="number" data-f="serialBaud" min="1200" step="1" placeholder="9600" value="' + escA(c.serialBaud || 9600) + '" /></label>' +
       "</div>" +
       '<p class="form-hint kc-btmac-hint"' + (bt ? "" : " hidden") + ">" + BT_HINT + "</p>" +
+      '<p class="form-hint kc-d74-hint"' + (c.preset === "th-d74" ? "" : " hidden") + ">Receives but won't transmit? Power-cycle the radio with KISS12 on; Pi Sat Track reconnects automatically.</p>" +
       '<p class="form-hint kc-bt-hint"' + (ser ? "" : " hidden") + '>A serial KISS TNC: USB (<code>/dev/ttyACM0</code>) or a Bluetooth port bound with <code>sudo rfcomm bind 0 &lt;MAC&gt; &lt;channel&gt;</code> &rarr; <code>/dev/rfcomm0</code>. Test checks TCP and Bluetooth only.</p>' +
       '<details class="kc-adv"' + (c.kissPort || (bt && c.btChannel && c.btChannel !== 2) ? " open" : "") + "><summary>Advanced</summary>" +
       '<label class="kc-kp">KISS port (channel)<input type="number" data-f="kissPort" min="0" max="15" step="1" placeholder="0" value="' + escA(c.kissPort || 0) + '" /></label>' +
@@ -572,6 +573,9 @@
   }
   function syncTransport(r) {
     const v = r.querySelector('[data-f="transport"]').value;
+    const pr = r.querySelector('[data-f="preset"]');
+    const dh = r.querySelector(".kc-d74-hint");
+    if (dh) dh.hidden = !pr || pr.value !== "th-d74";
     r.querySelector(".kc-tcp").hidden = v !== "tcp";
     r.querySelector(".kc-btmac").hidden = v !== "bluetooth";
     r.querySelector(".kc-btmac-hint").hidden = v !== "bluetooth";
@@ -670,6 +674,34 @@
     else if (pr.kind === "display") box.innerHTML = "Enter / confirm <b>" + escA(pr.code) + '</b> on the radio. <button type="button" class="btn-test" data-act="bt-cancel">Cancel</button>';
     else box.innerHTML = 'Pairing… <button type="button" class="btn-test" data-act="bt-cancel">Cancel</button>';
   }
+  /** Error with a command to copy (sudo rfkill unblock bluetooth, …) and Retry. */
+  function selectText(el) {
+    if (!el) return;
+    const rg = document.createRange();
+    rg.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(rg);
+    try {
+      document.execCommand("copy");
+    } catch (_) {}
+  }
+  function btFix(r, m, op) {
+    const box = r.querySelector("[data-bt-prompt]");
+    if (!m || !m.copy) {
+      if (box.dataset.fix) btPrompt(r, null);
+      delete box.dataset.fix;
+      return false;
+    }
+    box.hidden = false;
+    box.dataset.fix = "1";
+    box.innerHTML =
+      escA(String(m.error || "").replace(/\s*Run: .*$/, "")) + " Run on the Pi: " +
+      '<code class="kc-bt-cmd" data-bt-cmd>' + escA(m.copy) + "</code> " +
+      '<button type="button" class="btn-test" data-act="bt-copy">Copy</button> ' +
+      (m.retry ? '<button type="button" class="btn-test" data-act="bt-retry" data-op="' + escA(op) + '">Retry</button>' : "");
+    return true;
+  }
   function onBt(m) {
     if (m.op === "scan") {
       const r = btRow(m.id || btScanRow);
@@ -680,9 +712,11 @@
       r.querySelector('[data-act="bt-scan-stop"]').hidden = !scanning;
       r.querySelector('[data-act="bt-power"]').hidden = !m.canPowerOn;
       if (m.state === "error") {
-        btOut(r, "Bluetooth: " + m.error + (m.canPowerOn ? " (Power on)" : ""));
+        btOut(r, "Bluetooth: " + m.error + (m.canPowerOn && !m.copy ? " (Power on)" : ""));
+        btFix(r, m, "scan");
         return;
       }
+      btFix(r, null);
       renderBtList(r, m);
       const n = (m.devices || []).length;
       btOut(r, scanning ? "Scanning… " + n + " device" + (n === 1 ? "" : "s") + " (" + Math.max(0, Math.round(((m.endsAt || 0) - Date.now()) / 1000)) + " s left)" : "Scan finished: " + n + " device" + (n === 1 ? "" : "s") + ". Pair the radio, or Use one that is already paired.");
@@ -720,8 +754,9 @@
     } else if (m.op === "power") {
       const r = btRow(m.id);
       if (!r) return;
-      r.querySelector('[data-act="bt-power"]').hidden = !!m.ok;
+      r.querySelector('[data-act="bt-power"]').hidden = !!m.ok || !!m.hard || !!m.configTxt;
       btOut(r, m.ok ? "Bluetooth on" + (m.unblocked ? " (unblocked)" : "") + ". Scan again." : "Bluetooth: " + m.error);
+      btFix(r, m.ok ? null : m, "power");
     }
   }
   APRS._onBt = onBt;
@@ -737,7 +772,25 @@
       btOut(r, "Starting scan…");
       send({ type: "aprs-bt-scan", action: "start", id });
     } else if (act === "bt-scan-stop") send({ type: "aprs-bt-scan", action: "stop", id });
-    else if (act === "bt-power") send({ type: "aprs-bt-power", id });
+    else if (act === "bt-power") {
+      btOut(r, "Powering on Bluetooth… (up to ~10 s)");
+      send({ type: "aprs-bt-power", id });
+    } else if (act === "bt-retry") {
+      btFix(r, null);
+      if (e.target.dataset.op === "scan") {
+        btOut(r, "Starting scan…");
+        send({ type: "aprs-bt-scan", action: "start", id });
+      } else {
+        btOut(r, "Powering on Bluetooth… (up to ~10 s)");
+        send({ type: "aprs-bt-power", id });
+      }
+    } else if (act === "bt-copy") {
+      const c = r.querySelector("[data-bt-cmd]");
+      const txt = c ? c.textContent : "";
+      const done = () => (e.target.textContent = "Copied");
+      if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(txt).then(done, () => selectText(c));
+      else selectText(c);
+    }
     else if (act === "bt-use") btUse(r, mac, dv.dataset.name);
     else if (act === "bt-pair") send({ type: "aprs-bt-pair", mac, id });
     else if (act === "bt-unpair" || act === "bt-unpair-sel") {
@@ -777,6 +830,10 @@
       syncTransport(r);
     }
     if (e.type === "change" && f === "transport") syncTransport(r);
+    if (e.type === "change" && f === "preset") {
+      const dh = r.querySelector(".kc-d74-hint");
+      if (dh) dh.hidden = e.target.value !== "th-d74";
+    }
     if (e.type === "change" && e.target.hasAttribute && e.target.hasAttribute("data-bt-pick") && e.target.value) {
       r.querySelector('[data-f="btAddress"]').value = e.target.value;
       const ne = r.querySelector('[data-f="name"]');

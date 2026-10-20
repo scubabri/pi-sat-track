@@ -156,14 +156,38 @@ on a paired row of the scan list) unpairs a device after a confirmation.
 Only one scan runs at a time (across all browsers); it stops on its own
 after the timeout and when Configure is closed. Pairing stops a running scan.
 
-Errors shown in the row: *Bluetooth adapter is powered off* / *blocked
-(rfkill)*, with a **Power on** button (it runs `power on`, and
-`rfkill unblock bluetooth` when blocked, which needs the `bluetooth` group or
-`sudo rfkill unblock bluetooth` by hand); *no Bluetooth adapter*; *BlueZ
-(bluetoothctl) is not installed* (`sudo apt install bluez`); *permission
-denied* (add the user to the `bluetooth` group, log out and in); *pairing
-failed (wrong PIN / code, or rejected on the radio)*; *pairing timed out*;
-*device not found: scan again with the radio in pairing mode*.
+Errors shown in the row:
+
+- *Bluetooth adapter is powered off*: **Power on**.
+- *Bluetooth is soft-blocked by the system. Run: sudo rfkill unblock bluetooth*:
+  rfkill is read from `/sys/class/rfkill` (no root). Power on first tries
+  `rfkill unblock bluetooth` itself and checks the state again (a normal user is
+  usually not allowed to); if still blocked the row shows the command with
+  **Copy** and **Retry**. BlueZ's `org.bluez.Error.Failed` while blocked is shown
+  as this message. On Raspberry Pi OS every radio starts soft-blocked
+  (`options rfkill default_state=0` from raspberrypi-sys-mods) until unblocked
+  once; systemd-rfkill then remembers it across reboots. `install-pi.sh
+  --update` does the unblock with sudo.
+- After an unblock BlueZ answers `org.bluez.Error.Busy` / `NotReady` for a
+  few seconds while the adapter initializes: Power on retries (0.5, 1, 2, 4,
+  2.5 s); if still busy: *Run: sudo systemctl restart bluetooth, then Retry*.
+- *Bluetooth is hard-blocked*: a hardware / firmware switch; software cannot
+  unblock it.
+- *Bluetooth disabled in config.txt (dtoverlay=disable-bt …)*: remove or
+  comment out that line in `/boot/firmware/config.txt` (older: `/boot/config.txt`)
+  and reboot.
+- *no Bluetooth adapter*; *BlueZ (bluetoothctl) is not installed*
+  (`sudo apt install bluez`); *permission denied* (add the user to the
+  `bluetooth` group, log out and in); *pairing failed (wrong PIN / code, or
+  rejected on the radio)*; *pairing timed out*; *device not found: scan again
+  with the radio in pairing mode*.
+
+Server log (Log viewer / `server.log`): `Bluetooth: power on …` with the rfkill
+state, `Bluetooth: scan started / stopped, N device(s) found`, pairing prompts
+and results (PINs are not logged), `remove …`; per KISS connection: profile
+apply summary, connecting / connected / disconnected, reconnect errors (each
+new error, then at most every 10 min), first frame, "receiving data but no KISS
+frames" with the first bytes, and every TX (`APRS: TX via [name] target, N bytes`).
 
 These Configure actions use the same WebSocket as the rest of Configure, so
 like every other Configure setting they are available to any browser that
@@ -229,6 +253,13 @@ BlueZ builds possibly `bluez-deprecated`) and use the **Channel:** under the
 "Serial Port" entry; set it under Advanced → RFCOMM channel. With no
 sdptool, try channels 1, 2, 3 in turn: on the right one the row shows raw
 bytes (RX … raw) as soon as packets are heard in KISS12.
+
+**Receives but won't transmit? Power-cycle the radio with KISS12 on; Pi Sat
+Track reconnects automatically.** (TH-D74 firmware quirk seen on hardware:
+with the Bluetooth link set up while the radio was already on, KISS frames
+were received but not transmitted; after a power cycle in KISS12 the next
+position was digipeated. The row's TX count only means the frame was written
+to the link.)
 
 Connected but RX 0 frames · 0 B raw and TX frames do not key the radio:
 the link is up but the radio's TNC is not on it. Check, in order: KISS12 shows

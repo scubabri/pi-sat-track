@@ -129,7 +129,8 @@ test("scan errors: adapter off (Power on offered), blocked, no adapter, BlueZ mi
   assert.match(r.error, /powered off/);
   assert.strictEqual(r.canPowerOn, true);
   r = await err("Controller X\n\tPowered: no\n\tPowerState: off-blocked\n");
-  assert.match(r.error, /blocked \(rfkill\)/);
+  assert.match(r.error, /soft-blocked by the system\. Run: sudo rfkill unblock bluetooth/);
+  assert.strictEqual(r.copy, "sudo rfkill unblock bluetooth");
   assert.strictEqual(r.canPowerOn, true);
   r = await err("No default controller available\n");
   assert.match(r.error, /no Bluetooth adapter/);
@@ -232,19 +233,123 @@ test("pair failures: auth failed, not found, timed out, one at a time, invalid M
   assert.strictEqual(pairError("org.bluez.Error.AuthenticationTimeout", D74).includes("timed out"), true);
 });
 
-test("unpair and power on", async () => {
+test("unpair", async () => {
   let m = new BtManager({ exec: fakeExec({ ["remove " + D74]: "[DEL] Device " + D74 + " TH-D74\nDevice has been removed\n" }) });
   assert.deepStrictEqual(await m.unpair(D74), { op: "unpair", ok: true, mac: D74 });
   m = new BtManager({ exec: fakeExec({ ["remove " + D74]: "Device " + D74 + " not available\n" }) });
   assert.strictEqual((await m.unpair(D74)).note, "was not paired");
   assert.strictEqual((await m.unpair("x")).ok, false);
-  // blocked -> rfkill unblock (allowed) -> on
+});
+
+/* ---------- Power on: rfkill (sysfs), Busy retry, hard block, config.txt ---------- */
+const os = require("os");
+const fs = require("fs");
+const path = require("path");
+/** Fake /sys/class/rfkill with one hci0 entry, plus a config.txt. */
+function fakeSys(o) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pst-rfkill-"));
+  const rk = path.join(dir, "rfkill");
+  fs.mkdirSync(path.join(rk, "rfkill1"), { recursive: true });
+  fs.mkdirSync(path.join(rk, "rfkill0"), { recursive: true });
+  fs.writeFileSync(path.join(rk, "rfkill0", "type"), "wlan\n");
+  fs.writeFileSync(path.join(rk, "rfkill0", "soft"), "1\n");
+  fs.writeFileSync(path.join(rk, "rfkill1", "type"), "bluetooth\n");
+  fs.writeFileSync(path.join(rk, "rfkill1", "name"), "hci0\n");
+  fs.writeFileSync(path.join(rk, "rfkill1", "soft"), (o.soft ? "1" : "0") + "\n");
+  fs.writeFileSync(path.join(rk, "rfkill1", "hard"), (o.hard ? "1" : "0") + "\n");
+  const cfg = path.join(dir, "config.txt");
+  fs.writeFileSync(cfg, o.config || "[all]\ndtparam=audio=on\n#dtoverlay=disable-bt\n");
+  return { rfkillDir: rk, configFiles: [cfg], unblock: () => fs.writeFileSync(path.join(rk, "rfkill1", "soft"), "0\n") };
+}
+const slept = [];
+const noSleep = (ms) => (slept.push(ms), Promise.resolve());
+const quiet = { log: () => {}, warn: () => {} };
+
+test("power on, soft-blocked and this user may not unblock: org.bluez.Error.Failed becomes the soft-block message + copyable sudo command", async () => {
+  const sys = fakeSys({ soft: true });
+  const calls = [];
+  const logs = [];
+  const m = new BtManager({
+    ...sys,
+    sleep: noSleep,
+    log: (l) => logs.push(l),
+    exec: fakeExec({ "power on": "Failed to set power on: org.bluez.Error.Failed\n", "rfkill unblock bluetooth": "" /* exit 0 but nothing changes: the Pi case */ }, calls),
+  });
+  const r = await m.powerOn();
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.error, "Bluetooth is soft-blocked by the system. Run: sudo rfkill unblock bluetooth");
+  assert.strictEqual(r.copy, "sudo rfkill unblock bluetooth");
+  assert.strictEqual(r.retry, true);
+  assert.deepStrictEqual(calls, ["rfkill unblock bluetooth"], "no blind power on while blocked");
+  assert.match(r.rfkill, /hci0 soft blocked, hard no/);
+  assert.match(logs[0], /^Bluetooth: power on failed: Bluetooth is soft-blocked.*\[rfkill hci0 soft blocked, hard no\]$/);
+  // not soft-blocked per sysfs, but BlueZ still says Failed while something blocks: same mapping
+  const sys2 = fakeSys({ soft: false });
+  let flip = 0;
+  const m2 = new BtManager({ ...sys2, sleep: noSleep, log: false, exec: fakeExec({ "power on": () => (flip++ === 0 ? (fs.writeFileSync(path.join(sys2.rfkillDir, "rfkill1", "soft"), "1"), "Failed to set power on: org.bluez.Error.Failed\n") : "") }) });
+  assert.strictEqual((await m2.powerOn()).error, "Bluetooth is soft-blocked by the system. Run: sudo rfkill unblock bluetooth");
+});
+
+test("power on: our unblock works, then Busy while the adapter initializes -> retried with backoff -> on", async () => {
+  const sys = fakeSys({ soft: true });
+  slept.length = 0;
   let n = 0;
   const calls = [];
-  m = new BtManager({ exec: fakeExec({ "power on": () => (n++ ? "Changing power on succeeded\n" : "Failed to set power on: org.bluez.Error.Blocked\n"), "rfkill unblock bluetooth": "" }, calls) });
-  assert.deepStrictEqual(await m.powerOn(), { op: "power", ok: true, unblocked: true });
-  assert.deepStrictEqual(calls, ["power on", "rfkill unblock bluetooth", "power on"]);
-  // rfkill not permitted -> clear instruction
-  m = new BtManager({ exec: fakeExec({ "power on": "Failed to set power on: org.bluez.Error.Blocked\n", "rfkill unblock bluetooth": Object.assign(new Error("Operation not permitted"), { code: 1 }) }) });
-  assert.match((await m.powerOn()).error, /sudo rfkill unblock bluetooth/);
+  const m = new BtManager({
+    ...sys,
+    sleep: noSleep,
+    log: false,
+    exec: fakeExec({ "rfkill unblock bluetooth": () => (sys.unblock(), ""), "power on": () => (++n < 3 ? "Failed to set power on: org.bluez.Error.Busy\n" : "Changing power on succeeded\n") }, calls),
+  });
+  const r = await m.powerOn();
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.unblocked, true);
+  assert.strictEqual(r.attempts, 3);
+  assert.deepStrictEqual(slept, [500, 1000]);
+  assert.deepStrictEqual(calls, ["rfkill unblock bluetooth", "power on", "power on", "power on"]);
+  // user ran sudo rfkill unblock themselves, then Retry: NotReady once, then on
+  slept.length = 0;
+  let k = 0;
+  const m2 = new BtManager({ ...fakeSys({ soft: false }), sleep: noSleep, log: false, exec: fakeExec({ "power on": () => (k++ ? "Changing power on succeeded\n" : "Failed to set power on: org.bluez.Error.NotReady\n") }) });
+  assert.strictEqual((await m2.powerOn()).ok, true);
+  assert.deepStrictEqual(slept, [500]);
+});
+
+test("power on: Busy for ~10 s -> gives up and suggests restarting the bluetooth service", async () => {
+  slept.length = 0;
+  const m = new BtManager({ ...fakeSys({ soft: false }), sleep: noSleep, log: false, exec: fakeExec({ "power on": "Failed to set power on: org.bluez.Error.Busy\n" }) });
+  const r = await m.powerOn();
+  assert.strictEqual(r.ok, false);
+  assert.deepStrictEqual(slept, [500, 1000, 2000, 4000, 2500]);
+  assert.strictEqual(slept.reduce((a, b) => a + b, 0), 10000);
+  assert.match(r.error, /still busy after unblocking \(6 tries\)\. Run: sudo systemctl restart bluetooth, then Retry/);
+  assert.strictEqual(r.copy, "sudo systemctl restart bluetooth");
+});
+
+test("power on / scan: hard block is a hardware / firmware switch; nothing is run", async () => {
+  const calls = [];
+  const sys = fakeSys({ hard: true });
+  const m = new BtManager({ ...sys, sleep: noSleep, log: false, exec: fakeExec({ show: "Controller X\n\tPowered: no\n\tPowerState: off-blocked\n" }, calls) });
+  const r = await m.powerOn();
+  assert.strictEqual(r.hard, true);
+  assert.match(r.error, /hard-blocked: a hardware \/ firmware switch/);
+  assert.deepStrictEqual(calls, []);
+  const sc = await m.startScan({ id: "x" });
+  assert.match(sc.error, /hard-blocked/);
+  assert.strictEqual(sc.canPowerOn, false);
+});
+
+test("dtoverlay=disable-bt in config.txt is reported (scan and power on); commented lines ignored", async () => {
+  const { configTxtBt } = require("../lib/kiss/bt-manager");
+  const sys = fakeSys({ config: "# dtoverlay=disable-bt\n[all]\ndtoverlay=disable-bt\n" });
+  assert.deepStrictEqual(configTxtBt(sys), { file: sys.configFiles[0], line: "dtoverlay=disable-bt" });
+  assert.strictEqual(configTxtBt(fakeSys({})), null);
+  assert.strictEqual(configTxtBt(fakeSys({ config: "dtoverlay=pi3-disable-bt\n" })).line, "dtoverlay=pi3-disable-bt");
+  assert.strictEqual(configTxtBt({ configFiles: ["/nonexistent/config.txt"] }), null);
+  // overlay -> no hci0 at all
+  const none = { configFiles: sys.configFiles, rfkillDir: path.join(os.tmpdir(), "pst-no-rfkill-" + process.pid) };
+  const m = new BtManager({ ...none, sleep: noSleep, log: false, exec: fakeExec({ show: "No default controller available\n", "power on": "No default controller available\n" }) });
+  const sc = await m.startScan({ id: "x" });
+  assert.match(sc.error, /^Bluetooth disabled in config\.txt \(dtoverlay=disable-bt in .*config\.txt\): remove or comment out that line and reboot$/);
+  assert.match((await m.powerOn()).error, /^Bluetooth disabled in config\.txt/);
 });

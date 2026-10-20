@@ -170,9 +170,70 @@ if [[ $INSTALL_BLUETOOTH -eq 1 ]]; then
       need_sudo systemctl enable --now bluetooth || warn "Could not start the bluetooth service"
     fi
   fi
-  if command -v rfkill >/dev/null 2>&1 && rfkill list bluetooth 2>/dev/null | grep -qi "soft blocked: yes"; then
-    log "Unblocking Bluetooth (rfkill)"
-    need_sudo rfkill unblock bluetooth || true
+  # rfkill: Raspberry Pi OS ships "options rfkill default_state=0"
+  # (raspberrypi-sys-mods, /etc/modprobe.d/rfkill_default.conf): every radio,
+  # Bluetooth included, starts soft-blocked at boot and systemd-rfkill restores
+  # the last saved state (/var/lib/systemd/rfkill/*:bluetooth). Unblocking once
+  # with root saves "0" there, so it stays unblocked across reboots. rfkill
+  # lives in /usr/sbin (not on a normal user's PATH): state is read from sysfs.
+  bt_rfkill() { # prints "soft hard" for the first bluetooth rfkill entry, or nothing
+    local d
+    for d in /sys/class/rfkill/rfkill*; do
+      [[ -r "$d/type" ]] && [[ "$(cat "$d/type")" == bluetooth ]] && { echo "$(cat "$d/soft") $(cat "$d/hard")"; return; }
+    done
+  }
+  RFKILL_BIN="$(PATH="$PATH:/usr/sbin:/sbin" command -v rfkill || true)"
+  if [[ -z "$RFKILL_BIN" ]] && ! dpkg -s rfkill >/dev/null 2>&1; then
+    need_sudo apt-get install -y --no-install-recommends rfkill || warn "Could not install rfkill"
+    RFKILL_BIN="$(PATH="$PATH:/usr/sbin:/sbin" command -v rfkill || true)"
+  fi
+  RF="$(bt_rfkill)"
+  if [[ -z "$RF" ]]; then
+    echo "    no Bluetooth rfkill entry (no adapter yet, or Bluetooth disabled in config.txt)"
+  elif [[ "${RF#* }" == 1 ]]; then
+    warn "Bluetooth is hard-blocked (hardware / firmware switch); software cannot unblock it"
+  elif [[ "${RF% *}" == 1 ]]; then
+    log "Unblocking Bluetooth (rfkill, soft block)"
+    if [[ -n "$RFKILL_BIN" ]]; then need_sudo "$RFKILL_BIN" unblock bluetooth || true; fi
+    sleep 1
+    if [[ "$(bt_rfkill)" == "0 "* ]]; then
+      echo "    Bluetooth unblocked"
+    else
+      warn "Bluetooth is still soft-blocked: run sudo rfkill unblock bluetooth"
+    fi
+  else
+    echo "    Bluetooth not rfkill-blocked"
+  fi
+  # Persistence: systemd-rfkill saves the state on every change. Make sure the
+  # saved Bluetooth state is "unblocked" and that boot restores it.
+  if [[ -n "$RF" && "$(bt_rfkill)" == "0 "* ]]; then
+    for f in /var/lib/systemd/rfkill/*:bluetooth; do
+      [[ -e "$f" ]] || continue
+      if [[ "$(need_sudo cat "$f" 2>/dev/null)" != 0 ]]; then
+        echo "    saved rfkill state $f -> 0 (unblocked at boot)"
+        echo 0 | need_sudo tee "$f" >/dev/null || warn "Could not write $f"
+      fi
+    done
+    if systemctl is-enabled systemd-rfkill.socket 2>/dev/null | grep -qx masked || systemctl is-enabled systemd-rfkill.service 2>/dev/null | grep -qx masked; then
+      warn "systemd-rfkill is masked: the Bluetooth unblock will not survive a reboot (sudo systemctl unmask systemd-rfkill.socket systemd-rfkill.service)"
+    fi
+    if grep -qw "systemd.restore_state=0" /proc/cmdline 2>/dev/null; then
+      warn "kernel cmdline has systemd.restore_state=0: rfkill state is not restored at boot, so Bluetooth may start blocked (remove it from /boot/firmware/cmdline.txt)"
+    fi
+  fi
+  for CFG in /boot/firmware/config.txt /boot/config.txt; do
+    if [[ -r "$CFG" ]] && sed 's/#.*//' "$CFG" | grep -Eqi '^[[:space:]]*dtoverlay[[:space:]]*=[[:space:]]*(pi3-)?disable-bt'; then
+      warn "Bluetooth is disabled in $CFG (dtoverlay=disable-bt): remove that line and reboot to use a Bluetooth TNC"
+    fi
+  done
+  if [[ -n "$RF" && "$(bt_rfkill)" == "0 "* ]] && command -v bluetoothctl >/dev/null 2>&1; then
+    if ! bluetoothctl show 2>/dev/null | grep -q "Powered: yes"; then
+      for d in 0.5 1 2 4; do # Busy right after an unblock while the adapter initializes
+        bluetoothctl power on 2>&1 | grep -q "succeeded" && break
+        sleep "$d"
+      done
+      bluetoothctl show 2>/dev/null | grep -q "Powered: yes" && echo "    Bluetooth adapter powered on" || warn "Bluetooth adapter did not power on (try: sudo systemctl restart bluetooth)"
+    fi
   fi
   if getent group bluetooth >/dev/null 2>&1; then
     if id -nG "${APP_USER}" | tr ' ' '\n' | grep -qx bluetooth; then
@@ -186,7 +247,7 @@ if [[ $INSTALL_BLUETOOTH -eq 1 ]]; then
   if command -v python3 >/dev/null 2>&1 && ! python3 -c "import socket; socket.AF_BLUETOOTH; socket.BTPROTO_RFCOMM" >/dev/null 2>&1; then
     warn "python3 has no Bluetooth RFCOMM sockets here; Bluetooth KISS connections will not work"
   fi
-  echo "    pair the radio once: bluetoothctl → pair <MAC> → trust <MAC> (docs/APRS.md)"
+  echo "    pair the radio in Configure → KISS / APRS → Scan / Pair (or bluetoothctl, docs/APRS.md)"
 fi
 
 # -------------------- Node.js --------------------

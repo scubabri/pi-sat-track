@@ -404,3 +404,5 @@ mark.aprs-qhl { color: #0d1117; background: #e3b341; border-radius: 2px; padding
 #config-panel .kc-bt-prompt { margin-top: 6px; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 6px; font-size: 0.85rem; }
 #config-panel .kc-bt-prompt input { width: 90px; display: inline-block; padding: 4px 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
 #config-panel .kc-test-btn.test-hint { border-color: var(--accent); }
+#config-panel .kc-bt-cmd { user-select: all; padding: 1px 6px; border-radius: 4px; background: #000; border: 1px solid var(--border); font-size: 0.8rem; }
+#config-panel .kc-d74-hint { opacity: 0.75; font-style: italic; }
