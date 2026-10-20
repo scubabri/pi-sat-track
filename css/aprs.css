@@ -383,3 +383,24 @@ mark.aprs-qhl { color: #0d1117; background: #e3b341; border-radius: 2px; padding
 /* Sidebar STATION → APRS row: one KISS connection per line, TX one bold */
 .cfg-summary-list #cfg-sum-aprs { white-space: normal; line-height: 1.35; }
 .cfg-summary-list #cfg-sum-aprs b { font-weight: 700; }
+
+/* Configure → KISS / APRS: Bluetooth Scan / Pair */
+#config-panel .kc-bt-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+#config-panel .kc-bt-tools .form-hint { margin: 0; }
+#config-panel .kc-bt-list { margin-top: 6px; border: 1px solid var(--border); border-radius: 6px; max-height: 210px; overflow-y: auto; }
+#config-panel .kc-bt-list > .form-hint { margin: 6px 10px; }
+#config-panel .kc-bt-dev { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+#config-panel .kc-bt-dev:last-child { border-bottom: 0; }
+#config-panel .kc-bt-dev.likely { background: rgba(88, 166, 255, 0.08); }
+#config-panel .kc-bt-dev.likely .kc-bt-name { font-weight: 700; }
+#config-panel .kc-bt-dev.sel { outline: 1px solid var(--accent); outline-offset: -1px; }
+#config-panel .kc-bt-dev code { color: var(--text-dim); font-size: 0.8rem; }
+#config-panel .kc-bt-name { min-width: 120px; }
+#config-panel .kc-bt-badge { font-size: 0.7rem; padding: 0 5px; border-radius: 3px; background: #21262d; color: #c9d1d9; }
+#config-panel .kc-bt-badge.radio { background: #1f6feb; color: #fff; }
+#config-panel .kc-bt-badge.ok { background: #238636; color: #fff; }
+#config-panel .kc-bt-rssi { color: var(--text-dim); font-size: 0.75rem; }
+#config-panel .kc-bt-acts { margin-left: auto; display: flex; gap: 6px; }
+#config-panel .kc-bt-prompt { margin-top: 6px; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 6px; font-size: 0.85rem; }
+#config-panel .kc-bt-prompt input { width: 90px; display: inline-block; padding: 4px 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
+#config-panel .kc-test-btn.test-hint { border-color: var(--accent); }

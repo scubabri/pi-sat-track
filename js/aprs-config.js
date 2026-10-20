@@ -217,6 +217,8 @@
       if (p && Array.isArray(msg.conns)) p.conns = msg.conns;
     } else if (msg.type === "aprs-heard") {
       APRS.heard = msg;
+    } else if (msg.type === "aprs-bt") {
+      onBt(msg);
     } else if (msg.type === "aprs-bt-devices") {
       showBtDevices(msg);
     } else if (msg.type === "aprs-test-result") {
@@ -438,7 +440,7 @@
   const PRESET_LABEL = { graywolf: "Graywolf", direwolf: "Direwolf", "th-d74": "Kenwood TH-D74/D75", custom: "Custom" };
   const TRANSPORT_LABEL = { tcp: "TCP", bluetooth: "Bluetooth", serial: "Serial device" };
   const BT_HINT =
-    "Pair the radio first (Pi: <code>bluetoothctl</code> &rarr; <code>pair &lt;MAC&gt;</code>, <code>trust &lt;MAC&gt;</code>), or pick it under Paired. " +
+    "Scan and Pair above, or pick an already-paired radio under Paired. " +
     "TH-D74/D75: KISS interface = Bluetooth, then F + 5 until KISS12 shows (docs/APRS.md). Reconnects by itself when the radio comes back.";
   const opt = (map, v) => Object.entries(map).map(([k, l]) => '<option value="' + k + '"' + (String(k) === String(v) ? " selected" : "") + ">" + l + "</option>").join("");
   const escA = (x) => String(x == null ? "" : x).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
@@ -486,8 +488,17 @@
       '<div class="kc-grid kc-btmac"' + (bt ? "" : " hidden") + ">" +
       '<label>Bluetooth address<input type="text" data-f="btAddress" maxlength="17" placeholder="AA:BB:CC:DD:EE:FF (TH-D74: Menu 935)" autocomplete="off" spellcheck="false" value="' + escA(c.btAddress || "") + '" /></label>' +
       '<label>Paired devices<span class="kc-bt-pick"><select class="cfg-select" data-bt-pick><option value="">' + (c.btAddress ? "Paired… (refresh)" : "Paired…") + '</option></select>' +
-      '<button type="button" class="btn-test" data-act="bt-scan" title="List devices paired with this computer (bluetoothctl)">Refresh</button></span></label>' +
+      '<button type="button" class="btn-test" data-act="bt-scan" title="List devices paired with this computer (bluetoothctl)">Refresh</button>' +
+      '<button type="button" class="btn-test" data-act="bt-unpair-sel" title="Remove (unpair) the selected paired device, or the address above">Remove</button></span></label>' +
       "</div>" +
+      '<div class="kc-bt-tools"' + (bt ? "" : " hidden") + ">" +
+      '<button type="button" class="btn-test" data-act="bt-scan-start" title="Discover nearby Bluetooth devices for about 18 s">Scan</button>' +
+      '<button type="button" class="btn-test" data-act="bt-scan-stop" hidden>Stop</button>' +
+      '<button type="button" class="btn-test" data-act="bt-power" hidden title="Power on / unblock this computer\'s Bluetooth adapter">Power on</button>' +
+      '<span class="form-hint">Put the radio in pairing mode first (TH-D74/D75: Menu 934, 60 s), then Scan and Pair.</span>' +
+      "</div>" +
+      '<div class="kc-bt-prompt" data-bt-prompt hidden></div>' +
+      '<div class="kc-bt-list" data-bt-list hidden></div>' +
       '<div class="kc-grid kc-bt"' + (ser ? "" : " hidden") + ">" +
       '<label>Device<input type="text" data-f="serialDevice" placeholder="/dev/rfcomm0" autocomplete="off" spellcheck="false" value="' + escA(c.serialDevice || "/dev/rfcomm0") + '" /></label>' +
       '<label>Baud<input type="number" data-f="serialBaud" min="1200" step="1" placeholder="9600" value="' + escA(c.serialBaud || 9600) + '" /></label>' +
@@ -565,19 +576,25 @@
     r.querySelector(".kc-btmac").hidden = v !== "bluetooth";
     r.querySelector(".kc-btmac-hint").hidden = v !== "bluetooth";
     r.querySelector(".kc-btch").hidden = v !== "bluetooth";
+    r.querySelector(".kc-bt-tools").hidden = v !== "bluetooth";
+    if (v !== "bluetooth") {
+      r.querySelector("[data-bt-list]").hidden = true;
+      r.querySelector("[data-bt-prompt]").hidden = true;
+    }
     r.querySelector(".kc-bt").hidden = v !== "serial";
     r.querySelector(".kc-bt-hint").hidden = v !== "serial";
     const tb = r.querySelector('[data-act="test"]');
     if (tb) tb.title = v === "bluetooth" ? "One-shot Bluetooth connect to this radio (unsaved values); sends nothing" : "One-shot connect to this host / port (unsaved values); sends nothing";
   }
-  function requestBtDevices(r) {
+  function requestBtDevices(r, quiet) {
     r.dataset.btListed = "1";
+    if (quiet) r.dataset.btQuiet = "1";
     const out = r.querySelector("[data-t]");
     if (!APRS.send({ type: "aprs-bt-devices", id: r.dataset.id })) {
       if (out) out.textContent = "Not connected to the tracker server";
       return;
     }
-    if (out) out.textContent = "Listing paired Bluetooth devices…";
+    if (out && !quiet) out.textContent = "Listing paired Bluetooth devices…";
   }
   function showBtDevices(m) {
     const r = m.id ? document.querySelector('#cfg-kiss-conns .kiss-conn[data-id="' + String(m.id).replace(/"/g, "") + '"]') : null;
@@ -589,9 +606,150 @@
     sel.innerHTML =
       '<option value="">' + (list.length ? "Paired… (" + list.length + ")" : "No paired devices") + "</option>" +
       list.map((d) => '<option value="' + escA(d.mac) + '" data-name="' + escA(d.name || "") + '"' + (d.mac === cur ? " selected" : "") + ">" + escA((d.name || "?") + "  " + d.mac) + "</option>").join("");
-    if (out) out.textContent = m.error ? "Bluetooth: " + m.error : list.length ? "" : "No paired devices: pair the radio with bluetoothctl first (docs/APRS.md).";
+    const quiet = r.dataset.btQuiet === "1" && !m.error;
+    delete r.dataset.btQuiet;
+    if (out && !quiet) out.textContent = m.error ? "Bluetooth: " + m.error : list.length ? "" : "No paired devices yet: put the radio in pairing mode, then Scan and Pair.";
   }
   APRS._showBtDevices = showBtDevices;
+
+  /* ---------- Bluetooth Scan / Pair / Remove (server: lib/kiss/bt-manager.js) ---------- */
+  const btRow = (id) => (id ? document.querySelector('#cfg-kiss-conns .kiss-conn[data-id="' + String(id).replace(/"/g, "") + '"]') : null);
+  let btScanRow = ""; // row id whose Scan is running (one scan at a time)
+  let btPairRow = "";
+  function btOut(r, text) {
+    const out = r && r.querySelector("[data-t]");
+    if (out) out.textContent = text;
+  }
+  function btUse(r, mac, name) {
+    r.querySelector('[data-f="btAddress"]').value = mac;
+    const ne = r.querySelector('[data-f="name"]');
+    if (name && (!ne.value.trim() || Object.values(PRESET_LABEL).concat(["TNC", "TH-D74"]).includes(ne.value.trim()))) ne.value = name.slice(0, 24);
+    refreshDefaultTx();
+  }
+  function renderBtList(r, m) {
+    const box = r.querySelector("[data-bt-list]");
+    const list = Array.isArray(m.devices) ? m.devices : [];
+    const cur = r.querySelector('[data-f="btAddress"]').value.trim().toUpperCase();
+    box.hidden = false;
+    box.innerHTML =
+      (list.length
+        ? list
+            .map(
+              (d) =>
+                '<div class="kc-bt-dev' + (d.likely ? " likely" : "") + (d.mac === cur ? " sel" : "") + '" data-mac="' + escA(d.mac) + '" data-name="' + escA(d.name || "") + '">' +
+                '<span class="kc-bt-name">' + escA(d.name || "(no name)") + "</span>" +
+                "<code>" + escA(d.mac) + "</code>" +
+                (d.likely ? '<span class="kc-bt-badge radio">radio?</span>' : "") +
+                (d.paired ? '<span class="kc-bt-badge ok">paired</span>' : "") +
+                (d.trusted ? '<span class="kc-bt-badge ok">trusted</span>' : "") +
+                (d.rssi != null ? '<span class="kc-bt-rssi">' + escA(d.rssi) + " dBm</span>" : "") +
+                '<span class="kc-bt-acts">' +
+                (d.paired
+                  ? '<button type="button" class="btn-test" data-act="bt-use">Use</button><button type="button" class="btn-test" data-act="bt-unpair">Remove</button>'
+                  : '<button type="button" class="btn-test" data-act="bt-pair">Pair</button>') +
+                "</span></div>",
+            )
+            .join("")
+        : '<p class="form-hint">' + (m.state === "scanning" ? "Scanning… no devices yet" : "No devices found") + "</p>");
+  }
+  function btPrompt(r, m) {
+    const box = r.querySelector("[data-bt-prompt]");
+    if (!m) {
+      box.hidden = true;
+      box.innerHTML = "";
+      return;
+    }
+    box.hidden = false;
+    const pr = m.prompt || {};
+    if (pr.kind === "confirm")
+      box.innerHTML = "Code <b>" + escA(pr.code) + "</b>: check the radio shows the same code, press <b>A/B</b> on the radio, then " +
+        '<button type="button" class="btn-test" data-act="bt-yes">Confirm</button> <button type="button" class="btn-test" data-act="bt-no">Reject</button>';
+    else if (pr.kind === "pin" || pr.kind === "passkey")
+      box.innerHTML = (pr.kind === "pin" ? "The radio asks for a PIN (TH-D74/D75 with older adapters: 0000): " : "Enter the passkey shown on the radio: ") +
+        '<input type="text" data-bt-pin maxlength="16" value="' + (pr.kind === "pin" ? "0000" : "") + '" /> <button type="button" class="btn-test" data-act="bt-pin">Send</button> <button type="button" class="btn-test" data-act="bt-cancel">Cancel</button>';
+    else if (pr.kind === "display") box.innerHTML = "Enter / confirm <b>" + escA(pr.code) + '</b> on the radio. <button type="button" class="btn-test" data-act="bt-cancel">Cancel</button>';
+    else box.innerHTML = 'Pairing… <button type="button" class="btn-test" data-act="bt-cancel">Cancel</button>';
+  }
+  function onBt(m) {
+    if (m.op === "scan") {
+      const r = btRow(m.id || btScanRow);
+      if (!r) return;
+      const scanning = m.state === "scanning";
+      btScanRow = scanning ? r.dataset.id : "";
+      r.querySelector('[data-act="bt-scan-start"]').hidden = scanning;
+      r.querySelector('[data-act="bt-scan-stop"]').hidden = !scanning;
+      r.querySelector('[data-act="bt-power"]').hidden = !m.canPowerOn;
+      if (m.state === "error") {
+        btOut(r, "Bluetooth: " + m.error + (m.canPowerOn ? " (Power on)" : ""));
+        return;
+      }
+      renderBtList(r, m);
+      const n = (m.devices || []).length;
+      btOut(r, scanning ? "Scanning… " + n + " device" + (n === 1 ? "" : "s") + " (" + Math.max(0, Math.round(((m.endsAt || 0) - Date.now()) / 1000)) + " s left)" : "Scan finished: " + n + " device" + (n === 1 ? "" : "s") + ". Pair the radio, or Use one that is already paired.");
+    } else if (m.op === "pair") {
+      const r = btRow(m.id || btPairRow);
+      if (!r) return;
+      if (m.state === "pairing") {
+        btPairRow = r.dataset.id;
+        btPrompt(r, { prompt: {} });
+        btOut(r, m.step === "trust" ? "Paired; marking " + m.mac + " trusted…" : "Pairing with " + m.mac + "… confirm on the radio if it asks");
+      } else if (m.state === "prompt") {
+        btPairRow = r.dataset.id;
+        btPrompt(r, m);
+      } else {
+        btPairRow = "";
+        btPrompt(r, null);
+        if (m.state === "done") {
+          const dv = r.querySelector('.kc-bt-dev[data-mac="' + escA(m.mac) + '"]');
+          btUse(r, m.mac, dv ? dv.dataset.name : "");
+          requestBtDevices(r, true);
+          btOut(r, "Paired" + (m.trusted ? " and trusted" : "") + ": " + m.mac + (m.warning ? " (" + m.warning + ")" : "") + ". Set KISS12 on the radio, then press Test.");
+          const tb = r.querySelector('[data-act="test"]');
+          if (tb) tb.classList.add("test-hint");
+        } else btOut(r, "Bluetooth: " + (m.error || "pairing failed"));
+      }
+    } else if (m.op === "unpair") {
+      const r = btRow(m.id);
+      if (!r) return;
+      btOut(r, m.ok ? "Removed " + m.mac + (m.note ? " (" + m.note + ")" : "") : "Bluetooth: " + m.error);
+      if (m.ok) {
+        requestBtDevices(r, true);
+        const dv = r.querySelector('.kc-bt-dev[data-mac="' + escA(m.mac) + '"]');
+        if (dv) dv.remove();
+      }
+    } else if (m.op === "power") {
+      const r = btRow(m.id);
+      if (!r) return;
+      r.querySelector('[data-act="bt-power"]').hidden = !!m.ok;
+      btOut(r, m.ok ? "Bluetooth on" + (m.unblocked ? " (unblocked)" : "") + ". Scan again." : "Bluetooth: " + m.error);
+    }
+  }
+  APRS._onBt = onBt;
+  function onBtClick(e, r) {
+    const act = e.target.dataset && e.target.dataset.act;
+    if (!act || act.indexOf("bt-") !== 0 || act === "bt-scan") return false;
+    e.preventDefault();
+    const id = r.dataset.id;
+    const dv = e.target.closest(".kc-bt-dev");
+    const mac = dv ? dv.dataset.mac : "";
+    const send = (m) => APRS.send(m) || btOut(r, "Not connected to the tracker server");
+    if (act === "bt-scan-start") {
+      btOut(r, "Starting scan…");
+      send({ type: "aprs-bt-scan", action: "start", id });
+    } else if (act === "bt-scan-stop") send({ type: "aprs-bt-scan", action: "stop", id });
+    else if (act === "bt-power") send({ type: "aprs-bt-power", id });
+    else if (act === "bt-use") btUse(r, mac, dv.dataset.name);
+    else if (act === "bt-pair") send({ type: "aprs-bt-pair", mac, id });
+    else if (act === "bt-unpair" || act === "bt-unpair-sel") {
+      const m = act === "bt-unpair" ? mac : r.querySelector("[data-bt-pick]").value || r.querySelector('[data-f="btAddress"]').value.trim().toUpperCase();
+      if (!m) return btOut(r, "Pick a paired device first"), true;
+      if (window.confirm("Remove (unpair) " + m + " from this computer? You would need to pair it again."))
+        send({ type: "aprs-bt-unpair", mac: m, id });
+    } else if (act === "bt-yes" || act === "bt-no") send({ type: "aprs-bt-pair-reply", answer: act === "bt-yes" });
+    else if (act === "bt-pin") send({ type: "aprs-bt-pair-reply", answer: r.querySelector("[data-bt-pin]").value });
+    else if (act === "bt-cancel") send({ type: "aprs-bt-pair-cancel" });
+    return true;
+  }
   function onConnsEvent(e) {
     const r = e.target.closest && e.target.closest(".kiss-conn");
     if (!r) return;
@@ -626,6 +784,7 @@
       if (o && o.dataset.name && (!ne.value.trim() || Object.values(PRESET_LABEL).concat(["TNC", "TH-D74"]).includes(ne.value.trim()))) ne.value = o.dataset.name.slice(0, 24);
       refreshDefaultTx();
     }
+    if (e.type === "click" && onBtClick(e, r)) return;
     if (e.type === "click" && e.target.dataset.act === "bt-scan") {
       e.preventDefault();
       requestBtDevices(r);
@@ -905,6 +1064,15 @@
       box.addEventListener("input", (e) => e.target.dataset && e.target.dataset.f === "name" && refreshDefaultTx());
       box.addEventListener("click", onConnsEvent);
       box.addEventListener("focusin", onConnsEvent);
+      // Configure closed: stop a running Bluetooth scan
+      const cp = $("config-panel");
+      if (cp && typeof MutationObserver === "function")
+        new MutationObserver(() => {
+          if (!cp.classList.contains("open") && btScanRow) {
+            APRS.send({ type: "aprs-bt-scan", action: "stop", id: btScanRow });
+            btScanRow = "";
+          }
+        }).observe(cp, { attributes: true, attributeFilter: ["class"] });
     }
     const add = $("cfg-kiss-add");
     if (add)

@@ -124,9 +124,59 @@ channel differs. BLE-only TNCs are not supported.
 **On the Pi** (Raspberry Pi OS / Debian / Ubuntu with BlueZ; built-in
 Bluetooth on a Pi 3 / 4 / 5 or a USB dongle). `./install-pi.sh --update`
 installs `bluez`, enables the `bluetooth` service, unblocks it with rfkill and
-adds your user to the `bluetooth` group (needed to list paired devices; log
-out and in again once). Then pair once (the radio must be in pairing mode,
-see below):
+adds your user to the `bluetooth` group (needed to scan, pair and list
+devices without root; log out and in again once). Everything else is done
+in the browser.
+
+**Pair from Configure (no terminal).** Configure → KISS / APRS → **+ Add
+connection**, Software **Kenwood TH-D74/D75** (sets Bluetooth, channel 2,
+1200). Then:
+
+1. Put the radio in pairing mode: Menu 934 (visible for about 60 s; see
+   *On the radio* below for Bluetooth on).
+2. **Scan**. Discovery runs for about 18 s (**Stop** ends it early) and lists
+   every device it hears with name, MAC, signal and *paired* / *trusted*
+   badges. Likely radios / TNCs (TH-D74/D75, UV-Pro, VR-N76, Mobilinkd, names
+   with TNC / KISS / APRS, ...) are listed first and marked *radio?*; all other
+   devices are shown too, since some radios advertise only their MAC.
+3. **Pair** on the radio's row. The Pi pairs and then trusts the radio (so it
+   reconnects without a prompt). If the radio asks:
+   - a 6-digit code is shown on both screens (Secure Simple Pairing): check
+     they match, press **A/B** on the radio, then **Confirm** in the browser;
+   - a PIN (older adapters, Bluetooth 2.0 and earlier): enter **0000** (the
+     field is prefilled) and **Send**.
+   (TH-D74 manual, Bluetooth pairing, p. 100.) Pairing that is not completed
+   in 60 s is cancelled.
+4. On success the MAC and name are filled in, **Paired devices** is
+   refreshed and **Test** is highlighted. Set KISS12 on the radio (below),
+   press **Test**, tick **Enabled**, **Save**.
+
+**Remove** (next to Refresh for the device picked under Paired devices, or
+on a paired row of the scan list) unpairs a device after a confirmation.
+Only one scan runs at a time (across all browsers); it stops on its own
+after the timeout and when Configure is closed. Pairing stops a running scan.
+
+Errors shown in the row: *Bluetooth adapter is powered off* / *blocked
+(rfkill)*, with a **Power on** button (it runs `power on`, and
+`rfkill unblock bluetooth` when blocked, which needs the `bluetooth` group or
+`sudo rfkill unblock bluetooth` by hand); *no Bluetooth adapter*; *BlueZ
+(bluetoothctl) is not installed* (`sudo apt install bluez`); *permission
+denied* (add the user to the `bluetooth` group, log out and in); *pairing
+failed (wrong PIN / code, or rejected on the radio)*; *pairing timed out*;
+*device not found: scan again with the radio in pairing mode*.
+
+These Configure actions use the same WebSocket as the rest of Configure, so
+like every other Configure setting they are available to any browser that
+can open Pi Sat Track (the Pi is normally reached over the LAN, not only
+from localhost). Keep the tracker on a trusted network.
+
+The server drives BlueZ through `bluetoothctl` (`lib/kiss/bt-manager.js`): an
+interactive session for scan and pair (its built-in agent, KeyboardDisplay
+capability, relays PIN / passkey prompts to the browser) and one-shot
+commands for remove and power on. No new dependencies and no root.
+
+**Fallback: pair in a terminal** (e.g. over SSH, or if the browser flow
+misbehaves on your BlueZ version), radio in pairing mode:
 
 ```
 bluetoothctl
@@ -140,6 +190,8 @@ bluetoothctl
   quit
 ```
 
+Then pick the radio under **Paired devices** (Refresh) or type its MAC.
+
 `trust` lets it reconnect without a prompt. Desktop Bluetooth tools may
 report "No usable services" after pairing; that is fine (the SPP port is
 opened by RFCOMM channel, not by a profile). Do not leave a manual
@@ -152,7 +204,8 @@ differ):
 
 1. Bluetooth on: Menu 930 (Configuration → Bluetooth; one write-up says 931). The MAC address is
    shown under Menu 935 (Device Information).
-2. Pairing mode: Menu 934 (visible for about 60 s), then pair from the Pi.
+2. Pairing mode: Menu 934 (visible for about 60 s), then **Scan** / **Pair** in
+   Configure (or `bluetoothctl` on the Pi).
 3. Configuration → Interface → **KISS = Bluetooth** (Menu 983).
 4. Data band: APRS → Basic Settings → Data Band (Menu 506) selects which
    band (A or B) the TNC uses; in single-band display the data band must be
@@ -164,9 +217,8 @@ differ):
    state: if the radio comes back in APRS or off mode after a power cycle,
    set KISS12 again (not verified on hardware here).
 
-In Configure → KISS / APRS: **+ Add connection**, Software **Kenwood
-TH-D74/D75** (sets Bluetooth, channel 2, 1200), pick the radio under
-**Paired devices** or type its MAC, Role (RX + TX), **Test**, then tick
+Connection settings: Bluetooth address (filled in by Pair, or pick under
+**Paired devices**, or type it), Role (RX + TX), **Test**, then tick
 **Enabled** and **Save**. The Bluetooth baud rate does not matter.
 
 Channel: the D74 / D75 SPP service is RFCOMM channel **2** (KI4HDU, habets.se,
@@ -179,7 +231,7 @@ Status / Test errors:
 | --- | --- |
 | radio not reachable | Radio off, out of range, Bluetooth off on the radio |
 | refused on RFCOMM channel N | Wrong channel, or the radio's KISS interface is not set to Bluetooth |
-| not paired / permission denied | Pair and trust with `bluetoothctl` (above) |
+| not paired / permission denied | **Scan** / **Pair** in Configure (or `bluetoothctl`, above); user in the `bluetooth` group |
 | busy | Another computer / phone holds the radio's serial port, or an `rfcomm` bind |
 | no Bluetooth adapter | BlueZ not running or blocked: `sudo systemctl enable --now bluetooth`, `sudo rfkill unblock bluetooth` |
 | no Bluetooth socket support | Kernel / Python without BlueZ sockets (not Raspberry Pi OS) |
@@ -193,6 +245,9 @@ Bluetooth SPP, Menu 930, 505);
 [KI4HDU: TH-D74 to Raspberry Pi via Bluetooth](https://ki4hdu.com/amateur-radio/packet/connect-th-d74-to-raspberry-pi-via-bluetooth/)
 (channel 2, Menu 935); [APRSISCE/32 TH-D74/D75](http://aprsisce.wikidot.com/th-d74-d75)
 (Menu 983 KISS = Bluetooth, F 5 → KISS12 by hand);
+Kenwood TH-D74 instruction manual, Bluetooth pairing (passkey shown on both
+devices / PIN 0000 for Bluetooth 2.0 and earlier, p. 100, via manualslib and
+[boydj.github.io](https://boydj.github.io/));
 [B.B. Link manual](https://go.islandmagic.co/docs/B.B.%20Link%20Operator%20Manual.pdf) (Data Band, Menu 506).
 
 ## Operating (UISS model)

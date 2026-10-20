@@ -252,6 +252,9 @@ function applyWsjtxListener() {
  * in ~/.rpitrack/aprs/; TX (beacon / message) gated on radio + sat state.
  */
 const aprsNormalize = require("./lib/aprs/service").normalizeConfig;
+// Configure → KISS / APRS Bluetooth Scan / Pair / Remove / Power on (bluetoothctl)
+const btManager = new (require("./lib/kiss/bt-manager").BtManager)();
+btManager.on("update", (m) => broadcast(Object.assign({ type: "aprs-bt" }, m)));
 const aprsService = require("./lib/aprs/service").createService({
   broadcast: (o) => broadcast(o),
   getStation: () => stationFromProfile(),
@@ -649,6 +652,23 @@ wss.on("connection", (ws, req) => {
         // Paired Bluetooth devices (bluetoothctl) for Configure's picker
         aprsService.btDevices().then((r) => {
           if (ws.readyState === 1) ws.send(JSON.stringify(Object.assign({ type: "aprs-bt-devices", id: typeof msg.id === "string" ? msg.id.slice(0, 16) : "" }, r)));
+        });
+      }
+      // Bluetooth setup from Configure (same socket as the rest of Configure)
+      if (msg.type === "aprs-bt-scan") {
+        const id = typeof msg.id === "string" ? msg.id.slice(0, 16) : "";
+        if (msg.action === "stop") btManager.stopScan();
+        else btManager.startScan({ owner: ws, id });
+      }
+      if (msg.type === "aprs-bt-pair" && typeof msg.mac === "string") {
+        btManager.pair(msg.mac, { owner: ws, id: typeof msg.id === "string" ? msg.id.slice(0, 16) : "" });
+      }
+      if (msg.type === "aprs-bt-pair-reply") btManager.pairReply(msg.answer);
+      if (msg.type === "aprs-bt-pair-cancel") btManager.cancelPair();
+      if (msg.type === "aprs-bt-unpair" || msg.type === "aprs-bt-power") {
+        const id = typeof msg.id === "string" ? msg.id.slice(0, 16) : "";
+        (msg.type === "aprs-bt-power" ? btManager.powerOn() : btManager.unpair(msg.mac)).then((r) => {
+          if (ws.readyState === 1) ws.send(JSON.stringify(Object.assign({ type: "aprs-bt", id }, r)));
         });
       }
       if (msg.type === "aprs-clear") aprsService.clear();
@@ -1313,7 +1333,10 @@ wss.on("connection", (ws, req) => {
     }
   });
 
-  ws.on("close", () => console.log("Client disconnected"));
+  ws.on("close", () => {
+    btManager.release(ws); // stop its Bluetooth scan / pairing
+    console.log("Client disconnected");
+  });
 });
 
 setInterval(() => {
