@@ -146,12 +146,12 @@
       '<div class="aprs-win-list" id="aprs-win-list" aria-live="polite"></div>' +
       '<form class="aprs-win-send" id="aprs-win-send" autocomplete="off">' +
       '<div class="aprs-win-row aprs-hdr-row">' +
-      '<label>To<input type="text" id="aprs-msg-to" list="aprs-dl-to" maxlength="9" spellcheck="false" placeholder="CQ" title="AX.25 destination (UISS To:): CQ, APRS, BEACON, a callsign…" /></label>' +
-      '<label>Via<input type="text" id="aprs-msg-via" list="aprs-dl-via" spellcheck="false" placeholder="direct" title="Digipeater path (UISS Via:), up to 8, space or comma separated" /></label>' +
+      '<label>To<input type="text" id="aprs-msg-to" maxlength="9" spellcheck="false" placeholder="CQ" title="AX.25 destination (UISS To:): CQ, APRS, BEACON, a callsign…" /></label>' +
+      '<label>Via<input type="text" id="aprs-msg-via" spellcheck="false" placeholder="direct" title="Digipeater path (UISS Via:), up to 8, space or comma separated" /></label>' +
       '<a href="#" class="aprs-save-via" id="aprs-save-via" title="Use this Via by default for the selected satellite">save</a></div>' +
       '<div class="aprs-win-row aprs-mode-row" role="radiogroup" aria-label="Send type">' +
       Object.entries(MODES).map(([k, v]) => '<button type="button" role="radio" data-mode="' + k + '">' + v + "</button>").join("") +
-      '<label class="aprs-for" id="aprs-for-wrap">For<input type="text" id="aprs-msg-for" list="aprs-dl-for" maxlength="9" spellcheck="false" placeholder="CALL" title="APRS message addressee (UISS For:)" /></label>' +
+      '<label class="aprs-for" id="aprs-for-wrap">For<input type="text" id="aprs-msg-for" maxlength="9" spellcheck="false" placeholder="CALL" title="APRS message addressee (UISS For:)" /></label>' +
       "</div>" +
       '<div class="aprs-win-row"><input type="text" id="aprs-msg-text" aria-label="Text" />' +
       '<span class="aprs-count" id="aprs-msg-count"></span>' +
@@ -215,6 +215,7 @@
       e.preventDefault();
       sendMsg();
     });
+    if (A() && A().combo) ["to", "via", "for"].forEach((f) => A().combo($("aprs-msg-" + f), f));
     $("aprs-msg-to").addEventListener("input", (e) => A() && A().setHdr({ to: e.target.value || null }, "win"));
     $("aprs-msg-via").addEventListener("input", (e) => {
       if (A()) A().setHdr({ via: e.target.value }, "win");
@@ -502,14 +503,18 @@
         // Same rule as the server (lib/aprs/service.js isSatPath): a known satellite digipeater hop.
         const viaSat = !!(A().viaIsSat && A().viaIsSat(viaEl.value));
         const g = viaSat ? s.gateMessageSat || s.gateMessage : s.gateMessageDirect;
+        // Like the APRS window: only a blocking / not-connected route and blocking
+        // reasons. The TX connection is in the sidebar STATION panel ("APRS" line);
+        // "TX via …" and non-blocking sat hints (below the horizon, mode) are not shown.
         const route = A().routeFor ? A().routeFor(viaEl.value) : null;
+        const rtBad = !!(route && (!route.ok || !route.connected));
         const rt = $("aprs-msg-route");
-        rt.innerHTML = A().routeHtml ? A().routeHtml(route) : "";
-        rt.classList.toggle("blocked", !!(route && (!route.ok || !route.connected)));
-        const hint = g && g.ok && viaSat && g.hints && g.hints[0] ? g.hints[0] : "";
-        why.textContent = g && !g.ok ? g.reasons[0] : hint;
-        why.title = g ? g.reasons.concat(viaSat ? g.hints || [] : []).join("\n") : "";
-        why.className = "aprs-win-why" + (g && !g.ok ? " blocked" : hint ? " hint" : "");
+        rt.innerHTML = rtBad && A().routeHtml ? A().routeHtml(route) : "";
+        rt.hidden = !rtBad;
+        rt.classList.toggle("blocked", rtBad);
+        why.textContent = g && !g.ok ? g.reasons[0] || "" : "";
+        why.title = g ? g.reasons.join("\n") : "";
+        why.className = "aprs-win-why" + (g && !g.ok ? " blocked" : "");
         $("aprs-msg-send").disabled = !!(g && !g.ok);
         $("aprs-msg-send").title = g && !g.ok ? g.reasons.join("\n") : "Send as " + (s.source || "?") + ">" + ($("aprs-msg-to").value || "CQ") + (viaEl.value ? "," + viaEl.value : "");
       }

@@ -680,6 +680,7 @@ wss.on("connection", (ws, req) => {
         });
       }
       if (msg.type === "aprs-clear") aprsService.clear();
+      if (msg.type === "aprs-clear-heard") aprsService.clearHeard();
       if (msg.type === "aprs-reconnect") aprsService.reconnect();
       if (msg.type === "aprs-test") {
         // One-shot probe with the (unsaved) form values; never sends a frame.

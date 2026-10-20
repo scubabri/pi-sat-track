@@ -245,15 +245,16 @@
       '<a href="#" role="button" class="aprs-msgs-btn" id="aprs-msgs-btn" title="Open the APRS messages / packets window">Messages<span class="aprs-unread" id="aprs-unread" hidden></span></a>' +
       "</div>" +
       '<div class="aprs-box-tx">' +
-      '<label class="aprs-f"><span>To</span><input type="text" id="aprs-box-to" list="aprs-dl-to" maxlength="9" spellcheck="false" autocomplete="off" placeholder="CQ" title="AX.25 destination (UISS To:), e.g. CQ or APRS" /></label>' +
-      '<label class="aprs-f"><span>Via</span><input type="text" id="aprs-box-via" list="aprs-dl-via" spellcheck="false" autocomplete="off" placeholder="direct" title="Digipeater path (UISS Via:), up to 8 separated by space or comma" /></label>' +
+      '<label class="aprs-f"><span>To</span><input type="text" id="aprs-box-to" maxlength="9" spellcheck="false" autocomplete="off" placeholder="CQ" title="AX.25 destination (UISS To:), e.g. CQ or APRS" /></label>' +
+      '<label class="aprs-f"><span>Via</span><input type="text" id="aprs-box-via" spellcheck="false" autocomplete="off" placeholder="direct" title="Digipeater path (UISS Via:), up to 8 separated by space or comma" /></label>' +
       '<label class="aprs-f"><span>Comment</span><input type="text" id="aprs-box-comment" maxlength="43" autocomplete="off" placeholder="beacon comment" /></label>' +
       '<button type="button" class="aprs-send-pos" id="aprs-send-pos">Send position</button>' +
       '<div class="aprs-lasttx" id="aprs-box-lasttx" aria-live="polite"></div>' +
       '<div class="aprs-route" id="aprs-box-route" aria-live="polite" title="KISS connection this send uses (role + speed matched to the satellite; Configure → KISS / APRS)"></div>' +
       '<div class="aprs-box-why" id="aprs-box-why" aria-live="polite"></div>' +
       "</div>" +
-      '<div class="aprs-box-sub">Recent stations <span class="aprs-zone" id="aprs-hl-zone"></span> <span class="aprs-hint" title="Click: show on map. Right-click: put the call in To / Via / For (like UISS MHeard)">ⓘ</span></div>' +
+      '<div class="aprs-box-sub"><span>Recent stations <span class="aprs-zone" id="aprs-hl-zone"></span> <span class="aprs-hint" title="Click: show on map. Right-click: put the call in To / Via / For (like UISS MHeard)">ⓘ</span></span>' +
+      '<button type="button" class="aprs-win-clear aprs-hl-clear" id="aprs-hl-clear" title="Clear recent stations (map, globe and every open window) and the Digipeated badge. Messages and the Digipeats count are kept." disabled>Clear</button></div>' +
       '<div class="aprs-box-heard" id="aprs-box-heard"></div>' +
       "</div>"
     );
@@ -305,9 +306,14 @@
       e.preventDefault();
       if (window.aprsWindow) window.aprsWindow.toggle();
     });
+    if (APRS() && APRS().combo) {
+      APRS().combo(box.querySelector("#aprs-box-to"), "to");
+      APRS().combo(box.querySelector("#aprs-box-via"), "via");
+    }
     box.querySelector("#aprs-box-to").addEventListener("input", (e) => APRS() && APRS().setHdr({ to: e.target.value || null }, "box"));
     box.querySelector("#aprs-box-via").addEventListener("input", (e) => APRS() && APRS().setHdr({ via: e.target.value }, "box"));
     box.querySelector("#aprs-send-pos").addEventListener("click", sendPosition);
+    box.querySelector("#aprs-hl-clear").addEventListener("click", clearRecents);
     box.querySelector("#aprs-box-comment").addEventListener("keydown", (e) => {
       if (e.key === "Enter") sendPosition();
     });
@@ -363,9 +369,10 @@
   function syncBtn() {
     if (!btn) return;
     const open = !!(win && win.isOpen());
-    btn.classList.toggle("active", open);
-    btn.setAttribute("aria-pressed", open ? "true" : "false");
     const st = APRS() && APRS().status;
+    // same "active" (orange) as Favorites / WSJT Heard: APRS enabled or its window open
+    btn.classList.toggle("active", open || !!(st && st.enabled));
+    btn.setAttribute("aria-pressed", open ? "true" : "false");
     const state = st ? (st.enabled ? st.state : "off") : "off";
     btn.querySelector("#aprs-btn-dot").className = "aprs-btn-dot kiss-" + state;
     btn.title = (open ? "Hide" : "Show") + " the APRS window · " + (st && APRS().statusText ? APRS().statusText(st) : "KISS off");
@@ -405,6 +412,39 @@
     if (d && d.state === "none") return sent + " — no digipeat heard (" + (d.timeoutS || 30) + " s)";
     return sent + " — waiting for digipeat…";
   }
+  /**
+   * Badge under Send position + "Digipeats: N" (session count, always shown).
+   * The badge ages out with the Recent stations window (expireMs), at LOS of
+   * its satellite and on Clear (js/aprs-digi-badge.js); re-run every 5 s so
+   * the age text and the expiry are live.
+   */
+  function renderLastTx() {
+    if (!win || !APRS() || !APRS().status) return;
+    const st = APRS().status;
+    const lt = win.el.querySelector("#aprs-box-lasttx");
+    const last = st.lastTx;
+    const B = window.aprsDigiBadge;
+    const badge = last && B ? B.digiBadge(last, Date.now() + skewMs, expireMs) : last ? { ageMs: 0 } : null;
+    const dt = badge && APRS().digiText ? APRS().digiText(last.digi) : null;
+    const fmt = APRS().fmtTime || ((t) => new Date(t).toISOString().slice(11, 19) + " UTC");
+    const dc = APRS().digipeatCount || st.digipeatCount || 0;
+    const age = badge && B ? " · " + B.agoText(badge.ageMs) : "";
+    const html =
+      (badge
+        ? '<span class="aprs-digi ' + (dt ? dt.cls : "pending") + '" id="aprs-digi-badge" title="' + esc("Last TX " + fmt(last.time) + (last.conn ? " on " + last.conn : "") + "\n" + last.tnc2) + '">' + esc(lastTxText(last, fmt) + age) + "</span>"
+        : "") +
+      '<a href="#" class="aprs-digi-count" id="aprs-digi-count" title="Digipeats this session: open the digipeat log (Messages window)">Digipeats: ' + dc + "</a>";
+    if (lt.innerHTML !== html) lt.innerHTML = html;
+  }
+  /** Recent stations "Clear": server empties the heard store for every client and dismisses the badge. */
+  function clearRecents() {
+    if (!APRS() || !APRS().send({ type: "aprs-clear-heard" })) return flash("Not connected to the tracker server");
+    stations = [];
+    const last = APRS().status && APRS().status.lastTx;
+    if (last && last.digi) last.digi.clearedMs = Date.now();
+    render();
+    notify();
+  }
   function syncBox() {
     syncBtn();
     if (!win) return;
@@ -434,14 +474,7 @@
     if (st) {
       const viaEl = box.querySelector("#aprs-box-via");
       const gate = st.gateBeacon || { ok: false, reasons: [] };
-      const lt = box.querySelector("#aprs-box-lasttx");
-      const last = st.lastTx;
-      const dt = last && APRS().digiText ? APRS().digiText(last.digi) : null;
-      const fmt = APRS().fmtTime || ((t) => new Date(t).toISOString().slice(11, 19) + " UTC");
-      const dc = APRS().digipeatCount || st.digipeatCount || 0;
-      lt.innerHTML =
-        (last ? '<span class="aprs-digi ' + (dt ? dt.cls : "pending") + '" title="' + esc("Last TX " + fmt(last.time) + (last.conn ? " on " + last.conn : "") + "\n" + last.tnc2) + '">' + esc(lastTxText(last, fmt)) + "</span>" : "") +
-        '<a href="#" class="aprs-digi-count" id="aprs-digi-count" title="Open the digipeat log (Messages window)">Digipeats: ' + dc + "</a>";
+      renderLastTx();
       const rt = box.querySelector("#aprs-box-route");
       const route = APRS().routeFor ? APRS().routeFor(viaEl.value) : null;
       // Only a blocking / not-connected route is shown here (the TX connection is in the
@@ -462,7 +495,6 @@
         why.textContent = gate.ok ? "" : gate.reasons[0] || "";
         why.title = gate.reasons.join("\n");
         why.classList.toggle("blocked", !gate.ok);
-        why.classList.remove("hint");
         why.classList.remove("ok");
       }
     }
@@ -473,6 +505,8 @@
     const el = win.el.querySelector("#aprs-box-heard");
     const now = Date.now() + skewMs;
     const rx = stations.filter((s) => s.posSource !== "self").slice(0, win.st.h ? 40 : 6);
+    const clr = win.el.querySelector("#aprs-hl-clear");
+    if (clr) clr.disabled = !rx.length;
     const z = win.el.querySelector("#aprs-hl-zone");
     if (z) z.textContent = "(" + hhmm(0).replace(/^.* /, "") + ")";
     el.innerHTML = rx.length
@@ -552,6 +586,7 @@
       render();
       notify();
     }, 20000);
+    setInterval(renderLastTx, 5000); // badge age + expiry, live
     const t = setInterval(() => {
       if (ensureLayer() && addButton()) clearInterval(t);
     }, 300);

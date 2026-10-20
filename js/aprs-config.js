@@ -85,33 +85,51 @@
     try {
       localStorage.setItem(LS_HIST, JSON.stringify(APRS.hist));
     } catch (_) {}
-    refreshDatalists();
   };
   /** History first, then presets (UISS "reset to defaults" values), deduplicated. */
-  APRS.choices = (field) => {
+  APRS.choices = (field) => APRS.choiceItems(field).map((o) => o.value);
+  const TO_LABELS = { CQ: "general call", APRS: "generic APRS", APRSAT: "satellite APRS", BEACON: "beacon", APZPST: "Pi Sat Track tocall" };
+  /**
+   * Options for the To / Via / For comboboxes (js/aprs-combo.js): [{value, label}].
+   * Via: history, the default for the selected satellite, every built-in
+   * satellite Via (server status.viaOptions: AMSAT digipeater list + your
+   * per-sat settings) and the UISS presets. Label = satellite / meaning.
+   */
+  APRS.choiceItems = (field) => {
     const st = APRS.status || {};
     const pre = (st.presets && st.presets[field]) || (field === "to" ? ["CQ", "APRS", "APRSAT", "BEACON", "APZPST"] : field === "via" ? ["ARISS", "RS0ISS", "APRSAT", "WIDE2-1"] : []);
-    const extra = field === "via" ? [st.defaultVia || ""] : field === "to" ? [st.defaultTo || ""] : [];
+    const known = new Map();
+    if (field === "via") {
+      for (const o of st.viaOptions || []) if (o && o.value && !known.has(o.value)) known.set(o.value, o.label || "");
+    } else if (field === "to") {
+      for (const k of Object.keys(TO_LABELS)) known.set(k, TO_LABELS[k]);
+    }
     const out = [];
-    for (const v of [].concat(APRS.hist[field] || [], extra, pre)) {
-      if (v && !out.includes(v)) out.push(v);
+    const seen = new Set();
+    const add = (v, label) => {
+      if (!v || seen.has(v)) return;
+      seen.add(v);
+      out.push({ value: v, label: label != null ? label : known.get(v) || "" });
+    };
+    for (const v of APRS.hist[field] || []) add(v, known.get(v) || "recent");
+    if (field === "via" && st.defaultVia) {
+      const sat = st.sat ? st.sat.name || st.sat.key : "";
+      add(st.defaultVia, (sat ? sat + " · " : "") + "default");
+    }
+    if (field === "to" && st.defaultTo) add(st.defaultTo, known.get(st.defaultTo) ? known.get(st.defaultTo) + " · default" : "default");
+    if (field === "via") for (const [v, l] of known) add(v, l);
+    for (const v of pre) add(v);
+    if (field === "for") {
+      // heard stations (newest first) as message addressees
+      const hs = window.aprsOverlay && window.aprsOverlay.stations ? window.aprsOverlay.stations() : [];
+      for (const s of hs.slice(0, 20)) if (s && s.call && s.posSource !== "self") add(String(s.call).toUpperCase(), "heard");
     }
     return out;
   };
-  function refreshDatalists() {
-    if (!document.body) return;
-    for (const f of ["to", "via", "for"]) {
-      let dl = document.getElementById("aprs-dl-" + f);
-      if (!dl) {
-        dl = document.createElement("datalist");
-        dl.id = "aprs-dl-" + f;
-        document.body.appendChild(dl);
-      }
-      const html = APRS.choices(f).map((v) => '<option value="' + v.replace(/"/g, "") + '"></option>').join("");
-      if (dl.innerHTML !== html) dl.innerHTML = html;
-    }
-  }
-  APRS.refreshDatalists = refreshDatalists;
+  const COMBO_TITLE = { to: "To destinations", via: "Via paths", for: "addressees" };
+  /** Styled To / Via / For dropdown on an input (replaces <datalist>). */
+  APRS.combo = (input, field) =>
+    input && window.aprsCombo ? window.aprsCombo.attach(input, { items: () => APRS.choiceItems(field), title: COMBO_TITLE[field] || "choices" }) : null;
   /** UISS MHeard "paste into To: / Via: / For:" for a heard callsign. */
   APRS.pasteCall = (call, field) => {
     const c = up(call);
@@ -182,7 +200,6 @@
         APRS.hdr.viaSat = satKey;
         APRS.setHdr({ via: null }, "sat");
       }
-      refreshDatalists();
       // The live (normalised) config rides on every status, so a client that
       // hooked the socket after the first "profiles" message still has it.
       if (msg.config && typeof msg.config === "object") {
@@ -1170,7 +1187,7 @@
     if (save) save.addEventListener("click", () => APRS.send({ type: "aprs-config", aprs: readTab() }));
     fillTab(null);
     initSymbolPicker();
-    refreshDatalists();
+    APRS.combo($("cfg-kiss-default-to"), "to");
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();

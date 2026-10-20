@@ -3,8 +3,6 @@
 
 /* ---- "APRS" button in the decode button stack (below Clear Spots) ---- */
 .decode-toggle-control .aprs-open-btn { position: relative; display: flex !important; align-items: center; justify-content: center; gap: 5px; }
-/* highlighted while the APRS window is open (same as Sked Finder when its panel is open) */
-.leaflet-container .decode-toggle-control a.aprs-open-btn.active { color: #58a6ff !important; background: #1c2a3a !important; }
 .aprs-btn-dot { width: 7px; height: 7px; border-radius: 50%; background: #6e7681; flex-shrink: 0; }
 .aprs-btn-dot.kiss-connected { background: #3fb950; box-shadow: 0 0 4px #3fb950; }
 .aprs-btn-dot.kiss-connecting { background: #d29922; }
@@ -14,7 +12,11 @@
 /* ---- APRS (station) window: what used to be the map box ---- */
 .aprs-window.aprs-station-win { width: 250px; }
 .aprs-st { padding: 7px 8px 8px; }
-.aprs-box-sub { margin-top: 7px; font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.4px; }
+.aprs-box-sub { display: flex; align-items: center; gap: 6px; margin-top: 7px; font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.4px; }
+.aprs-box-sub > span:first-child { flex: 1; min-width: 0; }
+.aprs-win-clear.aprs-hl-clear { height: 18px; padding: 0 6px; text-transform: none; letter-spacing: 0; }
+.aprs-win-clear:disabled { opacity: 0.4; cursor: default; }
+.aprs-win-clear:disabled:hover { color: #8b949e; }
 .aprs-hint { cursor: help; text-transform: none; }
 .aprs-box-head { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
 .aprs-box-title { font-weight: 800; letter-spacing: 0.5px; color: #39c5ff; }
@@ -278,8 +280,6 @@
 .aprs-r-text { flex: 1 1 160px; min-width: 0; color: #e6edf3; overflow-wrap: anywhere; }
 .aprs-r-dev { font-size: 10px; color: #d2a8ff; }
 .aprs-r-raw { margin-top: 1px; font: 10.5px ui-monospace, Menlo, Consolas, monospace; color: #8b949e; overflow-wrap: anywhere; }
-.aprs-box-why.hint,
-.aprs-win-why.hint { color: #8b949e; font-style: italic; }
 
 /* ---- Configure → KISS / APRS: connection rows ---- */
 /* Connection rows are built by JS outside .form-row, so they need the
@@ -406,3 +406,49 @@ mark.aprs-qhl { color: #0d1117; background: #e3b341; border-radius: 2px; padding
 #config-panel .kc-test-btn.test-hint { border-color: var(--accent); }
 #config-panel .kc-bt-cmd { user-select: all; padding: 1px 6px; border-radius: 4px; background: #000; border: 1px solid var(--border); font-size: 0.8rem; }
 #config-panel .kc-d74-hint { opacity: 0.75; font-style: italic; }
+
+/* ---- To / Via / For combobox (js/aprs-combo.js; replaces <datalist>) ---- */
+.aprs-combo { position: relative; display: flex; flex: 1; min-width: 0; align-items: stretch; }
+.aprs-combo > input { flex: 1; min-width: 0; width: 100%; padding-right: 20px !important; }
+.aprs-combo > button.aprs-combo-btn {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  width: 18px;
+  padding: 0;
+  font: 10px/1 system-ui, sans-serif;
+  color: #8b949e;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid #21262d;
+  border-radius: 0 3px 3px 0;
+  cursor: pointer;
+  height: auto;
+  min-width: 0;
+}
+.aprs-combo > button.aprs-combo-btn:hover, .aprs-combo.open > button.aprs-combo-btn { color: #58a6ff; background: #161b22; }
+.aprs-combo.open > input { border-color: #58a6ff; outline: none; }
+.aprs-combo-menu {
+  position: fixed;
+  z-index: 4600; /* above the floating APRS windows (zTop) and Configure (4001) */
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 3px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.6);
+  font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #e6edf3;
+}
+.aprs-combo-menu[hidden] { display: none; }
+.aprs-combo-opt { display: flex; align-items: baseline; gap: 8px; padding: 3px 6px; border-radius: 3px; cursor: pointer; white-space: nowrap; }
+.aprs-combo-opt:hover, .aprs-combo-opt.hi { background: #1f2a37; }
+.aprs-combo-opt.cur .aprs-combo-v { color: #58a6ff; font-weight: 700; }
+.aprs-combo-opt.cur::before { content: "✓"; width: 10px; margin-left: -2px; color: #58a6ff; font: 700 11px system-ui, sans-serif; }
+.aprs-combo-opt:not(.cur)::before { content: ""; width: 10px; margin-left: -2px; }
+.aprs-combo-v { flex-shrink: 0; }
+.aprs-combo-l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: right; font: 10.5px system-ui, sans-serif; color: #8b949e; }
+.aprs-combo-opt.hi .aprs-combo-l { color: #c9d1d9; }
