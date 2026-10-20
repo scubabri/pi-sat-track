@@ -503,6 +503,10 @@ function connectTracker() {
         return;
       }
 
+      if (msg.type === "profile-peek") {
+        if (typeof applyProfilePeek === "function") applyProfilePeek(msg);
+        return;
+      }
       if (msg.type === "profiles") {
         if (typeof applyProfilesMessage === "function") {
           applyProfilesMessage(msg);

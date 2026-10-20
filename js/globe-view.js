@@ -145,10 +145,19 @@
             return e;
           } else if (d.kind === "heard") {
             // WSJT-X heard station: same yellow dot + "CALL grid" chip as the map overlay.
-            e.className = "globe-heard";
+            // APRS heard stations (js/aprs-overlay.js) reuse it with .globe-aprs styling.
+            e.className = "globe-heard" + (d.src === "aprs" ? " globe-aprs" : "");
             e.innerHTML = '<div class="globe-heard-in"><span class="globe-heard-dot"></span><span class="globe-heard-label"><span class="dc-call"></span><span class="dc-grid"></span></span></div>';
             d.el = e;
             paintHeard(d);
+            if (d.src === "aprs") {
+              const dot = e.querySelector(".globe-heard-dot");
+              dot.style.cursor = "pointer";
+              dot.addEventListener("click", (ev) => {
+                ev.stopPropagation();
+                if (window.aprsOverlay && window.aprsOverlay.showPopup) window.aprsOverlay.showPopup(d.call, ev.clientX, ev.clientY);
+              });
+            }
             return e;
           } else if (d.kind === "sun") {
             e.className = "globe-sun";
@@ -665,6 +674,20 @@
     const inner = e.firstChild;
     if (!inner) return;
     inner.style.opacity = String(d.opacity);
+    if (d.src === "aprs") {
+      e.classList.toggle("aprs-approx", d.posSource === "grid" || d.posSource === "last");
+      e.classList.toggle("aprs-self", d.posSource === "self");
+      e.classList.toggle("aprs-sat", !!d.viaSat);
+      // Actual APRS symbol icon (js/aprs-symbols.js) when known, else the dot.
+      const S = window.APRS_SYMBOLS;
+      const sym = S && d.symbol && S.parse(d.symbol) ? d.symbol : "";
+      if (d._sym !== sym) {
+        d._sym = sym;
+        const dotEl = inner.firstChild;
+        dotEl.innerHTML = sym ? S.html(sym, 20) : "";
+        e.classList.toggle("has-sym", !!sym);
+      }
+    }
     const call = inner.querySelector(".dc-call"), grid = inner.querySelector(".dc-grid");
     if (call.textContent !== d.call) call.textContent = d.call;
     if (grid.textContent !== d.grid) grid.textContent = d.grid;
@@ -680,6 +703,18 @@
       if (!d) { d = { kind: "heard", key: "__heard:" + s.call, alt: 0.006 }; heard.set(s.call, d); }
       d.call = s.call; d.grid = s.grid; d.lat = s.lat; d.lng = s.lon; d.opacity = s.opacity; d.tip = s.tip;
       seen.add(s.call);
+      paintHeard(d);
+    }
+    // APRS heard stations (window.aprsOverlay from js/aprs-overlay.js), keyed apart from WSJT-X.
+    const aov = window.aprsOverlay;
+    const alist = aov && typeof aov.items === "function" ? aov.items() : [];
+    for (const s of alist) {
+      const k = "aprs:" + s.call;
+      let d = heard.get(k);
+      if (!d) { d = { kind: "heard", src: "aprs", key: "__aprs:" + s.call, alt: 0.006 }; heard.set(k, d); }
+      d.call = s.call; d.grid = s.grid; d.lat = s.lat; d.lng = s.lon; d.opacity = s.opacity; d.tip = s.tip;
+      d.posSource = s.posSource; d.viaSat = s.viaSat; d.symbol = s.symbol || "";
+      seen.add(k);
       paintHeard(d);
     }
     for (const k of [...heard.keys()]) if (!seen.has(k)) heard.delete(k);
@@ -790,6 +825,7 @@
   window.addEventListener("time-mode-change", () => { applyState(true); if (hoverDot) paintHover(); });
   document.addEventListener("qso-dx-change", () => applyState(true));
   document.addEventListener("decode-overlay-change", () => applyState(true));
+  document.addEventListener("aprs-overlay-change", () => applyState(true));
 
   /** Live positions (moved in place), footprint and labels. */
   function applyState(force) {

@@ -250,6 +250,32 @@ function applyWsjtxListener() {
   broadcastWsjtxStatus();
 }
 
+/**
+ * APRS / KISS TNC connector (lib/aprs/service.js). Config per profile under
+ * profile.config.aprs; RX packets -> list + "APRS Heard" layer + daily log
+ * in ~/.rpitrack/aprs/; TX (beacon / message) gated on radio + sat state.
+ */
+const aprsNormalize = require("./lib/aprs/service").normalizeConfig;
+// Configure → KISS / APRS Bluetooth Scan / Pair / Remove / Power on (bluetoothctl)
+const btManager = new (require("./lib/kiss/bt-manager").BtManager)();
+btManager.on("update", (m) => broadcast(Object.assign({ type: "aprs-bt" }, m)));
+const aprsService = require("./lib/aprs/service").createService({
+  broadcast: (o) => broadcast(o),
+  getStation: () => stationFromProfile(),
+  getTxContext: () => {
+    let radioOn = false;
+    try {
+      const rs = radios.active().getRadioState();
+      radioOn = !!(rs && rs.radioOn);
+    } catch (_) {}
+    let sat = null;
+    try {
+      sat = state.getLogContext();
+    } catch (_) {}
+    return { radioOn, sat };
+  },
+});
+
 function applyProfileToRuntime(prof) {
   if (!prof) return;
   // Spinner/fine offsets are stored per profile — switch store + re-apply live.
@@ -269,6 +295,7 @@ function applyProfileToRuntime(prof) {
   console.log("Radio update:", config.RADIO_UPDATE_MS, "ms");
   if (typeof state.forceRadioPush === "function") state.forceRadioPush();
   applyWsjtxListener();
+  aprsService.configure(cfg.aprs, { profile: profiles.getActiveName() });
 }
 
 function broadcastProfiles() {
@@ -277,6 +304,14 @@ function broadcastProfiles() {
 
 // Load named profiles from ~/.rpitrack/profiles.json and apply active one
 profiles.load();
+// KISS / APRS settings are per profile (config.aprs): a profile saved before it
+// had any gets a copy of the active profile's, so switching never goes blank.
+try {
+  const n = profiles.backfillConfigKey("aprs");
+  if (n) console.log("Profiles: copied KISS / APRS settings into", n, "profile(s)");
+} catch (e) {
+  console.warn("Profiles: APRS backfill failed:", e.message);
+}
 // Offsets store initialized as "default" in state.init (before profiles were
 // loaded): switch it to the real active profile now, before any sat loads.
 if (typeof state.setOffsetsProfile === "function")
@@ -352,6 +387,16 @@ const server = http.createServer((req, res) => {
       "Cache-Control": "no-store",
     });
     return res.end(JSON.stringify(state.satsPayload(filter)));
+  }
+
+  // APRS digipeat log export (Messages window → Digipeats → Export CSV)
+  if (urlPath === "/api/aprs/digipeats.csv") {
+    res.writeHead(200, {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": 'attachment; filename="aprs-digipeats-' + new Date().toISOString().slice(0, 10) + '.csv"',
+      "Cache-Control": "no-store",
+    });
+    return res.end(aprsService.digipeatsCsv());
   }
 
   if (urlPath === "/api/host") {
@@ -551,6 +596,10 @@ wss.on("connection", (ws, req) => {
     }),
   );
   ws.send(JSON.stringify(decodeStore.payload()));
+  ws.send(JSON.stringify(aprsService.statusPayload()));
+  ws.send(JSON.stringify(aprsService.packetsPayload()));
+  ws.send(JSON.stringify(aprsService.heardPayload()));
+  ws.send(JSON.stringify(aprsService.digipeatsPayload()));
   // Re-send shortly after: the sidebar logging script hooks the socket
   // asynchronously and can miss the first message.
   setTimeout(() => {
@@ -565,6 +614,9 @@ wss.on("connection", (ws, req) => {
           }),
         );
         ws.send(JSON.stringify(decodeStore.payload()));
+        ws.send(JSON.stringify(aprsService.statusPayload()));
+        ws.send(JSON.stringify(aprsService.heardPayload()));
+        ws.send(JSON.stringify(aprsService.digipeatsPayload()));
       }
     } catch (_) {}
   }, 1500);
@@ -579,6 +631,72 @@ wss.on("connection", (ws, req) => {
   ws.on("message", (raw) => {
     try {
       const msg = JSON.parse(raw.toString());
+
+      if (msg.type === "aprs-config" && msg.aprs && typeof msg.aprs === "object") {
+        // KISS clients are restarted only for connections whose transport changed (syncClients)
+        const c = aprsService.configure(msg.aprs, { profile: profiles.getActiveName() });
+        profiles.updateActive({ config: { aprs: c } });
+        broadcastProfiles();
+        const st = stationFromProfile();
+        const call = String((st && st.callsign) || "").trim().toUpperCase().split("-")[0];
+        const conns = Array.isArray(c.connections) ? c.connections : [];
+        console.log(
+          "APRS config saved (profile " + profiles.getActiveName() + "): " + (call ? call + (c.ssid ? "-" + c.ssid : "") : "no callsign") +
+            ", KISS " + (c.enabled ? "on" : "off") + ", " + conns.filter((x) => x.enabled).length + "/" + conns.length + " connections enabled",
+        );
+      }
+      if (msg.type === "aprs-send") {
+        const r = aprsService.send(msg);
+        ws.send(JSON.stringify(Object.assign({ type: "aprs-send-result", reqId: msg.reqId }, r)));
+        if (!r.ok) console.log("APRS send blocked:", r.reasons.join("; "));
+      }
+      if (msg.type === "aprs-sat-path" && typeof msg.sat === "string") {
+        const cur = aprsService.getConfig();
+        const sp = Object.assign({}, cur.satPaths);
+        const key = msg.sat.trim().toUpperCase();
+        if (key) {
+          if (msg.via == null || String(msg.via).trim() === "") delete sp[key];
+          else sp[key] = String(msg.via).trim().toUpperCase();
+          const c = aprsService.configure(Object.assign({}, cur, { satPaths: sp }), { profile: profiles.getActiveName() });
+          profiles.updateActive({ config: { aprs: c } });
+          broadcastProfiles();
+        }
+      }
+      if (msg.type === "aprs-bt-devices") {
+        // Paired Bluetooth devices (bluetoothctl) for Configure's picker
+        aprsService.btDevices().then((r) => {
+          if (ws.readyState === 1) ws.send(JSON.stringify(Object.assign({ type: "aprs-bt-devices", id: typeof msg.id === "string" ? msg.id.slice(0, 16) : "" }, r)));
+        });
+      }
+      // Bluetooth setup from Configure (same socket as the rest of Configure)
+      if (msg.type === "aprs-bt-scan") {
+        const id = typeof msg.id === "string" ? msg.id.slice(0, 16) : "";
+        if (msg.action === "stop") btManager.stopScan();
+        else btManager.startScan({ owner: ws, id });
+      }
+      if (msg.type === "aprs-bt-pair" && typeof msg.mac === "string") {
+        btManager.pair(msg.mac, { owner: ws, id: typeof msg.id === "string" ? msg.id.slice(0, 16) : "" });
+      }
+      if (msg.type === "aprs-bt-pair-reply") btManager.pairReply(msg.answer);
+      if (msg.type === "aprs-bt-pair-cancel") btManager.cancelPair();
+      if (msg.type === "aprs-bt-unpair" || msg.type === "aprs-bt-power") {
+        const id = typeof msg.id === "string" ? msg.id.slice(0, 16) : "";
+        (msg.type === "aprs-bt-power" ? btManager.powerOn() : btManager.unpair(msg.mac)).then((r) => {
+          if (ws.readyState === 1) ws.send(JSON.stringify(Object.assign({ type: "aprs-bt", id }, r)));
+        });
+      }
+      if (msg.type === "aprs-clear") aprsService.clear();
+      if (msg.type === "aprs-clear-heard") aprsService.clearHeard();
+      if (msg.type === "aprs-reconnect") aprsService.reconnect();
+      if (msg.type === "aprs-test") {
+        // One-shot probe with the (unsaved) form values; never sends a frame.
+        const probe = msg.transport === "bluetooth" ? aprsService.testBt(msg.btAddress, msg.btChannel) : aprsService.testTcp(msg.host, msg.port);
+        probe.then((r) => {
+          // id = the Configure connection row that asked (several KISS connections)
+          const id = typeof msg.id === "string" ? msg.id.slice(0, 16) : "";
+          if (ws.readyState === 1) ws.send(JSON.stringify(Object.assign({ type: "aprs-test-result", id }, r)));
+        });
+      }
 
       if (msg.type === "observer" && typeof msg.lat === "number") {
         state.setObserver(msg.lat, msg.lon, msg.elevM);
@@ -1040,6 +1158,22 @@ wss.on("connection", (ws, req) => {
         return;
       }
 
+      // Configure's profile selector: load a profile's values into the form only.
+      // Nothing is saved or applied (radio / rotor / KISS / logging) until Save,
+      // which then sends profile-select.
+      if (msg.type === "profile-peek" && msg.name) {
+        const p = profiles.getProfile(msg.name);
+        const cfg = p && p.config && typeof p.config === "object" ? p.config : {};
+        ws.send(
+          JSON.stringify(
+            p
+              ? { type: "profile-peek", name: profiles.sanitizeName(msg.name), config: cfg, aprs: aprsNormalize(cfg.aprs) }
+              : { type: "profile-peek", name: msg.name, error: "Unknown profile" },
+          ),
+        );
+        return;
+      }
+
       if (msg.type === "profile-select" && msg.name) {
         if (profiles.setActive(msg.name)) {
           applyProfileToRuntime(profiles.getActive());
@@ -1159,7 +1293,10 @@ wss.on("connection", (ws, req) => {
     }
   });
 
-  ws.on("close", () => console.log("Client disconnected"));
+  ws.on("close", () => {
+    btManager.release(ws); // stop its Bluetooth scan / pairing
+    console.log("Client disconnected");
+  });
 });
 
 setInterval(() => {
