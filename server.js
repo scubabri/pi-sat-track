@@ -50,6 +50,7 @@ const { WebSocketServer } = require("ws");
 
 // Capture console as early as possible (before radio/rotor registration logs)
 const logHub = require("./lib/log-hub");
+const { applyEndpointSave, endpointsFromMsg } = require("./lib/endpoint-apply");
 
 const {
   ROOT,
@@ -290,7 +291,7 @@ function applyProfileToRuntime(prof) {
   console.log("Radio update:", config.RADIO_UPDATE_MS, "ms");
   if (typeof state.forceRadioPush === "function") state.forceRadioPush();
   applyWsjtxListener();
-  aprsService.configure(cfg.aprs);
+  aprsService.configure(cfg.aprs, { profile: profiles.getActiveName() });
 }
 
 function broadcastProfiles() {
@@ -626,10 +627,17 @@ wss.on("connection", (ws, req) => {
       const msg = JSON.parse(raw.toString());
 
       if (msg.type === "aprs-config" && msg.aprs && typeof msg.aprs === "object") {
-        const c = aprsService.configure(msg.aprs);
+        // KISS clients are restarted only for connections whose transport changed (syncClients)
+        const c = aprsService.configure(msg.aprs, { profile: profiles.getActiveName() });
         profiles.updateActive({ config: { aprs: c } });
         broadcastProfiles();
-        console.log("APRS config saved (" + (c.enabled ? c.transport + " " + (c.transport === "tcp" ? (c.host || "localhost") + ":" + c.port : c.serialDevice) : "disabled") + ")");
+        const st = stationFromProfile();
+        const call = String((st && st.callsign) || "").trim().toUpperCase().split("-")[0];
+        const conns = Array.isArray(c.connections) ? c.connections : [];
+        console.log(
+          "APRS config saved (profile " + profiles.getActiveName() + "): " + (call ? call + (c.ssid ? "-" + c.ssid : "") : "no callsign") +
+            ", KISS " + (c.enabled ? "on" : "off") + ", " + conns.filter((x) => x.enabled).length + "/" + conns.length + " connections enabled",
+        );
       }
       if (msg.type === "aprs-send") {
         const r = aprsService.send(msg);
@@ -643,7 +651,7 @@ wss.on("connection", (ws, req) => {
         if (key) {
           if (msg.via == null || String(msg.via).trim() === "") delete sp[key];
           else sp[key] = String(msg.via).trim().toUpperCase();
-          const c = aprsService.configure(Object.assign({}, cur, { satPaths: sp }));
+          const c = aprsService.configure(Object.assign({}, cur, { satPaths: sp }), { profile: profiles.getActiveName() });
           profiles.updateActive({ config: { aprs: c } });
           broadcastProfiles();
         }
@@ -929,72 +937,17 @@ wss.on("connection", (ws, req) => {
       }
 
       if (msg.type === "endpoints") {
-        const ep = {
-          singleRadio: !!msg.singleRadio,
-          txSplit: msg.txSplit !== false,
-          radioUl: msg.radioUl,
-          radioDl: msg.radioDl,
-          radioTransport: msg.radioTransport,
-          radioType: msg.radioType,
-          radioProtocol: msg.radioProtocol,
-          serialMake: msg.serialMake,
-          serialModel: msg.serialModel,
-          tciHost: msg.tciHost,
-          tciPort: msg.tciPort,
-          sdrconnectHost: msg.sdrconnectHost,
-          sdrconnectPort: msg.sdrconnectPort,
-          rigctlHost: msg.rigctlHost,
-          rigctlPort: msg.rigctlPort,
-          rigctlUlHost: msg.rigctlUlHost,
-          rigctlUlPort: msg.rigctlUlPort,
-          flexUlHost: msg.flexUlHost,
-          flexUlPort: msg.flexUlPort,
-          flexDlHost: msg.flexDlHost,
-          flexDlPort: msg.flexDlPort,
-          flexApiHost: msg.flexApiHost,
-          flexApiPort: msg.flexApiPort,
-          flexHost: msg.flexHost,
-          flexPort: msg.flexPort,
-          serialDevice: msg.serialDevice,
-          serialBaud: msg.serialBaud,
-          serialDevice2: msg.serialDevice2,
-          serialBaud2: msg.serialBaud2,
-          catDevice: msg.serialDevice,
-          rotorHost: msg.rotorHost,
-          rotorAzPort: msg.rotorAzPort,
-          rotorElPort: msg.rotorElPort,
-          rotorType: msg.rotorType,
-          rotorAzDevice: msg.rotorAzDevice,
-          rotorElDevice: msg.rotorElDevice,
-          rotorBaud: msg.rotorBaud,
-          rotorParkAz: msg.rotorParkAz,
-          rotorParkEl: msg.rotorParkEl,
-          rotorElMax: msg.rotorElMax,
-          rotorAzOnly: !!msg.rotorAzOnly,
-          rotorMinEl: msg.rotorMinEl,
-          rotorAfterLos: msg.rotorAfterLos,
-          rotorAzStop: msg.rotorAzStop,
-          logMethod: msg.logMethod,
-          logAmsatHeard: typeof msg.logAmsatHeard === "boolean" ? msg.logAmsatHeard : undefined,
-          logAdifPath: msg.logAdifPath,
-          logUdpHost: msg.logUdpHost,
-          logUdpPort: msg.logUdpPort,
-          radioUpdateMs: msg.radioUpdateMs,
-          logUdpFormat: msg.logUdpFormat,
-          logUdpTtl: msg.logUdpTtl,
-          logUdpIface: msg.logUdpIface,
-          wsjtxListen: !!msg.wsjtxListen,
-          wsjtxListenPort: msg.wsjtxListenPort,
-          wsjtxListenBind: msg.wsjtxListenBind,
-        };
-        const flags = config.applyEndpoints(ep);
-        console.log("Endpoints updated", config.getEndpoints());
-        console.log("Radio path:", radios.active().meta.id);
-        console.log("Rotor path:", rotors.active().meta.id);
-
-        radios.applyEndpointChange(flags);
-        if (flags.rotorChanged) rotor.applyEndpointChange();
-        applyWsjtxListener();
+        const ep = endpointsFromMsg(msg);
+        // Only re-open what changed: Configure's Save sends the full form even
+        // when only APRS / KISS settings were edited (lib/endpoint-apply.js).
+        applyEndpointSave(ep, {
+          config,
+          radios,
+          rotor,
+          rotors,
+          applyWsjtx: applyWsjtxListener,
+          debug: process.env.PST_DEBUG ? (m, o) => console.debug(m, o) : null,
+        });
 
         const cfgPatch = Object.assign({}, ep);
         Object.assign(cfgPatch, logbook.normalizeStationFields(msg));
