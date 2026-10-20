@@ -11,6 +11,8 @@ function passDurLabel(aosIso, losIso) {
   const los = new Date(losIso).getTime();
   if (!Number.isFinite(aos) || !Number.isFinite(los) || los <= aos) return "\u2014";
   const sec = Math.round((los - aos) / 1000);
+  // Moon (EME) passes last hours: "9h 56m" instead of "596m 12s".
+  if (sec >= 3600) return Math.floor(sec / 3600) + "h " + String(Math.floor((sec % 3600) / 60)).padStart(2, "0") + "m";
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return m + "m " + String(s).padStart(2, "0") + "s";

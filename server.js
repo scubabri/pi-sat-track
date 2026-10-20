@@ -78,6 +78,9 @@ const wsjtxListener = require("./lib/wsjtx-listener");
 const wsjtxDecodes = require("./lib/wsjtx-decodes");
 const schedule = require("./lib/schedule");
 const amsatReport = require("./lib/amsat-report");
+const { applyProfileEndpoints } = require("./lib/profile-apply");
+/** First applyProfileToRuntime() after boot connects everything (lib/profile-apply.js). */
+let profileAppliedOnce = false;
 
 /** WebSocket server; set after createServer. broadcast() is safe before that. */
 let wss = null;
@@ -135,7 +138,7 @@ const amsatAuto = require("./lib/amsat-auto").createAutoHeard({
 });
 /** Fire-and-forget after a successful log; never blocks or fails the log. */
 function autoAmsatHeard(ctx, station, time, source) {
-  if (!config.LOG_AMSAT_HEARD || !ctx) return;
+  if (!config.LOG_AMSAT_HEARD || !ctx || ctx.isMoon) return; // Moon (EME): no AMSAT report
   setImmediate(() => {
     amsatAuto.fromQso({ ctx, station, time, source }).catch(() => {});
   });
@@ -173,7 +176,7 @@ const wsjtx = wsjtxListener.createListener({
           "from",
           q.clientId,
           q.source,
-          e.enriched ? "+ " + e.fields.SAT_NAME : "(pass-through)",
+          e.enriched ? "+ " + (e.fields.SAT_NAME || e.fields.PROP_MODE) : "(pass-through)",
           r.ok ? "-> " + r.method + " " + r.target : "FAILED: " + r.error,
           rec.warnings.length ? rec.warnings.join("; ") : "",
         );
@@ -284,10 +287,11 @@ function applyProfileToRuntime(prof) {
   state.setPassAlerts(prof.alerts);
   const cfg = prof.config && typeof prof.config === "object" ? prof.config : {};
   if (Object.keys(cfg).length) {
-    const flags = config.applyEndpoints(cfg);
-    radios.applyEndpointChange(flags);
-    if (flags.rotorChanged) rotor.applyEndpointChange();
+    // Re-apply only the radio / rotor whose settings differ from the current
+    // ones (one log line per switch); the first call at startup applies all.
+    applyProfileEndpoints(profiles.getActiveName(), cfg, { config, radios, rotor }, { startup: !profileAppliedOnce });
   }
+  profileAppliedOnce = true;
   console.log("Radio update:", config.RADIO_UPDATE_MS, "ms");
   if (typeof state.forceRadioPush === "function") state.forceRadioPush();
   applyWsjtxListener();
@@ -417,7 +421,8 @@ const server = http.createServer((req, res) => {
       res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify(o));
     };
-    const ctx = state.getLogContext();
+    const lc = state.getLogContext();
+    const ctx = lc && lc.isMoon ? null : lc; // Moon (EME) is not an AMSAT satellite
     return amsatReport
       .getSatNames()
       .then((list) => {
@@ -459,7 +464,8 @@ const server = http.createServer((req, res) => {
       } catch (_) {
         return json(400, { error: "invalid JSON" });
       }
-      const btnCtx = state.getLogContext();
+      const lc = state.getLogContext();
+      const btnCtx = lc && lc.isMoon ? null : lc; // Moon (EME) is not an AMSAT satellite
       amsatReport
         .getSatNames()
         .then((list) =>
