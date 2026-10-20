@@ -125,8 +125,7 @@ test("match: echo via SHEPRD* then KF6RAL-1* -> digipeated by both, logged, not 
   const echoes = out.filter((m) => m.type === "aprs-packet" && m.packet.ownEcho);
   assert.ok(echoes.length >= 2);
   assert.ok(echoes.every((m) => m.packet.echoOf === r.packet.id));
-  const me = svc._store.get("KA7KDX-3"); // our own TX may be listed once, echoes add nothing
-  assert.ok(!me || me.count === 1, "echoes are not counted as heard copies");
+  assert.strictEqual(svc._store.get("KA7KDX-3"), null, "our own TX / echoes are never a heard station");
   // persistent log: one entry per digipeated echo
   const lines = fs.readFileSync(file, "utf8").trim().split("\n").map((l) => JSON.parse(l));
   assert.strictEqual(lines.length, 2);
@@ -139,6 +138,37 @@ test("match: echo via SHEPRD* then KF6RAL-1* -> digipeated by both, logged, not 
   assert.match(lines[0].raw, /SHEPRD,WIDE1\*/); // TNC2: * on the last used hop
   assert.ok(!isNaN(Date.parse(lines[0].time)) && /Z$/.test(lines[0].time));
   assert.strictEqual(svc.digipeatsPayload().count, 2);
+  svc.stop();
+  await t.close();
+});
+
+test("own echo: un-digipeated copy of our position beacon is not a heard station (Recent Stations / map)", async () => {
+  const t = await fakeTnc();
+  const { svc, out } = makeSvc(tmpFile());
+  svc.configure(cfgFor(t));
+  assert.ok(await until(() => svc.statusPayload().state === "connected" && t.open()));
+  const r = svc.send({ kind: "beacon", to: "APRS", via: "WIDE2-1", comment: "Testing PiTrack APRS" });
+  assert.strictEqual(r.ok, true, JSON.stringify(r.reasons));
+  assert.ok(await until(() => t.rx.length === 1));
+  const info = r.packet.tnc2.slice(r.packet.tnc2.indexOf(":") + 1);
+  // what Graywolf hands back to the KISS client: same frame, nothing digipeated
+  t.pushTnc2("KA7KDX-3>APRS,WIDE2-1:" + info);
+  // and an un-matched copy of us (other info, e.g. an older beacon), lower-case config irrelevant
+  t.pushTnc2("KA7KDX-3>APRS,WIDE2-1:!4000.00N/10500.00W-older beacon");
+  await wait(200);
+  const heard = () => svc.heardPayload().stations.map((x) => x.call);
+  assert.ok(!heard().includes("KA7KDX-3"), "own call+SSID not in the heard payload: " + heard());
+  assert.strictEqual(svc._store.get("KA7KDX-3"), null);
+  assert.strictEqual(txPkt(svc).digi.state, "pending", "a direct echo is not a digipeat");
+  assert.ok(out.filter((m) => m.type === "aprs-heard").every((m) => !m.stations.some((x) => x.call === "KA7KDX-3")));
+  // other stations are still listed
+  t.pushTnc2("N0CALL-9>APRS,WIDE2-1:!4000.00N/10500.00W>other");
+  assert.ok(await until(() => heard().includes("N0CALL-9")));
+  // a digipeated copy still confirms + logs, but still no heard-station entry for us
+  t.pushTnc2("KA7KDX-3>APRS,DP0SNX*,WIDE2-1:" + info);
+  assert.ok(await until(() => txPkt(svc).digi.state === "digipeated"));
+  assert.deepStrictEqual(txPkt(svc).digi.by, ["DP0SNX"]);
+  assert.ok(!heard().includes("KA7KDX-3"));
   svc.stop();
   await t.close();
 });

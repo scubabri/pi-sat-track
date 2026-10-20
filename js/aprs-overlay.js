@@ -499,7 +499,9 @@
   }
 
   function apply(msg) {
-    stations = Array.isArray(msg.stations) ? msg.stations : [];
+    // never our own call+SSID (the server already drops it; belt and braces)
+    const me = String((APRS() && APRS().status && APRS().status.source) || "").toUpperCase();
+    stations = (Array.isArray(msg.stations) ? msg.stations : []).filter((s) => !me || String(s.call || "").toUpperCase() !== me);
     if (msg.expireMs > 0) expireMs = msg.expireMs;
     if (msg.now > 0) skewMs = msg.now - Date.now();
     render();
