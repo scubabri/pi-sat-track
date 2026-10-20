@@ -204,7 +204,22 @@
         if (i >= 0) favs.splice(i, 1);
         else favs.push(key);
         saveFavorites(favs);
+        sendFavoritesToServer(favs);
         render();
+      }
+
+      // The server profile is the source of truth for favorites (the main
+      // page re-applies it on load), so a star here must reach the server too.
+      function sendFavoritesToServer(keys) {
+        try {
+          const proto = location.protocol === "https:" ? "wss" : "ws";
+          const sock = new WebSocket(proto + "://" + location.host + "/ws");
+          sock.onopen = () => {
+            sock.send(JSON.stringify({ type: "favorites", keys: keys }));
+            setTimeout(() => sock.close(), 200);
+          };
+          sock.onerror = () => {};
+        } catch (_) {}
       }
 
       async function load() {
@@ -285,7 +300,9 @@
 
           tr.addEventListener("click", () => {
             localStorage.setItem("satTrackerSat", s.key);
-            location.href = "/";
+            // Explicit pick: the main page selects it once connected (it no
+            // longer adopts localStorage over the server's current sat).
+            location.href = "/index.html?sat=" + encodeURIComponent(s.key);
           });
           body.appendChild(tr);
         }

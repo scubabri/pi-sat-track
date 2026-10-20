@@ -446,6 +446,19 @@ function sendCenter() {
   }
 }
 
+/** "/index.html?sat=KEY" from sats.html (Browse full catalog...): select it once, then drop the param. */
+function applyCatalogPick() {
+  let key = null;
+  try {
+    key = new URLSearchParams(location.search).get("sat");
+  } catch (_) {}
+  if (!key) return;
+  try {
+    history.replaceState(null, "", location.pathname + location.hash);
+  } catch (_) {}
+  if (typeof selectSatellite === "function") selectSatellite(key, key);
+}
+
 function connectTracker() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const url = proto + "://" + location.host + "/ws";
@@ -461,6 +474,8 @@ function connectTracker() {
     // Do NOT push our localStorage sat on (re)connect: the server is the
     // source of truth and sends "state" right after connect. Pushing here let
     // a second tab / reconnecting client switch the live sat (and rotor).
+    // Exception: an explicit pick from the catalog page (?sat=KEY), once.
+    applyCatalogPick();
   };
 
   ws.onmessage = (ev) => {
