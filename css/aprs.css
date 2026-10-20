@@ -376,3 +376,7 @@
 .aprs-win-q-n { font-size: 10.5px; color: #8b949e; white-space: nowrap; }
 mark.aprs-qhl { color: #0d1117; background: #e3b341; border-radius: 2px; padding: 0 1px; }
 .aprs-retry { padding: 0 5px; font: 700 10px system-ui, sans-serif; color: #e6edf3; background: #6e40c9; border-radius: 8px; }
+
+/* Sidebar STATION → APRS row: one KISS connection per line, TX one bold */
+.cfg-summary-list #cfg-sum-aprs { white-space: normal; line-height: 1.35; }
+.cfg-summary-list #cfg-sum-aprs b { font-weight: 700; }

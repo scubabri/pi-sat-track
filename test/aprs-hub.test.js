@@ -127,3 +127,18 @@ test("multi-KISS: status text, route per typed Via, per-sat speed text parsing",
   assert.deepStrictEqual(JSON.parse(JSON.stringify(A.textToSatSpeeds("crocube=9600\nISS = 1200\nfoo=4800\nmarina=9k6"))), { CROCUBE: 9600, ISS: 1200, MARINA: 9600 });
   assert.match(A.statusText({ enabled: true, connections: [conns[0]] }), /^KISS FLEX ch1 pc:8001: connected · RX 3 · TX 1/);
 });
+
+test("STATION sidebar APRS row: enabled KISS profiles with speed, TX one bold, Off when disabled", () => {
+  const { A } = load();
+  const conns = [
+    { id: "a", name: "Graywolf", speed: 1200, enabled: true, state: "connected" },
+    { id: "b", name: "Spare", speed: 1200, enabled: false, state: "off" },
+    { id: "c", name: "Direwolf <9k6>", speed: 9600, enabled: true, state: "connected" },
+  ];
+  const r = A.stationSummaryHtml(status({ connections: conns, txRouteSat: { ok: true, conn: { id: "a" } } }));
+  assert.strictEqual(r.html, "<b>Graywolf (1200)</b><br>Direwolf &lt;9k6&gt; (9600)");
+  assert.match(r.title, /Graywolf \(1200\) — TX for ISS/);
+  assert.strictEqual(A.stationSummaryHtml(status({ connections: conns, txRouteSat: { ok: false } })).html, "Graywolf (1200)<br>Direwolf &lt;9k6&gt; (9600)");
+  assert.strictEqual(A.stationSummaryHtml(status({ enabled: false, connections: conns })).html, "Off");
+  assert.strictEqual(A.stationSummaryHtml(status({ connections: [conns[1]] })).html, "Off");
+});

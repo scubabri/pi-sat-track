@@ -444,8 +444,12 @@
         '<a href="#" class="aprs-digi-count" id="aprs-digi-count" title="Open the digipeat log (Messages window)">Digipeats: ' + dc + "</a>";
       const rt = box.querySelector("#aprs-box-route");
       const route = APRS().routeFor ? APRS().routeFor(viaEl.value) : null;
-      rt.innerHTML = APRS().routeHtml ? APRS().routeHtml(route) : "";
-      rt.classList.toggle("blocked", !!(route && (!route.ok || !route.connected)));
+      // Only a blocking / not-connected route is shown here (the TX connection is in the
+      // sidebar STATION panel); "TX via Graywolf 1200 · SONATE-2 …" is noise in the small window.
+      const rtBad = !!(route && (!route.ok || !route.connected));
+      rt.innerHTML = rtBad && APRS().routeHtml ? APRS().routeHtml(route) : "";
+      rt.hidden = !rtBad;
+      rt.classList.toggle("blocked", rtBad);
       const sb = box.querySelector("#aprs-send-pos");
       sb.disabled = !gate.ok;
       sb.title = gate.ok
@@ -454,12 +458,11 @@
       const why = box.querySelector("#aprs-box-why");
       if (!why.dataset.result || Date.now() - Number(why.dataset.result) > 6000) {
         why.dataset.result = "";
-        // satellite elevation / mode never block; shown as a hint for a sat Via
-        const hint = gate.ok && gate.hints && gate.hints[0] && APRS().viaIsSat && APRS().viaIsSat(viaEl.value) ? gate.hints[0] : "";
-        why.textContent = gate.ok ? hint : gate.reasons[0] || "";
-        why.title = gate.reasons.concat(hint ? gate.hints : []).join("\n");
+        // Only blocking reasons here; non-blocking sat hints (below the horizon, mode) are not shown.
+        why.textContent = gate.ok ? "" : gate.reasons[0] || "";
+        why.title = gate.reasons.join("\n");
         why.classList.toggle("blocked", !gate.ok);
-        why.classList.toggle("hint", !!hint);
+        why.classList.remove("hint");
         why.classList.remove("ok");
       }
     }

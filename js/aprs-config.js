@@ -225,8 +225,35 @@
       APRS.remember("via", (p.via || []).map((v) => v.replace(/\*$/, "")).join(","));
       if (p.type === "message" && p.to) APRS.remember("for", p.to);
     }
+    if (msg.type === "aprs-status") APRS.renderStationSummary(msg);
     APRS.emit(msg.type, msg);
   }
+
+  /** Sidebar STATION row: enabled KISS connections, one per line ("Graywolf (1200)"),
+   * the one the current TX route uses in bold; "Off" when the master switch is off / none enabled. */
+  APRS.stationSummaryHtml = (st) => {
+    const e = (x) => String(x == null ? "" : x).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+    const on = st && st.enabled ? (st.connections || []).filter((c) => c.enabled) : [];
+    if (!on.length) return { html: "Off", title: st && st.enabled ? "No KISS connection enabled" : "KISS / APRS off" };
+    const r = st.sat ? st.txRouteSat || st.txRoute : st.txRoute;
+    const txId = r && r.ok && r.conn ? r.conn.id : null;
+    const label = (c) => (c.name || "KISS") + " (" + (c.speed || 1200) + ")";
+    return {
+      html: on.map((c) => (c.id === txId ? "<b>" + e(label(c)) + "</b>" : e(label(c)))).join("<br>"),
+      title: on.map((c) => label(c) + (c.id === txId ? " — TX" + (st.sat ? " for " + (st.sat.name || st.sat.key) : "") : "") + " · " + (c.state || "")).join("\n"),
+    };
+  };
+  APRS.renderStationSummary = (st) => {
+    if (typeof document === "undefined" || !document.getElementById) return;
+    const dd = document.getElementById("cfg-sum-aprs");
+    const dt = document.getElementById("cfg-sum-aprs-dt");
+    if (!dd) return;
+    const s = APRS.stationSummaryHtml(st);
+    if (dd.innerHTML !== s.html) dd.innerHTML = s.html;
+    dd.title = s.title;
+    dd.hidden = false;
+    if (dt) dt.hidden = false;
+  };
 
   APRS.digipeats = APRS.digipeats || [];
   APRS.digipeatCount = APRS.digipeatCount || 0;
