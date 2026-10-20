@@ -50,6 +50,7 @@ const { WebSocketServer } = require("ws");
 
 // Capture console as early as possible (before radio/rotor registration logs)
 const logHub = require("./lib/log-hub");
+const { applyEndpointSave, endpointsFromMsg } = require("./lib/endpoint-apply");
 
 const {
   ROOT,
@@ -77,6 +78,9 @@ const wsjtxListener = require("./lib/wsjtx-listener");
 const wsjtxDecodes = require("./lib/wsjtx-decodes");
 const schedule = require("./lib/schedule");
 const amsatReport = require("./lib/amsat-report");
+const { applyProfileEndpoints } = require("./lib/profile-apply");
+/** First applyProfileToRuntime() after boot connects everything (lib/profile-apply.js). */
+let profileAppliedOnce = false;
 
 /** WebSocket server; set after createServer. broadcast() is safe before that. */
 let wss = null;
@@ -257,10 +261,11 @@ function applyProfileToRuntime(prof) {
   state.setPassAlerts(prof.alerts);
   const cfg = prof.config && typeof prof.config === "object" ? prof.config : {};
   if (Object.keys(cfg).length) {
-    const flags = config.applyEndpoints(cfg);
-    radios.applyEndpointChange(flags);
-    if (flags.rotorChanged) rotor.applyEndpointChange();
+    // Re-apply only the radio / rotor whose settings differ from the current
+    // ones (one log line per switch); the first call at startup applies all.
+    applyProfileEndpoints(profiles.getActiveName(), cfg, { config, radios, rotor }, { startup: !profileAppliedOnce });
   }
+  profileAppliedOnce = true;
   console.log("Radio update:", config.RADIO_UPDATE_MS, "ms");
   if (typeof state.forceRadioPush === "function") state.forceRadioPush();
   applyWsjtxListener();
@@ -819,72 +824,17 @@ wss.on("connection", (ws, req) => {
       }
 
       if (msg.type === "endpoints") {
-        const ep = {
-          singleRadio: !!msg.singleRadio,
-          txSplit: msg.txSplit !== false,
-          radioUl: msg.radioUl,
-          radioDl: msg.radioDl,
-          radioTransport: msg.radioTransport,
-          radioType: msg.radioType,
-          radioProtocol: msg.radioProtocol,
-          serialMake: msg.serialMake,
-          serialModel: msg.serialModel,
-          tciHost: msg.tciHost,
-          tciPort: msg.tciPort,
-          sdrconnectHost: msg.sdrconnectHost,
-          sdrconnectPort: msg.sdrconnectPort,
-          rigctlHost: msg.rigctlHost,
-          rigctlPort: msg.rigctlPort,
-          rigctlUlHost: msg.rigctlUlHost,
-          rigctlUlPort: msg.rigctlUlPort,
-          flexUlHost: msg.flexUlHost,
-          flexUlPort: msg.flexUlPort,
-          flexDlHost: msg.flexDlHost,
-          flexDlPort: msg.flexDlPort,
-          flexApiHost: msg.flexApiHost,
-          flexApiPort: msg.flexApiPort,
-          flexHost: msg.flexHost,
-          flexPort: msg.flexPort,
-          serialDevice: msg.serialDevice,
-          serialBaud: msg.serialBaud,
-          serialDevice2: msg.serialDevice2,
-          serialBaud2: msg.serialBaud2,
-          catDevice: msg.serialDevice,
-          rotorHost: msg.rotorHost,
-          rotorAzPort: msg.rotorAzPort,
-          rotorElPort: msg.rotorElPort,
-          rotorType: msg.rotorType,
-          rotorAzDevice: msg.rotorAzDevice,
-          rotorElDevice: msg.rotorElDevice,
-          rotorBaud: msg.rotorBaud,
-          rotorParkAz: msg.rotorParkAz,
-          rotorParkEl: msg.rotorParkEl,
-          rotorElMax: msg.rotorElMax,
-          rotorAzOnly: !!msg.rotorAzOnly,
-          rotorMinEl: msg.rotorMinEl,
-          rotorAfterLos: msg.rotorAfterLos,
-          rotorAzStop: msg.rotorAzStop,
-          logMethod: msg.logMethod,
-          logAmsatHeard: typeof msg.logAmsatHeard === "boolean" ? msg.logAmsatHeard : undefined,
-          logAdifPath: msg.logAdifPath,
-          logUdpHost: msg.logUdpHost,
-          logUdpPort: msg.logUdpPort,
-          radioUpdateMs: msg.radioUpdateMs,
-          logUdpFormat: msg.logUdpFormat,
-          logUdpTtl: msg.logUdpTtl,
-          logUdpIface: msg.logUdpIface,
-          wsjtxListen: !!msg.wsjtxListen,
-          wsjtxListenPort: msg.wsjtxListenPort,
-          wsjtxListenBind: msg.wsjtxListenBind,
-        };
-        const flags = config.applyEndpoints(ep);
-        console.log("Endpoints updated", config.getEndpoints());
-        console.log("Radio path:", radios.active().meta.id);
-        console.log("Rotor path:", rotors.active().meta.id);
-
-        radios.applyEndpointChange(flags);
-        if (flags.rotorChanged) rotor.applyEndpointChange();
-        applyWsjtxListener();
+        const ep = endpointsFromMsg(msg);
+        // Only re-open what changed: Configure's Save sends the full form even
+        // when only APRS / KISS settings were edited (lib/endpoint-apply.js).
+        applyEndpointSave(ep, {
+          config,
+          radios,
+          rotor,
+          rotors,
+          applyWsjtx: applyWsjtxListener,
+          debug: process.env.PST_DEBUG ? (m, o) => console.debug(m, o) : null,
+        });
 
         const cfgPatch = Object.assign({}, ep);
         Object.assign(cfgPatch, logbook.normalizeStationFields(msg));
