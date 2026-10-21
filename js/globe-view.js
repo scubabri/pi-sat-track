@@ -103,9 +103,11 @@
       let downAt = null;
       el.addEventListener("pointerdown", (e) => { downAt = { x: e.clientX, y: e.clientY }; });
       el.addEventListener("pointermove", (e) => {
-        if (!downAt || !follow.key || !e.buttons) return;
-        if (Math.abs(e.clientX - downAt.x) + Math.abs(e.clientY - downAt.y) > 4) { downAt = null; stopFollow(); }
+        if (!downAt || !e.buttons) return;
+        if (Math.abs(e.clientX - downAt.x) + Math.abs(e.clientY - downAt.y) > 4) { downAt = null; homeLock = false; if (follow.key) stopFollow(); }
       });
+      el.addEventListener("pointermove", (e) => { if (e.pointerType !== "touch") mouseAt = { x: e.clientX, y: e.clientY }; });
+      el.addEventListener("pointerleave", () => { mouseAt = null; if (hoverDot) hoverOff(hoverDot); });
       const up = () => { downAt = null; };
       el.addEventListener("pointerup", up);
       el.addEventListener("pointercancel", up);
@@ -131,8 +133,15 @@
             e.className = "globe-ghost";
             e.title = "now";
           } else if (d.kind === "dot") {
+            // Favorite dot + its name label (like the map's fav-overlay.js): name
+            // only, the full selected-sat content while hovered. The dot, the
+            // label and a few px of slop around each are the hover / click target.
             e.className = "globe-dot";
-            e.title = d.display || d.key;
+            e.__d = d;
+            const lab = document.createElement("div");
+            lab.className = "globe-label globe-fav-label";
+            e.appendChild(lab);
+            e.__favLabel = lab;
             e.addEventListener("click", (ev) => { ev.stopPropagation(); pick(d); });
             e.addEventListener("mouseenter", () => hoverOn(d));
             e.addEventListener("mouseleave", () => hoverOff(d));
@@ -208,6 +217,7 @@
       try { saved = JSON.parse(localStorage.getItem(POV_KEY) || "null"); } catch (_) {}
       const ok = saved && Number.isFinite(saved.lat) && Number.isFinite(saved.lng) && Number.isFinite(saved.altitude);
       placeStation(!ok);
+      homeLock = !ok || window.previewCameraNearHome({ lat: saved.lat, lng: saved.lng }, stLabel, 0.5);
       if (ok) G.pointOfView({ lat: saved.lat, lng: saved.lng, altitude: Math.min(8, Math.max(0.3, saved.altitude)) }, 0);
       // Remember where the globe is pointed (drag, zoom, center buttons, snaps).
       let povTimer = null;
@@ -269,6 +279,7 @@
     // Preview of the followed sat: followFrame glides the camera there itself.
     if (opts && opts.preview && follow.key && (!opts.key || opts.key === follow.key)) return true;
     stopFollow();
+    if (!(opts && opts.preview)) homeLock = !!(opts && opts.home); // the station button: QTH-centered
     centerOn(lat, lng);
     return true;
   };
@@ -286,6 +297,7 @@
    * marker/label from that same smoothed state. Footprint is a persistent
    * three.js mesh reoriented each frame (no polygonsData churn / trail).
    */
+  let homeLock = false; // centered on the station (the station button / initial view) until a drag or another center
   const follow = {
     key: null, raf: 0, since: 0, lastFrame: 0,
     // integrated state (deg, deg, earth-radii) and velocity (deg/ms, deg/ms, radii/ms)
@@ -296,6 +308,7 @@
   };
   function wrap180(x) { return ((((x + 180) % 360) + 360) % 360) - 180; }
   function startFollow(key) {
+    homeLock = false;
     follow.key = key;
     follow.since = Date.now() + 900; // let the 800 ms snap tween finish first
     follow.samples = [];
@@ -658,8 +671,10 @@
     if (!d.el) return;
     if (d.kind === "dot") {
       const px = d.sel ? 10 : 7;
-      d.el.style.cssText = "width:" + px + "px;height:" + px + "px;margin:-" + px / 2 + "px 0 0 -" + px / 2 + "px;background:" + d.color + ";";
+      const disp = d.el.style.display; // globe.gl hides it (display: none) behind the globe
+      d.el.style.cssText = "width:" + px + "px;height:" + px + "px;margin:-" + px / 2 + "px 0 0 -" + px / 2 + "px;background:" + d.color + ";" + (disp ? "display:" + disp + ";" : "");
       if (d === hoverDot && d.sel) hoverOff(d); // became the selected sat: it has its own label
+      paintFavLabel(d);
     } else if (d.kind === "station") {
       const t = d.el.lastChild;
       if (t && t.textContent !== d.text) t.textContent = d.text;
@@ -784,56 +799,85 @@
    * live: line 1 = name + AOS/LOS countdown + clock, line 2 = El / Range / Alt
    * (satDotLabelLines in pass-ui.js). Two lines are joined with "\n" (white-space: pre).
    */
-  /* ---------- hover: same stacked label as the selected sat ---------- */
-  // Non-selected dots (favorites): on mouseenter a label child is added to the
-  // dot (pointer-events: none, so picking/click-to-select are unchanged) with
-  // satDotLabelLines() of that sat's favorites snapshot; it ticks with the
-  // selected label (1 s) and is removed on mouseleave. One live label at most.
+  /* ---------- favorites: name label, full label on hover (like the map) ---------- */
+  // Same rules as the map (js/fav-overlay.js): every shown favorite other than
+  // the selected sat carries a name-only label; hovering its dot or label
+  // expands that label in place to the selected-sat content (selSatLabelHtml
+  // from js/map.js on the favorites snapshot: name, AOS/LOS countdown + clock,
+  // El, Rng, Alt; "NAME @ HH:MM" during a pass preview), ticking each second,
+  // and dims the other favorites' labels. The selected sat keeps its own full
+  // label. Hover is re-checked under a still pointer while the globe rotates /
+  // follows, and ends on mouse leave or when the sat goes behind the globe.
   let hoverDot = null;
+  const escG = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   function favSnapshot(key) {
     const list = (lastState && lastState.favorites) || [];
     for (const f of list) if (f && f.key === key) return f;
     return null;
   }
-  function hoverText(d) {
-    const f = favSnapshot(d.key);
-    if (!f || !f.position) return d.display || d.key;
+  /** Hovered favorite's full label HTML (same as the map's fav-overlay fullHtml), or null. */
+  function favFullHtml(key) {
+    const f = favSnapshot(key);
+    if (!f) return null;
     const pp = window.passPreview;
-    const pv = pp && pp.posOf && pp.posOf(d.key);
-    return selLabelText(pv ? Object.assign({}, f, { position: pv.position }) : f, pv ? previewT() : null);
+    const pv = pp && pp.posOf && pp.posOf(key);
+    const pT = pv && pp.get && pp.get() != null ? pp.get() : null;
+    const st = pT != null ? Object.assign({}, f, { position: pv.position || f.position }) : f;
+    if (typeof selSatLabelHtml === "function") return selSatLabelHtml(st, pT);
+    if (!st.position) return escG(st.display || st.key);
+    return escG(selLabelText(st, pT)).replace(/\n/, '<br><span class="sel-sat-l2">').replace(/\n/g, "<br>") + (selLabelText(st, pT).indexOf("\n") >= 0 ? "</span>" : "");
   }
-  function paintHover() {
-    const d = hoverDot;
-    if (!d || !d.el) return;
-    let lab = d.el.__hoverLabel;
-    if (!lab || lab.parentNode !== d.el) {
-      lab = document.createElement("div");
-      lab.className = "globe-label globe-hover-label";
-      d.el.appendChild(lab);
-      d.el.__hoverLabel = lab;
-    }
-    const txt = hoverText(d);
-    if (lab.textContent !== txt) lab.textContent = txt;
-    lab.classList.toggle("globe-label-2l", txt.indexOf("\n") >= 0);
-    lab.style.borderLeft = "2px solid " + (d.color || "#fff");
-    d.el.classList.add("globe-dot-hover");
+  /** Name-only by default, full while hovered; dimmed while another favorite is hovered. */
+  function favLabelState(d) {
+    if (d.sel || (lastState && d.key === lastState.sat)) return { hidden: true };
+    const hk = hoverDot ? hoverDot.key : null;
+    const name = escG(d.display || d.key);
+    const full = hk === d.key ? favFullHtml(d.key) : null;
+    return { hidden: false, html: full || name, full: !!full, hi: hk === d.key, dim: !!hk && hk !== d.key };
   }
+  window.__globeFavLabelState = favLabelState; // tests / debug
+  function paintFavLabel(d) {
+    const lab = d && d.el && d.el.__favLabel;
+    if (!lab) return;
+    const s = favLabelState(d);
+    lab.hidden = s.hidden;
+    if (s.hidden) return;
+    if (lab.__html !== s.html) { lab.innerHTML = s.html; lab.__html = s.html; }
+    lab.classList.toggle("fav-hi", s.hi);
+    lab.classList.toggle("fav-full", s.full);
+    lab.classList.toggle("fav-dim", s.dim);
+    lab.style.borderLeft = s.hi ? "3px solid " + (d.color || "#fff") : "";
+    d.el.classList.toggle("globe-dot-hover", s.hi);
+  }
+  function paintHover() { pts.forEach(paintFavLabel); }
   function hoverOn(d) {
     if (!d || d.sel || (lastState && d.key === lastState.sat)) return; // selected sat already labelled
-    if (hoverDot && hoverDot !== d) hoverOff(hoverDot);
+    if (hoverDot === d) return;
     hoverDot = d;
-    if (d.el) { d.el.__title = d.el.title; d.el.title = ""; } // no native tooltip on top
     paintHover();
   }
   function hoverOff(d) {
     if (!d || hoverDot !== d) return;
     hoverDot = null;
-    const e = d.el;
-    if (!e) return;
-    if (e.__hoverLabel) { e.__hoverLabel.remove(); e.__hoverLabel = null; }
-    e.classList.remove("globe-dot-hover");
-    if (e.__title != null) { e.title = e.__title; e.__title = null; }
+    paintHover();
   }
+  function shownOnScreen(e) {
+    if (!e || !e.isConnected) return false;
+    for (let n = e; n && n !== el; n = n.parentElement) if (n.style && n.style.display === "none") return false;
+    return true;
+  }
+  /** Pointer still while the globe turns: what's under it now (dot / label + slop). */
+  let mouseAt = null;
+  function recheckHover() {
+    if (hoverDot && (!pts.has(hoverDot.key) || !shownOnScreen(hoverDot.el))) hoverOff(hoverDot); // behind the globe / gone
+    if (!mouseAt || mode !== "globe" || typeof document.elementFromPoint !== "function") return;
+    const t = document.elementFromPoint(mouseAt.x, mouseAt.y);
+    const dot = t && t.closest ? t.closest(".globe-dot") : null;
+    const d = dot && dot.__d && pts.get(dot.__d.key) === dot.__d ? dot.__d : null;
+    if (d && d !== hoverDot) hoverOn(d);
+    else if (!d && hoverDot) hoverOff(hoverDot);
+  }
+  setInterval(recheckHover, 200);
 
   function selLabelText(st, pT) {
     if (pT) return (st.display || st.sat) + " \u00B7 " + Math.round(st.position.heightKm || 0) + " km" + " @ " + (typeof formatClockShort === "function" ? formatClockShort(pT) : new Date(pT).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
@@ -848,7 +892,7 @@
   }
   // Countdown ticks each second between (2 s-throttled) state applies; redraw on UTC/MT toggle.
   function tickSelLabel() {
-    if (hoverDot) { if (!hoverDot.el || !hoverDot.el.isConnected || !pts.has(hoverDot.key)) hoverOff(hoverDot); else paintHover(); }
+    if (hoverDot) { if (!pts.has(hoverDot.key) || !shownOnScreen(hoverDot.el)) hoverOff(hoverDot); else paintHover(); }
     if (!G || mode !== "globe" || !lastState || !lastState.position) return;
     if (previewT() != null) return; // preview label is static; applyState handles it
     selLabel.text = selLabelText(lastState, null);
@@ -908,17 +952,6 @@
       try { G.polygonsData([]); } catch (_) {}
     } else {
       hideFpMesh();
-    }
-    // Preview ended: back to the live position (following: followFrame glides there).
-    // Waits for the selected sat's own state after a selection (up to 10 s).
-    if (liveCenterAt && !pT) {
-      const want = typeof currentSatKey !== "undefined" && currentSatKey ? currentSatKey : st.sat;
-      if (Date.now() - liveCenterAt > 10000) liveCenterAt = 0;
-      else if (follow.key) liveCenterAt = 0;
-      else if (st.sat === want && st.position && Number.isFinite(st.position.lat)) {
-        liveCenterAt = 0;
-        centerOn(st.position.lat, st.position.lon);
-      }
     }
     updateSun(false);
     if (favOn()) {
@@ -1051,12 +1084,38 @@
   }
 
   let pvOrbitTimer = null;
-  let pvWasOn = false;
-  let liveCenterAt = 0; // preview ended (Back to now / a selection): center on the live sat once
+  /**
+   * Pre-preview camera mode (js/preview-camera.js): saved when a preview
+   * starts, restored when it ends for any reason (Back to now, any sat pick,
+   * a server-side selection). Chained previews keep the original mode.
+   */
+  function cameraMode() {
+    if (!G || mode !== "globe") return null;
+    if (follow.key) return { mode: "follow", key: follow.key };
+    const pov = G.pointOfView();
+    if (homeLock || window.previewCameraNearHome(pov, stLabel, 0.5)) return { mode: "qth" };
+    return { mode: "free", pov: { lat: pov.lat, lng: pov.lng, altitude: pov.altitude } };
+  }
+  function restoreCamera(m) {
+    if (!G || mode !== "globe" || !m) return;
+    if (m.mode === "follow") {
+      const key = typeof currentSatKey !== "undefined" && currentSatKey ? currentSatKey : lastState && lastState.sat;
+      if (key) { window.globeSnapTo(key); return; } // follow the (newly) selected sat live
+    }
+    stopFollow();
+    snapKey = null;
+    if (m.mode === "qth") {
+      homeLock = true;
+      if (Number.isFinite(stLabel.lat) && (stLabel.lat || stLabel.lng)) centerOn(stLabel.lat, stLabel.lng);
+    } else if (m.mode === "free" && m.pov && Number.isFinite(m.pov.lat)) {
+      G.pointOfView({ lat: m.pov.lat, lng: m.pov.lng, altitude: m.pov.altitude || 2.2 }, 800);
+      setTimeout(() => G.__savePov && G.__savePov(), 900);
+    }
+  }
+  const pvCam = window.createPreviewCamera({ getMode: cameraMode, restore: restoreCamera });
+  window.__globePreviewCam = { saved: () => pvCam.saved(), mode: cameraMode, homeLock: () => homeLock }; // debug / tests
   function onPreviewChange() {
-    const on = previewT() != null;
-    if (pvWasOn && !on) liveCenterAt = Date.now();
-    pvWasOn = on;
+    pvCam.onPreview(previewT() != null);
     applyState(true);
     clearTimeout(pvOrbitTimer);
     pvOrbitTimer = setTimeout(requestOrbits, 250); // coalesce drags

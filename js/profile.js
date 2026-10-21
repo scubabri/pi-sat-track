@@ -538,9 +538,12 @@ function initFavProfileEvents() {
     if (!h) { if (favProfileHover) { favProfileHover = null; drawFavProfile(); } return; }
     // Legend name: select that sat (if not already) and spin the globe to it.
     if (h.legend) {
-      if (window.passPreview) window.passPreview.clear(); // show where it is now
+      // Ending a preview restores the pre-preview camera mode (QTH / follow / free);
+      // with no preview the legend spins the globe to that sat and follows it.
+      const hadPreview = !!(window.passPreview && window.passPreview.get() != null);
       if (h.key !== chartSelectedKey() && typeof selectSatellite === "function") selectSatellite(h.key, h.display);
-      if (typeof window.globeSnapTo === "function") window.globeSnapTo(h.key);
+      if (window.passPreview) window.passPreview.clear();
+      if (!hadPreview && typeof window.globeSnapTo === "function") window.globeSnapTo(h.key);
       return;
     }
     // Any pass arc / peak label (selected sat or not): initChartPreviewEvents

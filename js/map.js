@@ -232,7 +232,7 @@ function centerOnStation() {
   const grid = cfg && cfg.grid ? cfg.grid : null;
   if (grid && typeof window.globeCenterOn === "function" && typeof maidenheadToLatLon === "function") {
     const ll = maidenheadToLatLon(grid);
-    if (ll && window.globeCenterOn(ll.lat, ll.lon)) return;
+    if (ll && window.globeCenterOn(ll.lat, ll.lon, { home: true })) return; // QTH-centered (kept across a pass preview)
   }
   if (!map) return;
   if (grid) {
