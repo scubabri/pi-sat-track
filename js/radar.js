@@ -134,8 +134,10 @@ function headingFromSkyPath(az, el, skyPath) {
  * skyPath: [{az, el}, ...] next pass
  * az, el: current look angles
  */
+let radarLast = null; // last live args, to redraw when a pass preview changes
 function updateRadar(az, el, skyPath) {
   if (!radarCtx) return;
+  radarLast = { az, el, skyPath };
 
   drawRadarBackground();
   const ctx = radarCtx;
@@ -183,10 +185,37 @@ function updateRadar(az, el, skyPath) {
       ctx.stroke();
     }
   }
+  drawRadarPreview(ctx);
+}
+
+/**
+ * Pass preview: amber dot where the selected sat will be at the preview time
+ * (look angles from the server's "preview" reply). The live arrow stays: the
+ * rotor / radio keep running on real time.
+ */
+function drawRadarPreview(ctx) {
+  const pp = window.passPreview;
+  const key = typeof currentSatKey !== "undefined" ? currentSatKey : null;
+  const pv = pp && pp.posOf && key ? pp.posOf(key) : null;
+  if (!pv || !pv.look || !(pv.look.el >= 0)) return;
+  const { x, y } = azElToXY(pv.look.az, pv.look.el);
+  ctx.beginPath();
+  ctx.arc(x, y, 5, 0, Math.PI * 2);
+  ctx.fillStyle = "#e3b341";
+  ctx.fill();
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+if (typeof document !== "undefined" && document.addEventListener) {
+  document.addEventListener("pass-preview-change", () => {
+    if (radarLast) updateRadar(radarLast.az, radarLast.el, radarLast.skyPath);
+  });
 }
 
 /** Blank plot (grid only) — used on sat switch so the old pass/arrow never lingers. */
 function clearRadar() {
+  radarLast = null;
   if (radarCtx) drawRadarBackground();
 }
 

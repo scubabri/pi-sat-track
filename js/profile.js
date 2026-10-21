@@ -430,6 +430,16 @@ let favProfileHover = null; // sat key highlighted (legend / arc hover)
 let favProfileHits = { legend: [], arcs: [], labels: [] };
 let favHitAt = null; // (mouse event) -> { key, display, legend? } | null
 
+/**
+ * Selected sat for chart clicks / drawing: the client's selection (set at
+ * once by selectSatellite), not favProfileData.current, which is the
+ * server's as of the last 24 h series push (5 s poll) and lags a selection.
+ */
+function chartSelectedKey() {
+  const k = typeof currentSatKey !== "undefined" ? currentSatKey : null;
+  return k || (favProfileData && favProfileData.current) || null;
+}
+
 function favProfileMode() {
   return typeof window.isFavOverlayOn === "function" && window.isFavOverlayOn();
 }
@@ -474,9 +484,6 @@ function initFavProfileEvents() {
     const y = e.clientY - r.top;
     for (const l of favProfileHits.legend)
       if (x >= l.x && x <= l.x + l.w && y >= l.y && y <= l.y + l.h) return { key: l.key, display: l.display, legend: true };
-    // Peak labels ("RS-44 46°") pick their sat.
-    for (const l of favProfileHits.labels || [])
-      if (x >= l.x && x <= l.x + l.w && y >= l.y && y <= l.y + l.h) return { key: l.key, display: l.display };
     // Nearest arc line (distance to segments, so steep spikes between 60 s samples still hit).
     let best = null;
     let bd = 64; // 8 px radius
@@ -494,7 +501,11 @@ function initFavProfileEvents() {
         if (d < bd) { bd = d; best = a; }
       }
     }
-    if (best) return { key: best.key, display: best.display };
+    if (best) return { key: best.key, display: best.display, arc: best };
+    // Peak labels ("RS-44 46°") pick their sat, but only off any curve: a
+    // label drawn over another sat's pass must not steal clicks on that pass.
+    for (const l of favProfileHits.labels || [])
+      if (x >= l.x && x <= l.x + l.w && y >= l.y && y <= l.y + l.h) return { key: l.key, display: l.display, t: l.t };
     // Under a pass's curve (inside the spike): the lowest curve above the click wins.
     let under = null, uy = -Infinity;
     for (const a of favProfileHits.arcs) {
@@ -507,7 +518,7 @@ function initFavProfileEvents() {
         break;
       }
     }
-    return under ? { key: under.key, display: under.display } : null;
+    return under ? { key: under.key, display: under.display, arc: under } : null;
   };
   favHitAt = hitAt;
   cv.addEventListener("mousemove", (e) => {
@@ -527,17 +538,16 @@ function initFavProfileEvents() {
     if (!h) { if (favProfileHover) { favProfileHover = null; drawFavProfile(); } return; }
     // Legend name: select that sat (if not already) and spin the globe to it.
     if (h.legend) {
-      if (window.passPreview) window.passPreview.clear(); // show where it is now
-      if (favProfileData && h.key !== favProfileData.current && typeof selectSatellite === "function") selectSatellite(h.key, h.display);
-      if (typeof window.globeSnapTo === "function") window.globeSnapTo(h.key);
+      // Ending a preview restores the pre-preview camera mode (QTH / follow / free);
+      // with no preview the legend spins the globe to that sat and follows it.
+      const hadPreview = !!(window.passPreview && window.passPreview.get() != null);
+      if (h.key !== chartSelectedKey() && typeof selectSatellite === "function") selectSatellite(h.key, h.display);
+      if (window.passPreview) window.passPreview.clear();
+      if (!hadPreview && typeof window.globeSnapTo === "function") window.globeSnapTo(h.key);
       return;
     }
-    // Another sat's arc: select it and spin the globe to it. The selected sat's
-    // arc (like blank chart) sets the pass preview instead (initChartPreviewEvents).
-    if (!favProfileData || h.key === favProfileData.current) return;
-    if (window.passPreview) window.passPreview.clear(); // show where it is now
-    if (typeof selectSatellite === "function") selectSatellite(h.key, h.display);
-    if (typeof window.globeSnapTo === "function") window.globeSnapTo(h.key);
+    // Any pass arc / peak label (selected sat or not): initChartPreviewEvents
+    // previews that sat at the clicked point (selecting it first if needed).
   });
 }
 
@@ -562,13 +572,14 @@ function drawFavProfile() {
   const now = Date.now();
   const t0 = now - 2 * 3600000; // 2 h of recent past so "now" sits in from the edge
   const t1 = now + 22 * 3600000;
-  const sats = data.sats.slice().sort((a, b) => (a.key === data.current) - (b.key === data.current));
-  const colorOf = (s) => (s.key === data.current ? SAT_SELECTED_COLOR : favColor(s.key));
+  const curKey = chartSelectedKey();
+  const sats = data.sats.slice().sort((a, b) => (a.key === curKey) - (b.key === curKey));
+  const colorOf = (s) => (s.key === curKey ? SAT_SELECTED_COLOR : favColor(s.key));
 
   // Legend width: longest name.
   ctx.font = "10px sans-serif";
   let legW = 0;
-  sats.forEach((s) => { legW = Math.max(legW, ctx.measureText((s.display || s.key) + "  99").width); });
+  sats.forEach((s) => { legW = Math.max(legW, ctx.measureText(s.display || s.key).width); });
   legW = Math.min(170, Math.ceil(legW) + 22);
   const padL = 34;
   const padR = legW + 10;
@@ -627,7 +638,7 @@ function drawFavProfile() {
   ctx.clip();
   ctx.lineJoin = "round";
   for (const s of sats) {
-    const sel = s.key === data.current;
+    const sel = s.key === curKey;
     const col = colorOf(s);
     const hi = hk === s.key;
     const dim = hk && !hi;
@@ -647,12 +658,13 @@ function drawFavProfile() {
         else ctx.lineTo(x, y);
       });
       ctx.stroke();
-      favProfileHits.arcs.push({ key: s.key, display: s.display, pts: xy, x0: xy[0][0], x1: xy[xy.length - 1][0] });
+      favProfileHits.arcs.push({ key: s.key, display: s.display, pts: xy, x0: xy[0][0], x1: xy[xy.length - 1][0],
+        ts: p.pts.map((q) => Math.max(t0, q[0])), aos: p.aos, los: p.los }); // times for click → preview T
       if (p.maxEl >= 20 && !dim) {
         let pk = p.pts[0];
         p.pts.forEach((q) => { if (q[1] > pk[1]) pk = q; });
         if (pk[0] >= t0)
-          labels.push({ key: s.key, display: s.display, x: X(pk[0]), y: Y(pk[1]), text: (s.display || s.key) + " " + Math.round(p.maxEl) + "\u00B0", col, pri: sel || hi ? 0 : 1, maxEl: p.maxEl });
+          labels.push({ key: s.key, display: s.display, t: pk[0], x: X(pk[0]), y: Y(pk[1]), text: (s.display || s.key) + " " + Math.round(p.maxEl) + "\u00B0", col, pri: sel || hi ? 0 : 1, maxEl: p.maxEl });
       }
     }
   }
@@ -680,7 +692,7 @@ function drawFavProfile() {
     }
     if (!ok) continue; // drop rather than overprint
     placed.push({ x: lx, y, w: lw });
-    if (l.key) favProfileHits.labels.push({ key: l.key, display: l.display, x: lx - lw / 2, y: y - 11, w: lw, h: 12 });
+    if (l.key) favProfileHits.labels.push({ key: l.key, display: l.display, t: l.t, x: lx - lw / 2, y: y - 11, w: lw, h: 12 });
     ctx.fillStyle = "rgba(13,17,23,0.7)";
     ctx.fillRect(lx - lw / 2, y - 10, lw, 10);
     ctx.fillStyle = l.col;
@@ -706,23 +718,22 @@ function drawFavProfile() {
   ctx.textBaseline = "top";
   ctx.fillText("now", xn + 3, 1);
 
-  // Legend with pass counts (hover highlights).
+  // Legend: swatch + sat name (hover highlights, click selects).
   const lx = padL + plotW + 10;
   const rowH = Math.max(9, Math.min(13, (h - 4) / Math.max(1, sats.length)));
-  const legend = sats.slice().sort((a, b) => (b.key === data.current) - (a.key === data.current));
+  const legend = sats.slice().sort((a, b) => (b.key === curKey) - (a.key === curKey));
   ctx.font = (rowH < 11 ? 9 : 10) + "px sans-serif";
   ctx.textBaseline = "middle";
   legend.forEach((s, i) => {
     const y = 2 + i * rowH + rowH / 2;
     if (y > h) return;
-    const sel = s.key === data.current;
-    const n = (s.passes || []).filter((p) => p.los >= now).length;
+    const sel = s.key === curKey;
     const dim = hk && hk !== s.key;
     ctx.globalAlpha = dim ? 0.4 : 1;
     ctx.fillStyle = colorOf(s);
     ctx.fillRect(lx, y - (sel ? 1.5 : 1), 12, sel ? 3 : 2);
     ctx.fillStyle = hk === s.key ? "#e6edf3" : colorOf(s);
-    ctx.fillText((s.display || s.key) + "  " + n, lx + 16, y);
+    ctx.fillText(s.display || s.key, lx + 16, y);
     favProfileHits.legend.push({ key: s.key, display: s.display, x: lx, y: y - rowH / 2, w: legW, h: rowH });
   });
   ctx.globalAlpha = 1;
@@ -743,7 +754,7 @@ function drawFavProfile() {
         const aaz = a[2] != null ? a[2] : b[2], baz = b[2] != null ? b[2] : a[2];
         let az = null;
         if (aaz != null) { let d = baz - aaz; d = ((d + 540) % 360) - 180; az = (aaz + d * fr + 360) % 360; }
-        out.push({ key: s.key, display: s.display || s.key, el, az, y: Y(el), col: colorOf(s), sel: s.key === data.current });
+        out.push({ key: s.key, display: s.display || s.key, el, az, y: Y(el), col: colorOf(s), sel: s.key === curKey });
         break;
       }
     }
@@ -853,6 +864,58 @@ function drawChartOverlays(ctx, g, sample) {
     ctx.restore();
   }
 }
+/**
+ * Preview time for a click / drag at (x, y) on a pass arc ({pts: [[x, y]...],
+ * ts: [t...], aos, los}). Wide arcs: the time under x. Narrow spikes (a
+ * 10 min pass is a few px on the 24 h chart): the time of the nearest point
+ * on the curve, so the click's height picks it (near the base → near AOS /
+ * LOS, the rising side before the peak, the falling side after). Clamped to
+ * the pass's AOS..LOS.
+ */
+const ARC_X_MAP_MIN_PX = 40;
+function passTimeAtPoint(arc, x, y) {
+  if (!arc || !arc.pts || !arc.ts || !arc.pts.length) return null;
+  const P = arc.pts, ts = arc.ts, n = P.length;
+  const lo = Number.isFinite(arc.aos) ? arc.aos : ts[0];
+  const hi = Number.isFinite(arc.los) ? arc.los : ts[n - 1];
+  const clamp = (t) => Math.max(lo, Math.min(hi, t));
+  if (n === 1) return clamp(ts[0]);
+  const x0 = P[0][0], x1 = P[n - 1][0];
+  if (x1 - x0 >= ARC_X_MAP_MIN_PX) {
+    if (x <= x0) return clamp(ts[0]);
+    if (x >= x1) return clamp(ts[n - 1]);
+    for (let i = 1; i < n; i++) {
+      if (x > P[i][0]) continue;
+      const dx = P[i][0] - P[i - 1][0];
+      const u = dx > 0 ? (x - P[i - 1][0]) / dx : 0;
+      return clamp(ts[i - 1] + u * (ts[i] - ts[i - 1]));
+    }
+    return clamp(ts[n - 1]);
+  }
+  let best = null, bd = Infinity;
+  for (let i = 1; i < n; i++) {
+    const a = P[i - 1], b = P[i];
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const L = dx * dx + dy * dy;
+    const u = L ? Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / L)) : 0;
+    const qx = a[0] + u * dx - x, qy = a[1] + u * dy - y;
+    const d = qx * qx + qy * qy;
+    if (d < bd) { bd = d; best = ts[i - 1] + u * (ts[i] - ts[i - 1]); }
+  }
+  return clamp(best);
+}
+/** Preview T for a hit on any sat's pass (arc point / peak label), else null (legend / blank). */
+function previewTimeForHit(h, x, y) {
+  if (!h || h.legend || !h.key) return null;
+  if (h.arc) return passTimeAtPoint(h.arc, x, y);
+  if (Number.isFinite(h.t)) return h.t; // peak label → TCA
+  return null;
+}
+function previewPassAt(h, t) {
+  // The one selection path that keeps a preview: select (if needed) + preview the clicked point.
+  if (h.key !== chartSelectedKey() && typeof selectSatellite === "function") selectSatellite(h.key, h.display, { keepPreview: true });
+  window.passPreview.set(previewClampT(t), { center: true });
+}
 function previewClampT(t) {
   if (!chartGeom) return null;
   const lo = Math.max(chartGeom.tMin, chartGeom.mode === "fav" ? Date.now() : chartGeom.tMin);
@@ -863,6 +926,7 @@ function initChartPreviewEvents() {
   if (!cv || cv.__previewEvents) return;
   cv.__previewEvents = true;
   let drag = false;
+  let dragArc = null; // pointerdown on the selected sat's pass: scrub along it
   const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
   const nearLine = (x) => {
     if (!chartGeom) return false;
@@ -875,7 +939,8 @@ function initChartPreviewEvents() {
     chartHover = p;
     if (drag && chartGeom) {
       chartDragged = true;
-      window.passPreview.set(previewClampT(chartGeom.T(p.x)), { drag: true });
+      const t = dragArc ? passTimeAtPoint(dragArc, p.x, p.y) : chartGeom.T(p.x);
+      if (t != null) window.passPreview.set(previewClampT(t), { drag: true });
       return;
     }
     if (nearLine(p.x)) cv.style.cursor = "ew-resize";
@@ -885,13 +950,18 @@ function initChartPreviewEvents() {
   cv.addEventListener("pointerleave", () => { chartHover = null; if (!drag) redrawCurrent(); });
   cv.addEventListener("pointerdown", (e) => {
     const p = pos(e);
-    if (!nearLine(p.x)) return;
+    dragArc = null;
+    const h = chartGeom && chartGeom.mode === "fav" && favHitAt ? favHitAt(e) : null;
+    // Press on the selected sat's pass: scrub along it (another sat's pass: its click selects first).
+    if (h && h.arc && h.key === chartSelectedKey() && previewTimeForHit(h, p.x, p.y) != null) dragArc = h.arc;
+    else if (!nearLine(p.x)) return;
     drag = true; chartDragged = false;
     try { cv.setPointerCapture(e.pointerId); } catch (_) {}
   });
   const end = () => {
     if (drag && chartDragged) window.passPreview.settle();
     drag = false;
+    dragArc = null;
   };
   cv.addEventListener("pointerup", end);
   cv.addEventListener("pointercancel", end);
@@ -903,7 +973,11 @@ function initChartPreviewEvents() {
     // Fav mode: legend rows and other sats' arcs keep their own click (select + snap).
     if (chartGeom.mode === "fav" && favHitAt) {
       const h = favHitAt(e);
-      if (h && (h.legend || !favProfileData || h.key !== favProfileData.current)) return;
+      if (h && h.legend) return; // legend: select + follow (initFavProfileEvents)
+      // Any sat's pass: preview it at the clicked point along the curve. Another
+      // sat is selected once first (same action); the selected one is never re-selected.
+      const t = previewTimeForHit(h, p.x, p.y);
+      if (t != null) { previewPassAt(h, t); return; }
     }
     window.passPreview.set(previewClampT(chartGeom.T(p.x)));
   });

@@ -374,6 +374,8 @@ function fetchSatnogsByNorad(norad) {
   });
 }
 
+const staticCache = require("./lib/static-cache");
+
 const server = http.createServer((req, res) => {
   let urlPath = req.url === "/" ? "/index.html" : req.url;
   const q = urlPath.includes("?") ? urlPath.split("?")[1] : "";
@@ -520,16 +522,28 @@ const server = http.createServer((req, res) => {
     return res.end("Forbidden");
   }
 
-  fs.readFile(filePath, (err, data) => {
-    if (err) {
+  fs.stat(filePath, (serr, stat) => {
+    if (serr || !stat.isFile()) {
       res.writeHead(404, { "Content-Type": "text/plain" });
       return res.end("Not found: " + urlPath);
     }
-    const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, {
-      "Content-Type": MIME[ext] || "application/octet-stream",
+    // Static UI files: always revalidate (no-cache + ETag of version / size /
+    // mtime), so a browser reload after an update never runs stale JS / CSS.
+    const etag = staticCache.etagFor(APP_VERSION, stat);
+    const headers = staticCache.headersFor(etag);
+    if (staticCache.notModified(req, etag)) {
+      res.writeHead(304, headers);
+      return res.end();
+    }
+    fs.readFile(filePath, (err, data) => {
+      if (err) {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        return res.end("Not found: " + urlPath);
+      }
+      const ext = path.extname(filePath).toLowerCase();
+      res.writeHead(200, Object.assign({ "Content-Type": MIME[ext] || "application/octet-stream" }, headers));
+      res.end(data);
     });
-    res.end(data);
   });
 });
 
@@ -740,6 +754,17 @@ wss.on("connection", (ws, req) => {
           if (st) ws.send(JSON.stringify(st));
           return;
         }
+      }
+
+      if (msg.type === "sat" && msg.key && msg.key === state.getCurrentKey()) {
+        // Already selected (e.g. a chart click on the selected sat's pass from an
+        // older client): no reload / offset restore; resync this client only.
+        console.log("Sat", msg.key, "already selected (no reload)");
+        const st = state.computeState();
+        if (st) ws.send(JSON.stringify(st));
+        const tk = state.computeTick();
+        if (tk) ws.send(JSON.stringify(tk));
+        return;
       }
 
       if (msg.type === "sat" && msg.key) {
@@ -960,6 +985,8 @@ wss.on("connection", (ws, req) => {
         Object.assign(cfgPatch, logbook.normalizeStationFields(msg));
         if (typeof msg.elevation === "number")
           cfgPatch.elevation = msg.elevation;
+        // Display units (Configure → Station → Units): screen only, per profile.
+        if (msg.units !== undefined) cfgPatch.units = profiles.normalizeUnits(msg.units);
         profiles.updateActive({ config: cfgPatch });
         broadcastProfiles();
 

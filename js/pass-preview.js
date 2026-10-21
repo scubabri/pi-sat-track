@@ -41,13 +41,20 @@
     document.dispatchEvent(new CustomEvent("pass-preview-change", { detail: { t: T } }));
   }
 
+  /** Selected sat's datum in the reply: the client's selection (a chart click may have just changed it). */
+  function curOf(d) {
+    if (!d || !d.sats) return null;
+    const k = typeof currentSatKey !== "undefined" && currentSatKey ? currentSatKey : d.current;
+    return d.sats.find((s) => s.key === k) || null;
+  }
   /** Spin the globe to the selected sat's preview position (no-op on the map). */
   function maybeCenter() {
     if (!centerPending || !data) return;
-    const cur = (data.sats || []).find((s) => s.key === data.current);
+    const cur = curOf(data);
+    if (!cur) return; // reply predates the new sat: wait for the re-request
     centerPending = false;
-    if (cur && cur.position && typeof window.globeCenterOn === "function")
-      window.globeCenterOn(cur.position.lat, cur.position.lon, { preview: true }); // no-op while the globe follows a sat
+    if (cur.position && typeof window.globeCenterOn === "function")
+      window.globeCenterOn(cur.position.lat, cur.position.lon, { preview: true, key: cur.key }); // following that sat: followFrame centers it
   }
 
   function set(t, opts) {
@@ -57,6 +64,19 @@
     if ((starting && !(opts && opts.drag)) || (opts && opts.center)) centerPending = true;
     request();
     fire();
+  }
+  // This browser's own chart-click selection: its server echo keeps the preview.
+  let ownPick = null; // { key, at }
+  function markOwnPick(key) { ownPick = key ? { key, at: Date.now() } : null; }
+  /**
+   * The server's selected sat changed (state message): a selection from another
+   * client, Auto Select, the schedule ... ends the preview, except the echo of
+   * this browser's own chart click (within 15 s).
+   */
+  function onServerSat(key) {
+    const own = ownPick && ownPick.key === key && Date.now() - ownPick.at < 15000;
+    ownPick = null;
+    if (!own) clear();
   }
   function clear() {
     if (T == null) return;
@@ -92,7 +112,7 @@
     }
     if (T == null) { badge.hidden = true; return; }
     badge.hidden = false;
-    const cur = data && data.sats ? data.sats.find((s) => s.key === data.current) : null;
+    const cur = curOf(data);
     const name = cur ? esc(cur.display || cur.key) : "";
     const look = cur && cur.look && cur.look.el >= 0
       ? '<span class="ppb-sat">' + name + " " + Math.round(cur.look.el) + "\u00B0 \u00B7 az " + Math.round((cur.look.az + 360) % 360) + "\u00B0</span>"
@@ -119,7 +139,7 @@
     if (T != null) { if (ws.readyState === 1) request(); else ws.addEventListener("open", request); }
   }
 
-  window.passPreview = { get: () => T, set, clear, settle, posOf, active: () => T != null && !!data };
+  window.passPreview = { get: () => T, set, clear, settle, posOf, markOwnPick, onServerSat, active: () => T != null && !!data };
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && T != null) clear(); });
   setInterval(patchWs, 500);
   let lastSat = null;

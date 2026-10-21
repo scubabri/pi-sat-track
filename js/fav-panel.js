@@ -21,11 +21,12 @@ function fmtDeg(v, digits) {
 function fmtKm(v, digits) {
   if (v == null || !Number.isFinite(v)) return "\u2014";
   digits = digits == null ? 1 : digits;
-  return Number(v).toFixed(digits) + " km";
+  return typeof Units !== "undefined" ? Units.dist(v, { digits }) : Number(v).toFixed(digits) + " km";
 }
 
 function fmtRate(v) {
   if (v == null || !Number.isFinite(v)) return "\u2014";
+  if (typeof Units !== "undefined") return Units.rate(v); // km/s from the server -> "+1234 m/s" / "+2760 mph"
   const sign = v > 0 ? "+" : "";
   return sign + Number(v).toFixed(2) + " km/s";
 }
@@ -529,4 +530,7 @@ function initFavPanel() {
   setInterval(function () {
     if (favDrawerOpen) renderFavPanel();
   }, 1000);
+  document.addEventListener("units-change", function () {
+    if (favDrawerOpen) renderFavPanel();
+  });
 }
