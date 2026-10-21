@@ -568,7 +568,7 @@ function drawFavProfile() {
   // Legend width: longest name.
   ctx.font = "10px sans-serif";
   let legW = 0;
-  sats.forEach((s) => { legW = Math.max(legW, ctx.measureText((s.display || s.key) + "  99").width); });
+  sats.forEach((s) => { legW = Math.max(legW, ctx.measureText(s.display || s.key).width); });
   legW = Math.min(170, Math.ceil(legW) + 22);
   const padL = 34;
   const padR = legW + 10;
@@ -706,7 +706,7 @@ function drawFavProfile() {
   ctx.textBaseline = "top";
   ctx.fillText("now", xn + 3, 1);
 
-  // Legend with pass counts (hover highlights).
+  // Legend: swatch + sat name (hover highlights, click selects).
   const lx = padL + plotW + 10;
   const rowH = Math.max(9, Math.min(13, (h - 4) / Math.max(1, sats.length)));
   const legend = sats.slice().sort((a, b) => (b.key === data.current) - (a.key === data.current));
@@ -716,13 +716,12 @@ function drawFavProfile() {
     const y = 2 + i * rowH + rowH / 2;
     if (y > h) return;
     const sel = s.key === data.current;
-    const n = (s.passes || []).filter((p) => p.los >= now).length;
     const dim = hk && hk !== s.key;
     ctx.globalAlpha = dim ? 0.4 : 1;
     ctx.fillStyle = colorOf(s);
     ctx.fillRect(lx, y - (sel ? 1.5 : 1), 12, sel ? 3 : 2);
     ctx.fillStyle = hk === s.key ? "#e6edf3" : colorOf(s);
-    ctx.fillText((s.display || s.key) + "  " + n, lx + 16, y);
+    ctx.fillText(s.display || s.key, lx + 16, y);
     favProfileHits.legend.push({ key: s.key, display: s.display, x: lx, y: y - rowH / 2, w: legW, h: rowH });
   });
   ctx.globalAlpha = 1;
