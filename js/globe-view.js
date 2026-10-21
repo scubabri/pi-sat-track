@@ -261,7 +261,7 @@
   /**
    * Map center buttons (station / mid-Atlantic) call this while the globe is
    * showing; it ends follow mode. opts.preview (pass preview start): while
-   * following, the live sat stays centered, so it's handled without moving.
+   * following, followFrame glides the camera to the preview position itself.
    * Returns true if handled.
    */
   window.globeCenterOn = function (lat, lng, opts) {
@@ -291,6 +291,7 @@
     lat: null, lng: null, alt: null, vLat: 0, vLng: 0, vAlt: 0,
     pullLat: 0, pullLng: 0, pullAlt: 0, // residual sample error, bled out over ~1 s
     samples: [], // up to 2 {t, lat, lng, alt}
+    camLat: null, camLng: null, blendUntil: 0, pvWas: false, // camera (preview-aware)
   };
   function wrap180(x) { return ((((x + 180) % 360) + 360) % 360) - 180; }
   function startFollow(key) {
@@ -373,8 +374,19 @@
       follow.pullLng *= 1 - a;
       follow.pullAlt *= 1 - a;
     }
+    // Pass preview: the camera centers on the sat's PREVIEW sub-point, and the
+    // marker / label / footprint stay where applyState put them (at the preview
+    // time). The integrator keeps tracking the live sat so "Back to now" resumes.
+    const pv = window.passPreview && window.passPreview.posOf ? window.passPreview.posOf(follow.key) : null;
+    const tgt = pv && pv.position && Number.isFinite(pv.position.lat)
+      ? { lat: pv.position.lat, lng: pv.position.lon }
+      : { lat: follow.lat, lng: follow.lng };
+    const pvNow = !!(pv && pv.position);
+    if (pvNow !== follow.pvWas) { follow.pvWas = pvNow; follow.blendUntil = now + 1500; }
+    const cam = followCamera(follow, tgt, dt, now);
     const pov = G.pointOfView();
-    G.pointOfView({ lat: follow.lat, lng: follow.lng, altitude: pov.altitude }, 0);
+    G.pointOfView({ lat: cam.lat, lng: cam.lng, altitude: pov.altitude }, 0);
+    if (pvNow) return;
     // Move the selected sat marker + label in place (globe.gl re-reads lat/lng
     // each frame; no htmlElementsData rebuild).
     const p = pts.get(follow.key);
@@ -384,8 +396,28 @@
       orientFpMesh(follow.lat, follow.lng, follow.fpKm != null ? follow.fpKm : follow.alt * RE_KM);
     }
   }
+  /**
+   * Follow camera: locked on the target, except for ~1.5 s after a preview
+   * starts / ends, when it glides there (no snap across the globe).
+   */
+  function followCamera(f, tgt, dt, now) {
+    if (f.camLat == null || !(now < (f.blendUntil || 0))) {
+      f.camLat = tgt.lat; f.camLng = tgt.lng;
+    } else {
+      const a = 1 - Math.exp(-Math.max(0, dt) / 220);
+      f.camLat += (tgt.lat - f.camLat) * a;
+      f.camLng = wrap180(f.camLng + wrap180(tgt.lng - f.camLng) * a);
+    }
+    return { lat: f.camLat, lng: f.camLng };
+  }
   window.globeFollowing = () => follow.key;
   window.__fpMesh = () => fpMesh;
+  /** Debug / headless checks: selected marker + camera (deg). */
+  window.__globeSel = () => {
+    const p = lastState ? pts.get(lastState.sat) : null;
+    const pov = G ? G.pointOfView() : null;
+    return { key: lastState && lastState.sat, marker: p ? { lat: p.lat, lng: p.lng } : null, label: { lat: selLabel.lat, lng: selLabel.lng, text: selLabel.text }, pov: pov ? { lat: pov.lat, lng: pov.lng } : null, following: follow.key };
+  };
   window.__countFp = () => {
     if (!G) return { fp: 0, poly: 0, named: 0 };
     let fp = 0, poly = 0, named = 0;
