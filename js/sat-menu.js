@@ -435,10 +435,22 @@ function refreshCurrentSatChip() {
   });
 }
 
-function selectSatellite(key, label) {
+/**
+ * Select a sat (menu, catalog link, Favorites panel, legend, globe dot ...).
+ * Any selection ends a pass preview, exactly like "Back to now", also when
+ * re-picking the selected sat. Only a chart pass click keeps one:
+ * opts.keepPreview (it sets the preview at the clicked point right after,
+ * and its server echo must not clear it, see passPreview.markOwnPick).
+ */
+function selectSatellite(key, label, opts) {
   pendingSatKey = key;
   pendingSatAt = Date.now();
-  currentSatKey = key;
+  currentSatKey = key; // before clearing, so "back to live" centers on the new sat
+  const pp = typeof window !== "undefined" ? window.passPreview : null;
+  if (pp) {
+    if (opts && opts.keepPreview) { if (pp.markOwnPick) pp.markOwnPick(key); }
+    else pp.clear();
+  }
   setSatButtonLabel(label || key);
   localStorage.setItem("satTrackerSat", key);
   lastPass = null;

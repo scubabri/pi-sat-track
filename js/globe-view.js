@@ -909,6 +909,17 @@
     } else {
       hideFpMesh();
     }
+    // Preview ended: back to the live position (following: followFrame glides there).
+    // Waits for the selected sat's own state after a selection (up to 10 s).
+    if (liveCenterAt && !pT) {
+      const want = typeof currentSatKey !== "undefined" && currentSatKey ? currentSatKey : st.sat;
+      if (Date.now() - liveCenterAt > 10000) liveCenterAt = 0;
+      else if (follow.key) liveCenterAt = 0;
+      else if (st.sat === want && st.position && Number.isFinite(st.position.lat)) {
+        liveCenterAt = 0;
+        centerOn(st.position.lat, st.position.lon);
+      }
+    }
     updateSun(false);
     if (favOn()) {
       const shown = typeof window.favOverlayShown === "function" ? window.favOverlayShown() : null;
@@ -1040,7 +1051,12 @@
   }
 
   let pvOrbitTimer = null;
+  let pvWasOn = false;
+  let liveCenterAt = 0; // preview ended (Back to now / a selection): center on the live sat once
   function onPreviewChange() {
+    const on = previewT() != null;
+    if (pvWasOn && !on) liveCenterAt = Date.now();
+    pvWasOn = on;
     applyState(true);
     clearTimeout(pvOrbitTimer);
     pvOrbitTimer = setTimeout(requestOrbits, 250); // coalesce drags

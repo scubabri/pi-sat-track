@@ -639,6 +639,10 @@ function connectTracker() {
 
       if (msg.sat) {
         if (msg.sat !== lastStateSat) {
+          // A selection (here or from the server) ends a pass preview, unless it
+          // is the echo of this browser's chart pass click (js/pass-preview.js).
+          currentSatKey = msg.sat; // before a clear, so "back to live" centers on this sat
+          if (window.passPreview && window.passPreview.onServerSat) window.passPreview.onServerSat(msg.sat);
           lastStateSat = msg.sat;
           lastModesKey = "";
           if (typeof clearProfileLock === "function") clearProfileLock();

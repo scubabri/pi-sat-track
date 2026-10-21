@@ -909,7 +909,8 @@ function previewTimeForHit(h, x, y) {
   return null;
 }
 function previewPassAt(h, t) {
-  if (h.key !== chartSelectedKey() && typeof selectSatellite === "function") selectSatellite(h.key, h.display);
+  // The one selection path that keeps a preview: select (if needed) + preview the clicked point.
+  if (h.key !== chartSelectedKey() && typeof selectSatellite === "function") selectSatellite(h.key, h.display, { keepPreview: true });
   window.passPreview.set(previewClampT(t), { center: true });
 }
 function previewClampT(t) {

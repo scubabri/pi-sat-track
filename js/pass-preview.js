@@ -65,6 +65,19 @@
     request();
     fire();
   }
+  // This browser's own chart-click selection: its server echo keeps the preview.
+  let ownPick = null; // { key, at }
+  function markOwnPick(key) { ownPick = key ? { key, at: Date.now() } : null; }
+  /**
+   * The server's selected sat changed (state message): a selection from another
+   * client, Auto Select, the schedule ... ends the preview, except the echo of
+   * this browser's own chart click (within 15 s).
+   */
+  function onServerSat(key) {
+    const own = ownPick && ownPick.key === key && Date.now() - ownPick.at < 15000;
+    ownPick = null;
+    if (!own) clear();
+  }
   function clear() {
     if (T == null) return;
     T = null;
@@ -126,7 +139,7 @@
     if (T != null) { if (ws.readyState === 1) request(); else ws.addEventListener("open", request); }
   }
 
-  window.passPreview = { get: () => T, set, clear, settle, posOf, active: () => T != null && !!data };
+  window.passPreview = { get: () => T, set, clear, settle, posOf, markOwnPick, onServerSat, active: () => T != null && !!data };
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && T != null) clear(); });
   setInterval(patchWs, 500);
   let lastSat = null;
