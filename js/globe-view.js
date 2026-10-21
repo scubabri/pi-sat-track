@@ -266,7 +266,8 @@
    */
   window.globeCenterOn = function (lat, lng, opts) {
     if (mode !== "globe" || !G || !Number.isFinite(lat) || !Number.isFinite(lng)) return false;
-    if (opts && opts.preview && follow.key) return true;
+    // Preview of the followed sat: followFrame glides the camera there itself.
+    if (opts && opts.preview && follow.key && (!opts.key || opts.key === follow.key)) return true;
     stopFollow();
     centerOn(lat, lng);
     return true;

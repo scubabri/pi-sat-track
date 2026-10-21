@@ -100,13 +100,13 @@ test("real ISS pass: click near the start → low-elevation preview whose banner
   assert.ok(Math.abs((((az - (pv.look.az + 360) % 360) + 540) % 360) - 180) < 0.5);
 });
 
-test("click wiring: selected sat's arc / label → previewTimeForHit; other sats and legend unchanged", () => {
+test("click wiring: any sat's arc / label → previewTimeForHit; legend / blank → null", () => {
   P.favProfileData = undefined;
   vm.runInContext('favProfileData = { current: "ISS", sats: [] };', P);
   const arc = { pts: [[0, 100], [5, 10], [10, 100]], ts: [0, 300000, 600000], aos: 0, los: 600000 };
   assert.ok(P.previewTimeForHit({ key: "ISS", arc }, 1, 90) < 150000);
   assert.strictEqual(P.previewTimeForHit({ key: "ISS", t: 300000 }, 0, 0), 300000);
-  assert.strictEqual(P.previewTimeForHit({ key: "SO-50", arc }, 1, 90), null, "another sat: select + snap as before");
+  assert.ok(P.previewTimeForHit({ key: "SO-50", arc }, 1, 90) < 150000, "another sat's pass: previewed too (selected first by the click)");
   assert.strictEqual(P.previewTimeForHit({ key: "ISS", legend: true }, 1, 90), null);
   assert.strictEqual(P.previewTimeForHit(null, 1, 90), null, "blank chart: time under x as before");
   const src = fs.readFileSync(path.join(__dirname, "../js/profile.js"), "utf8");
