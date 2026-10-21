@@ -118,8 +118,16 @@
     window.qsoDxGrid = { call: msg.call, grid: msg.grid, source: msg.source };
     const km = plot(msg.call, msg.grid);
     notify();
-    setText(msg.grid + (km != null ? " \u00b7 " + Math.round(km) + " km" : "") + (msg.source === "wsjtx" ? " (WSJT-X)" : ""));
+    shown = { msg, km };
+    showDist();
   }
+  let shown = null; // last successful lookup: redrawn when the display units change
+  function showDist() {
+    if (!shown || !window.qsoDxGrid || window.qsoDxGrid.call !== shown.msg.call) return;
+    const { msg, km } = shown;
+    setText(msg.grid + (km != null ? " \u00b7 " + (typeof Units !== "undefined" ? Units.dist(km) : Math.round(km) + " km") : "") + (msg.source === "wsjtx" ? " (WSJT-X)" : ""));
+  }
+  document.addEventListener("units-change", showDist);
   function lookup(call) {
     if (typeof ws === "undefined" || !ws || ws.readyState !== WebSocket.OPEN) {
       setText("no lookup", true);

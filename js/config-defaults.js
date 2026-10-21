@@ -156,6 +156,7 @@ function defaultsEndpoints() {
     callsign: "",
     grid: "",
     elevation: 0,
+    units: "metric", // display units (js/units.js), per profile
     singleRadio: false,
     txSplit: true,
     radioUl: defaultSide("ul"),

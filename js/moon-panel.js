@@ -31,7 +31,7 @@
     const f = Number.isFinite(eme.freqHz) ? eme.freqHz : m.freqHz;
     return {
       // Range (topocentric) is already the row above; this one is Earth-centre distance.
-      dist: Number.isFinite(m.geoDistKm) ? Math.round(m.geoDistKm).toLocaleString("en-US") + " km" : "-",
+      dist: !Number.isFinite(m.geoDistKm) ? "-" : root.Units ? root.Units.dist(m.geoDistKm, { sep: true }) : Math.round(m.geoDistKm).toLocaleString("en-US") + " km",
       distTitle: Number.isFinite(m.semiDiameterDeg) ? "Geocentric distance; Moon semi-diameter " + (m.semiDiameterDeg * 60).toFixed(1) + "'" : "Geocentric distance",
       dec: Number.isFinite(m.decDeg) ? fmtSigned(m.decDeg, 2) + "\u00B0" : "-",
       decTitle: Number.isFinite(m.raDeg) ? "RA " + (m.raDeg / 15).toFixed(3) + " h (" + m.raDeg.toFixed(2) + "\u00B0)" : "",
