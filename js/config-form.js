@@ -489,6 +489,7 @@ function readFormConfig() {
     callsign: val("cfg-callsign").trim().toUpperCase(),
     grid: val("cfg-grid").trim().toUpperCase(),
     elevation: elevRaw ? parseInt(elevRaw.value, 10) || 0 : 0,
+    units: val("cfg-units") === "imperial" ? "imperial" : "metric",
     singleRadio,
     txSplit: (function () {
       const el = document.getElementById("cfg-tx-split");
@@ -697,6 +698,7 @@ function fillForm(cfg) {
   setVal("cfg-callsign", d.callsign || "");
   setVal("cfg-grid", d.grid || "");
   setVal("cfg-elev", d.elevation != null ? d.elevation : "");
+  setVal("cfg-units", d.units === "imperial" ? "imperial" : "metric");
   const singleEl = document.getElementById("cfg-single-radio");
   if (singleEl) singleEl.checked = !!d.singleRadio;
   const txSplitEl = document.getElementById("cfg-tx-split");

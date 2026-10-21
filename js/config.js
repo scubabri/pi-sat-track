@@ -49,6 +49,7 @@ function sendEndpointsToServer(cfg) {
       callsign: cfg.callsign,
       grid: cfg.grid,
       elevation: cfg.elevation,
+      units: cfg.units === "imperial" ? "imperial" : "metric",
       singleRadio,
       txSplit: cfg.txSplit !== false,
       radioUl: ul,
@@ -199,6 +200,9 @@ function applyProfilesMessage(msg) {
 
   const cfg = msg.config && typeof msg.config === "object" ? msg.config : {};
   const hasServerCfg = Object.keys(cfg).length > 0;
+  // Display units follow the ACTIVE profile (saved / switched), never an unsaved Configure pick.
+  // A never-configured profile ({}) is Metric, the default.
+  if (typeof Units !== "undefined") Units.set(hasServerCfg ? cfg.units : "metric");
   const hasServerFavs =
     Array.isArray(msg.favorites) && msg.favorites.length > 0;
 
@@ -325,6 +329,7 @@ function initProfileControls() {
 
 function initConfig() {
   const cfg = migrateLegacy(loadConfig());
+  if (typeof Units !== "undefined") Units.set(cfg.units); // cached active profile until the server's
   if (typeof initSerialDeviceSelects === "function") initSerialDeviceSelects();
   if (typeof initConnectionTests === "function") initConnectionTests();
   fillForm(cfg);

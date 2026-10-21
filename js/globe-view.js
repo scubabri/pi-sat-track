@@ -880,9 +880,10 @@
   setInterval(recheckHover, 200);
 
   function selLabelText(st, pT) {
-    if (pT) return (st.display || st.sat) + " \u00B7 " + Math.round(st.position.heightKm || 0) + " km" + " @ " + (typeof formatClockShort === "function" ? formatClockShort(pT) : new Date(pT).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+    const D = (km) => (typeof Units !== "undefined" ? Units.dist(km || 0) : Math.round(km || 0) + " km");
+    if (pT) return (st.display || st.sat) + " \u00B7 " + D(st.position.heightKm) + " @ " + (typeof formatClockShort === "function" ? formatClockShort(pT) : new Date(pT).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
     const L = typeof satDotLabelLines === "function" ? satDotLabelLines(st) : null;
-    if (!L) return (st.display || st.sat) + " \u00B7 " + Math.round(st.position.heightKm || 0) + " km";
+    if (!L) return (st.display || st.sat) + " \u00B7 " + D(st.position.heightKm);
     return L.l2 ? L.l1 + "\n" + L.l2 : L.l1;
   }
   function paintSelLabel() {
@@ -901,6 +902,7 @@
   setInterval(tickSelLabel, 1000);
   window.addEventListener("time-mode-change", () => { applyState(true); if (hoverDot) paintHover(); });
   document.addEventListener("qso-dx-change", () => applyState(true));
+  document.addEventListener("units-change", () => { applyState(true); if (hoverDot) paintHover(); });
   document.addEventListener("decode-overlay-change", () => applyState(true));
   document.addEventListener("aprs-overlay-change", () => applyState(true));
 

@@ -985,6 +985,8 @@ wss.on("connection", (ws, req) => {
         Object.assign(cfgPatch, logbook.normalizeStationFields(msg));
         if (typeof msg.elevation === "number")
           cfgPatch.elevation = msg.elevation;
+        // Display units (Configure → Station → Units): screen only, per profile.
+        if (msg.units !== undefined) cfgPatch.units = profiles.normalizeUnits(msg.units);
         profiles.updateActive({ config: cfgPatch });
         broadcastProfiles();
 

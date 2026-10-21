@@ -422,6 +422,7 @@ function refreshSelSatLabel() {
 }
 setInterval(refreshSelSatLabel, 1000);
 window.addEventListener("time-mode-change", refreshSelSatLabel);
+document.addEventListener("units-change", refreshSelSatLabel);
 
 function updateMapTracking(state) {
   if (!map || !state) return;

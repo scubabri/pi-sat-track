@@ -73,7 +73,7 @@ function updateStationStatus() {
   if (elevEl) {
     elevEl.textContent =
       cfg.elevation != null && cfg.elevation !== ""
-        ? cfg.elevation + " m"
+        ? (typeof Units !== "undefined" ? Units.height(cfg.elevation) : cfg.elevation + " m")
         : "-";
   }
 }
@@ -341,7 +341,7 @@ function applyFreqAndLook(msg) {
     if (azEl) azEl.textContent = msg.look.az.toFixed(1) + "\u00B0";
     if (elEl) elEl.textContent = msg.look.el.toFixed(1) + "\u00B0";
     if (rangeEl && msg.look.rangeKm != null) {
-      rangeEl.textContent = msg.look.rangeKm.toFixed(1) + " km";
+      rangeEl.textContent = typeof Units !== "undefined" ? Units.dist(msg.look.rangeKm, { digits: 1 }) : msg.look.rangeKm.toFixed(1) + " km";
     }
   }
 
@@ -800,7 +800,7 @@ function updateSatelliteStatus(state) {
     if (elEl) elEl.textContent = state.look.el.toFixed(1) + "\u00B0";
     if (rangeEl) {
       const km = state.look.rangeKm;
-      rangeEl.textContent = km != null ? km.toFixed(1) + " km" : "-";
+      rangeEl.textContent = km == null ? "-" : typeof Units !== "undefined" ? Units.dist(km, { digits: 1 }) : km.toFixed(1) + " km";
     }
   }
 
@@ -808,6 +808,8 @@ function updateSatelliteStatus(state) {
     orbitEl.textContent = state.orbit != null ? String(state.orbit) : "-";
   }
 }
+// Display units changed (profile saved / switched): station elevation now; the rest repaint on the next 1 Hz state.
+document.addEventListener("units-change", () => { try { updateStationStatus(); } catch (_) {} });
 function notifyObserverChanged() {
   sendObserver();
   updateStationStatus();

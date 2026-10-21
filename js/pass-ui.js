@@ -65,8 +65,9 @@ function satDotLabelLines(st, now) {
   const clock = (t) => formatPassTime(t); // HH:MM:SS UTC|MT, to the second
   const hKm = st.position && Number.isFinite(st.position.heightKm) ? st.position.heightKm : null;
   const lk = st.look || {};
-  const alt = hKm != null ? "Alt " + Math.round(hKm) + " km" : "";
-  const rng = Number.isFinite(lk.rangeKm) ? "Rng " + Math.round(lk.rangeKm) + " km" : "";
+  const D = (km) => (typeof Units !== "undefined" ? Units.dist(km) : Math.round(km) + " km");
+  const alt = hKm != null ? "Alt " + D(hKm) : "";
+  const rng = Number.isFinite(lk.rangeKm) ? "Rng " + D(lk.rangeKm) : "";
   const el = Number.isFinite(lk.el) ? "El " + Math.round(lk.el) + "\u00B0" : "";
   const list = Array.isArray(st.passes) && st.passes.length ? st.passes : (st.nextPass ? [st.nextPass] : []);
   let pass = null;
