@@ -210,3 +210,23 @@
 .rigctld-help code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.72rem; }
 .rigctld-help ul { margin: 4px 0 2px; padding-left: 18px; }
 .rigctld-help h4 { margin: 8px 0 2px; font-size: 0.78rem; color: #e5e7eb; border-bottom: 1px solid rgba(75,85,99,.5); }
+
+/* Radio 1 / Radio 2 (two-radio setups): default uplink radio, card header
+   with the default role, name + band note (js/radio-roles.js). */
+.cfg-roles-row { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin-top: 12px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
+.cfg-roles-row[hidden] { display: none; }
+.cfg-roles-row label { font-size: .75rem; color: var(--text-dim); margin: 0; }
+#config-panel .cfg-roles-row .cfg-select { width: auto; min-width: 220px; }
+.cfg-roles-row .form-hint { margin: 0; flex-basis: 100%; }
+.cfg-radio-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.cfg-radio-head .form-section-title { margin-bottom: 0; }
+.cfg-role-chip { font-size: .68rem; font-weight: 600; letter-spacing: .03em; padding: 2px 8px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+.cfg-role-chip[hidden] { display: none; }
+.cfg-role-chip.ul { color: var(--uplink); border-color: rgba(88, 166, 255, .5); background: rgba(88, 166, 255, .10); }
+.cfg-role-chip.dl { color: var(--downlink); border-color: rgba(63, 185, 80, .5); background: rgba(63, 185, 80, .10); }
+.cfg-radio-ident { margin-bottom: 10px; align-items: flex-end; }
+.cfg-radio-ident[hidden] { display: none; }
+.cfg-radio-ident > div { flex: 1; min-width: 0; }
+.band-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.band-chip { font-size: .78rem; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-panel); color: var(--text-dim); cursor: pointer; }
+.band-chip.on { border-color: var(--accent); color: #fff; background: rgba(88, 166, 255, .22); }

@@ -236,3 +236,17 @@
   color: #fef2f2;
 }
 
+
+/* Radio 1 / Radio 2 dropdown right under the Uplink / Downlink label
+   (two-radio setups, js/radio-roles.js). */
+.freq-block-split.with-role { grid-template-columns: 1fr max-content; justify-content: stretch; }
+.freq-block-split.with-role .role-select-wrap { grid-column: 1 / -1; grid-row: 2; margin: 2px 0 6px; }
+.freq-block-split.with-role .freq-value { grid-row: 3; }
+.freq-block-split.with-role .freq-doppler { grid-row: 4; }
+.freq-block-split.with-role .freq-fine-btns { grid-row: 3; }
+.freq-block-split.with-role .fine-offset { grid-row: 4; }
+.role-select-wrap[hidden] { display: none; }
+.role-select-wrap .mode-select { margin-top: 0; }
+.role-select-wrap .mode-select.ul { border-color: rgba(88, 166, 255, .45); }
+.role-select-wrap .mode-select.dl { border-color: rgba(63, 185, 80, .45); }
+.role-saved { font-size: 11px; color: #6e7681; margin-top: 3px; }

@@ -274,7 +274,7 @@ function sendConnectionTest(payload) {
 function runRadioTest(side) {
   const btn = document.getElementById("btn-test-radio-" + side);
   if (!btn) return;
-  if (!btn.dataset.label) btn.dataset.label = "Test " + side.toUpperCase();
+  if (!btn.dataset.label) btn.dataset.label = side === "dl" ? "Test Radio 2" : "Test Radio 1";
   setTestButtonState(btn, "busy");
   try {
     const cfg = sideConfigFromForm(side);

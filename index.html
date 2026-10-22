@@ -220,10 +220,31 @@
                 </label>
               </div>
             </div>
+            <div class="cfg-roles-row" id="cfg-roles-row">
+              <label for="cfg-default-ul-radio">Default uplink radio</label>
+              <select id="cfg-default-ul-radio" class="cfg-select">
+                <option value="1">Radio 1</option>
+                <option value="2">Radio 2</option>
+              </select>
+              <span class="form-hint">Downlink = the other radio. Used for any sat without a saved choice. Change the radio per sat on the Frequencies panel (saved per profile, per sat).</span>
+            </div>
             <div class="cfg-radio-cols">
             <div class="form-section" id="cfg-ul-section">
-              <div class="form-section-title" id="cfg-ul-title">
-                Radio UL (TX)
+              <div class="cfg-radio-head">
+                <div class="form-section-title" id="cfg-ul-title">Radio 1</div>
+                <span class="cfg-role-chip ul" id="cfg-r1-role">default UL (TX)</span>
+              </div>
+              <div class="form-row-2 cfg-radio-ident" id="cfg-r1-ident">
+                <div>
+                  <label for="cfg-r1-name">Name (shown on the panel)</label>
+                  <input type="text" id="cfg-r1-name" maxlength="32" placeholder="e.g. IC-705" spellcheck="false" />
+                </div>
+                <div>
+                  <label>Band(s) / antenna</label>
+                  <div class="band-chips" id="cfg-r1-bands" data-radio="1">
+                    <button type="button" class="band-chip" data-band="2m">2m</button><button type="button" class="band-chip" data-band="70cm">70cm</button><button type="button" class="band-chip" data-band="23cm">23cm</button><button type="button" class="band-chip" data-band="any">Any</button>
+                  </div>
+                </div>
               </div>
 
 
@@ -420,13 +441,28 @@
 
               <div class="form-row">
                 <button type="button" class="btn-test" id="btn-test-radio-ul">
-                  Test UL
+                  Test Radio 1
                 </button>
               </div>
             </div>
 
             <div class="form-section" id="cfg-dl-section">
-              <div class="form-section-title">Radio DL (RX)</div>
+              <div class="cfg-radio-head">
+                <div class="form-section-title">Radio 2</div>
+                <span class="cfg-role-chip dl" id="cfg-r2-role">default DL (RX)</span>
+              </div>
+              <div class="form-row-2 cfg-radio-ident">
+                <div>
+                  <label for="cfg-r2-name">Name (shown on the panel)</label>
+                  <input type="text" id="cfg-r2-name" maxlength="32" placeholder="e.g. Flex 6600" spellcheck="false" />
+                </div>
+                <div>
+                  <label>Band(s) / antenna</label>
+                  <div class="band-chips" id="cfg-r2-bands" data-radio="2">
+                    <button type="button" class="band-chip" data-band="2m">2m</button><button type="button" class="band-chip" data-band="70cm">70cm</button><button type="button" class="band-chip" data-band="23cm">23cm</button><button type="button" class="band-chip" data-band="any">Any</button>
+                  </div>
+                </div>
+              </div>
 
               <div class="form-row">
                 <label for="cfg-dl-transport">Connection</label>
@@ -621,7 +657,7 @@
 
               <div class="form-row">
                 <button type="button" class="btn-test" id="btn-test-radio-dl">
-                  Test DL
+                  Test Radio 2
                 </button>
               </div>
             </div>
@@ -1345,6 +1381,10 @@
           <div class="freq-block freq-block-split">
             <div class="freq-main">
             <div class="freq-label" id="freq-ul-label">Uplink (LSB)</div>
+            <div class="role-select-wrap" id="radio-role-ul-wrap" hidden>
+              <select id="radio-role-ul" class="mode-select role-select ul" data-side="ul" title="Radio on uplink for this satellite (saved per profile, per satellite). Fine offsets stay with Uplink / Downlink, not with the radio."></select>
+              <div class="role-saved" id="radio-role-ul-saved"></div>
+            </div>
             <div class="freq-value uplink" id="freq-ul">-</div>
             <div class="freq-doppler" id="freq-ul-doppler"></div>
             </div>
@@ -1359,6 +1399,10 @@
           <div class="freq-block freq-block-split">
             <div class="freq-main">
             <div class="freq-label" id="freq-dl-label">Downlink (USB)</div>
+            <div class="role-select-wrap" id="radio-role-dl-wrap" hidden>
+              <select id="radio-role-dl" class="mode-select role-select dl" data-side="dl" title="Radio on downlink for this satellite (saved per profile, per satellite). Fine offsets stay with Uplink / Downlink, not with the radio."></select>
+              <div class="role-saved" id="radio-role-dl-saved"></div>
+            </div>
             <div class="freq-value downlink" id="freq-dl">-</div>
             <div class="freq-doppler" id="freq-dl-doppler"></div>
             </div>
@@ -1579,6 +1623,7 @@
     <script src="js/update-rate.js"></script>
     <script src="js/data-mode.js"></script>
     <script src="js/flex-profile-ui.js"></script>
+    <script src="js/radio-roles.js"></script>
     <script src="js/ul-fixed.js"></script>
     <script src="js/qso-log.js"></script>
     <script src="js/qso-call-grid.js"></script>

@@ -79,6 +79,7 @@ const wsjtxDecodes = require("./lib/wsjtx-decodes");
 const schedule = require("./lib/schedule");
 const amsatReport = require("./lib/amsat-report");
 const { applyProfileEndpoints } = require("./lib/profile-apply");
+const { createRouter: createRadioRoleRouter } = require("./lib/radio-role-router");
 /** First applyProfileToRuntime() after boot connects everything (lib/profile-apply.js). */
 let profileAppliedOnce = false;
 
@@ -276,8 +277,29 @@ const aprsService = require("./lib/aprs/service").createService({
   },
 });
 
+/** Radio 1 / Radio 2 → UL / DL for the selected sat (lib/radio-role-router.js). */
+const radioRoles = createRadioRoleRouter({
+  config,
+  radios,
+  satOffsets: require("./lib/sat-offsets"),
+  getConfig: () => {
+    const p = profiles.getActive();
+    return p && p.config && typeof p.config === "object" ? p.config : {};
+  },
+});
+function broadcastRadioRoles() {
+  broadcast(radioRoles.payload(state.getCurrentKey(), profiles.getActiveName()));
+}
+// A sat (or the Moon) becomes current: put its radio on uplink before its
+// offsets / tones are restored (state.loadSatellite runs this first).
+state.setSatSelectHook((key) => {
+  radioRoles.applyForSat(key, "sat");
+  broadcastRadioRoles();
+});
+
 function applyProfileToRuntime(prof) {
   if (!prof) return;
+  const rolesBefore = radioRoles.applied();
   // Spinner/fine offsets are stored per profile — switch store + re-apply live.
   if (typeof state.setOffsetsProfile === "function")
     state.setOffsetsProfile(profiles.getActiveName());
@@ -289,9 +311,14 @@ function applyProfileToRuntime(prof) {
   if (Object.keys(cfg).length) {
     // Re-apply only the radio / rotor whose settings differ from the current
     // ones (one log line per switch); the first call at startup applies all.
-    applyProfileEndpoints(profiles.getActiveName(), cfg, { config, radios, rotor }, { startup: !profileAppliedOnce });
+    // Two radios: Radio 1 / Radio 2 on UL / DL as saved for the current sat.
+    const eff = radioRoles.effective(cfg, state.getCurrentKey());
+    applyProfileEndpoints(profiles.getActiveName(), eff, { config, radios, rotor }, { startup: !profileAppliedOnce });
+    if (profileAppliedOnce && radioRoles.applied() !== rolesBefore && typeof state.reapplyRadioForCurrentSat === "function")
+      state.reapplyRadioForCurrentSat();
   }
   profileAppliedOnce = true;
+  broadcastRadioRoles();
   console.log("Radio update:", config.RADIO_UPDATE_MS, "ms");
   if (typeof state.forceRadioPush === "function") state.forceRadioPush();
   applyWsjtxListener();
@@ -601,6 +628,7 @@ wss.on("connection", (ws, req) => {
     }),
   );
   ws.send(JSON.stringify(profiles.publicPayload()));
+  ws.send(JSON.stringify(radioRoles.payload(state.getCurrentKey(), profiles.getActiveName())));
   ws.send(JSON.stringify(wsjtxStatusPayload()));
   ws.send(
     JSON.stringify({
@@ -773,6 +801,27 @@ wss.on("connection", (ws, req) => {
         selectSat(msg.key).catch((err) => {
           ws.send(JSON.stringify({ type: "error", message: err.message }));
         });
+      }
+
+      if (msg.type === "radio-roles-get") {
+        ws.send(JSON.stringify(radioRoles.payload(state.getCurrentKey(), profiles.getActiveName())));
+        return;
+      }
+
+      if (msg.type === "radio-role-set") {
+        // Frequencies panel: which radio is on uplink for this sat (the other
+        // one is on downlink). Saved per profile, per sat (sat-offsets ulRadio).
+        const key = typeof msg.sat === "string" && msg.sat ? msg.sat : state.getCurrentKey();
+        if (key && radioRoles.setForSat(key, msg.ulRadio)) {
+          if (key === state.getCurrentKey()) {
+            if (typeof state.persistCurrentOffsets === "function") state.persistCurrentOffsets();
+            if (radioRoles.applyForSat(key, "panel") && typeof state.reapplyRadioForCurrentSat === "function")
+              state.reapplyRadioForCurrentSat();
+          }
+        }
+        broadcastRadioRoles();
+        pushNow();
+        return;
       }
 
       if (msg.type === "auto-select-set") {
@@ -971,9 +1020,11 @@ wss.on("connection", (ws, req) => {
 
       if (msg.type === "endpoints") {
         const ep = endpointsFromMsg(msg);
+        const rolesBefore = radioRoles.applied();
         // Only re-open what changed: Configure's Save sends the full form even
         // when only APRS / KISS settings were edited (lib/endpoint-apply.js).
-        applyEndpointSave(ep, {
+        // Two radios: applied with the current sat's UL radio (saved as is).
+        applyEndpointSave(radioRoles.effective(ep, state.getCurrentKey()), {
           config,
           radios,
           rotor,
@@ -990,6 +1041,9 @@ wss.on("connection", (ws, req) => {
         if (msg.units !== undefined) cfgPatch.units = profiles.normalizeUnits(msg.units);
         profiles.updateActive({ config: cfgPatch });
         broadcastProfiles();
+        if (radioRoles.applied() !== rolesBefore && typeof state.reapplyRadioForCurrentSat === "function")
+          state.reapplyRadioForCurrentSat();
+        broadcastRadioRoles();
 
         broadcast({
           type: "endpoints",
@@ -1297,7 +1351,8 @@ wss.on("connection", (ws, req) => {
         if (msg.lastSat !== undefined) patch.lastSat = msg.lastSat;
         profiles.updateActive(patch);
         if (patch.config) {
-          const flags = config.applyEndpoints(patch.config);
+          const pc = (profiles.getActive() || {}).config || {};
+          const flags = config.applyEndpoints(radioRoles.effective(patch.config, state.getCurrentKey(), pc));
           radios.applyEndpointChange(flags);
           if (flags.rotorChanged) rotor.applyEndpointChange();
           applyWsjtxListener();

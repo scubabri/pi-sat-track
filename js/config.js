@@ -52,8 +52,9 @@ function sendEndpointsToServer(cfg) {
       units: cfg.units === "imperial" ? "imperial" : "metric",
       singleRadio,
       txSplit: cfg.txSplit !== false,
-      radioUl: ul,
-      radioDl: dl,
+      radioUl: ul, // Radio 1
+      radioDl: dl, // Radio 2
+      radioRoles: cfg.radioRoles && typeof cfg.radioRoles === "object" ? cfg.radioRoles : undefined,
       radioTransport: dl.transport,
       radioType: dl.type,
       radioProtocol: dl.protocol,

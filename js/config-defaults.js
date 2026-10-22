@@ -159,8 +159,11 @@ function defaultsEndpoints() {
     units: "metric", // display units (js/units.js), per profile
     singleRadio: false,
     txSplit: true,
-    radioUl: defaultSide("ul"),
-    radioDl: defaultSide("dl"),
+    radioUl: defaultSide("ul"), // = Radio 1 (two-radio setups)
+    radioDl: defaultSide("dl"), // = Radio 2
+    // Two radios: default uplink radio + panel names / band notes (lib/radio-roles.js).
+    // Missing (older profiles) = Radio 1 (old UL radio) on uplink, as before.
+    radioRoles: { defaultUl: 1, names: ["", ""], bands: [[], []] },
     // legacy flat fields kept for older server/profiles
     radioTransport: "tcp",
     radioType: "smartsdr",

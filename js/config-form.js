@@ -442,18 +442,114 @@ function isSingleRadioChecked() {
   return el ? !!el.checked : false;
 }
 
+/* ---------- Radio 1 / Radio 2 (two-radio setups) ---------- */
+// Radio 1 = the "ul" form section (stored as radioUl), Radio 2 = "dl"
+// (radioDl). Which one is on uplink: profile default here, per sat on the
+// Frequencies panel (js/radio-roles.js, lib/radio-roles.js).
+const ROLE_BANDS = ["2m", "70cm", "23cm", "any"];
+
+function readBands(n) {
+  const box = document.getElementById("cfg-r" + n + "-bands");
+  if (!box) return [];
+  return Array.from(box.querySelectorAll(".band-chip.on")).map((b) => b.dataset.band).filter((b) => ROLE_BANDS.includes(b));
+}
+
+function fillBands(n, list) {
+  const box = document.getElementById("cfg-r" + n + "-bands");
+  if (!box) return;
+  const want = Array.isArray(list) ? list : [];
+  box.querySelectorAll(".band-chip").forEach((b) => b.classList.toggle("on", want.includes(b.dataset.band)));
+}
+
+function readRoles() {
+  const d = parseInt(val("cfg-default-ul-radio"), 10) === 2 ? 2 : 1;
+  return {
+    defaultUl: d,
+    names: [val("cfg-r1-name").trim().slice(0, 32), val("cfg-r2-name").trim().slice(0, 32)],
+    bands: [readBands(1), readBands(2)],
+  };
+}
+
+function updateRoleChips() {
+  const d = parseInt(val("cfg-default-ul-radio"), 10) === 2 ? 2 : 1;
+  [1, 2].forEach((n) => {
+    const chip = document.getElementById("cfg-r" + n + "-role");
+    if (!chip) return;
+    const ul = n === d;
+    chip.textContent = ul ? "default UL (TX)" : "default DL (RX)";
+    chip.classList.toggle("ul", ul);
+    chip.classList.toggle("dl", !ul);
+  });
+  // Option labels follow the names typed in the cards.
+  const sel = document.getElementById("cfg-default-ul-radio");
+  if (sel) {
+    [1, 2].forEach((n) => {
+      const o = sel.querySelector('option[value="' + n + '"]');
+      const name = val("cfg-r" + n + "-name").trim();
+      if (o) o.textContent = "Radio " + n + (name ? " \u00b7 " + name : "");
+    });
+  }
+}
+
+function fillRoles(r) {
+  const o = r && typeof r === "object" ? r : {};
+  const names = Array.isArray(o.names) ? o.names : [];
+  const bands = Array.isArray(o.bands) ? o.bands : [];
+  setVal("cfg-default-ul-radio", o.defaultUl === 2 ? "2" : "1");
+  setVal("cfg-r1-name", names[0] || "");
+  setVal("cfg-r2-name", names[1] || "");
+  fillBands(1, bands[0]);
+  fillBands(2, bands[1]);
+  updateRoleChips();
+}
+
+function initRoleControls() {
+  [1, 2].forEach((n) => {
+    const box = document.getElementById("cfg-r" + n + "-bands");
+    if (box && !box.__init) {
+      box.__init = true;
+      box.addEventListener("click", (e) => {
+        const b = e.target && e.target.closest && e.target.closest(".band-chip");
+        if (!b) return;
+        e.preventDefault();
+        const on = !b.classList.contains("on");
+        if (b.dataset.band === "any") box.querySelectorAll(".band-chip").forEach((x) => x.classList.remove("on"));
+        else { const any = box.querySelector('.band-chip[data-band="any"]'); if (any) any.classList.remove("on"); }
+        b.classList.toggle("on", on);
+        const tab = document.querySelector('.cfg-tab[data-tab="radio"]');
+        if (tab) tab.classList.add("dirty");
+      });
+    }
+    const nm = document.getElementById("cfg-r" + n + "-name");
+    if (nm && !nm.__init) { nm.__init = true; nm.addEventListener("input", updateRoleChips); }
+  });
+  const sel = document.getElementById("cfg-default-ul-radio");
+  if (sel && !sel.__init) { sel.__init = true; sel.addEventListener("change", updateRoleChips); }
+}
+if (typeof document !== "undefined" && document.addEventListener) {
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initRoleControls);
+  else initRoleControls();
+}
+
 function updateSingleRadioVisibility() {
   const single = isSingleRadioChecked();
   const dlSection = document.getElementById("cfg-dl-section");
   const ulTitle = document.getElementById("cfg-ul-title");
   if (dlSection) dlSection.hidden = single;
   if (ulTitle) {
-    ulTitle.textContent = single ? "Radio (TX/RX)" : "Radio UL (TX)";
+    ulTitle.textContent = single ? "Radio (TX/RX)" : "Radio 1";
   }
+  // Roles / names only mean something with two radios.
+  const rolesRow = document.getElementById("cfg-roles-row");
+  if (rolesRow) rolesRow.hidden = single;
+  const r1Role = document.getElementById("cfg-r1-role");
+  if (r1Role) r1Role.hidden = single;
+  const r1Ident = document.getElementById("cfg-r1-ident");
+  if (r1Ident) r1Ident.hidden = single;
   const btnUl = document.getElementById("btn-test-radio-ul");
   const btnDl = document.getElementById("btn-test-radio-dl");
   if (btnUl) {
-    const label = single ? "Test radio" : "Test UL";
+    const label = single ? "Test radio" : "Test Radio 1";
     btnUl.dataset.label = label;
     if (!btnUl.classList.contains("test-busy")) {
       btnUl.textContent = label;
@@ -464,7 +560,7 @@ function updateSingleRadioVisibility() {
     // clear stale OK/Fail color when switching modes
     btnDl.classList.remove("test-ok", "test-fail", "test-busy");
     btnDl.disabled = false;
-    btnDl.textContent = btnDl.dataset.label || "Test DL";
+    btnDl.textContent = btnDl.dataset.label || "Test Radio 2";
   }
   if (btnUl) {
     btnUl.classList.remove("test-ok", "test-fail");
@@ -497,6 +593,7 @@ function readFormConfig() {
     })(),
     radioUl,
     radioDl,
+    radioRoles: readRoles(),
     radioTransport: radioDl.transport,
     radioType: radioDl.type,
     radioProtocol: radioDl.protocol,
@@ -705,6 +802,7 @@ function fillForm(cfg) {
   if (txSplitEl) txSplitEl.checked = d.txSplit !== false;
   fillSide("ul", d.radioUl);
   fillSide("dl", d.radioDl);
+  fillRoles(d.radioRoles);
   updateSingleRadioVisibility();
   populateRotorTypes(d.rotorType || "rt21");
   populateSerialDeviceSelect(
