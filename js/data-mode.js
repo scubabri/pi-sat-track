@@ -60,7 +60,7 @@
       btn.title = why
         ? why
         : dataMode
-          ? "Data mode ON (USB-D/LSB-D/FM-D; Flex DIGU/DIGL/DFM) — click for voice"
+          ? "Data mode ON (USB-D/LSB-D/FM-D; Flex DIGU/DIGL/DFM; rigctl PKTUSB/PKTLSB/PKTFM) — click for voice"
           : "Data mode OFF (voice USB/LSB/FM) — click for data mode";
     }
   }
