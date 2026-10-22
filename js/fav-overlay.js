@@ -4,7 +4,9 @@
  * Tracks: server "fav-tracks" (60 s). Positions: favorites[] in "state" (1 s).
  * Toggle sits above Sked Finder in the map control bar. On/off and the shown
  * subset are saved in the active station profile (server "profiles" payload,
- * favOverlay {on, shown|null}); localStorage is only a startup cache.
+ * favOverlay {on, shown|null, footprints}); localStorage is only a startup cache.
+ * "Footprints" (sub-toggle under Favorites, default off): a very light shade
+ * for favorites that are up or rising within 15 min. Off = no favorite rings.
  */
 (function () {
   const LS_KEY = "favOverlayOn";
@@ -18,6 +20,24 @@
   let currentKey = null;
   let fullKey = null; // favorite whose label is expanded (hover)
   const items = new Map(); // key -> { color, lines:[], dot, circle }
+  let fpOn = localStorage.getItem(LS_KEY + "Fp") === "1";
+  let fpBtn = null;
+  // Favorites' footprints must read as background: well under the selected
+  // sat's (fill 0.06 / solid outline 0.55, map.js).
+  const FP = { fill: 0.04, opacity: 0.28, weight: 0.75, dash: "3 5" };
+  const FP_NEAR_EL = -5; // deg: just set / about to rise still counts
+  const FP_AOS_SOON_MS = 15 * 60e3; // or AOS within 15 min
+  /** Favorite worth a footprint: up (el >= -5 deg) or AOS within 15 min of `now`. */
+  function fpNear(f, now) {
+    const el = f && f.look && f.look.el;
+    if (Number.isFinite(el) && el >= FP_NEAR_EL) return true;
+    const np = f && f.nextPass;
+    // nextPass.aos is epoch ms from the server (ISO string tolerated).
+    const t = np && np.aos != null ? (typeof np.aos === "number" ? np.aos : Date.parse(np.aos)) : NaN;
+    const aos = t - now;
+    return aos > 0 && aos <= FP_AOS_SOON_MS;
+  }
+  window.__favFpNear = fpNear; // tests
   const colorFor = (key) => (typeof favColor === "function" ? favColor(key) : "#b07cc6");
 
   function getMap() { return typeof map !== "undefined" && map ? map : null; }
@@ -100,8 +120,9 @@
     const pp = window.passPreview;
     const favs = (st.favorites || []).map((f) => {
       const pv = f && pp && pp.posOf(f.key);
-      return pv ? Object.assign({}, f, { position: pv.position }) : f;
+      return pv ? Object.assign({}, f, { position: pv.position, look: pv.look || f.look }) : f;
     });
+    const tNow = pp && pp.get && pp.get() != null && pp.posOf ? pp.get() : Date.now();
     const trackKeys = new Set(tracks.map((t) => t.key));
     for (const f of favs) {
       if (!f || f.key === currentKey || !trackKeys.has(f.key) || !f.position) continue;
@@ -120,11 +141,12 @@
         applyHighlight();
       } else { it.dot.setLatLng(ll); if (it.hit) it.hit.setLatLng(ll); }
       // Moon (EME): no satellite-style footprint circle (it would cover half the Earth).
-      const rM = f.isMoon ? 0 : typeof footprintRadiusM === "function" ? footprintRadiusM(p.heightKm) : 0;
+      // Footprints off, not up/rising soon, or no TLE (no position): no ring.
+      const rM = !fpOn || f.isMoon || !fpNear(f, tNow) ? 0 : typeof footprintRadiusM === "function" ? footprintRadiusM(p.heightKm) : 0;
       if (rM > 0) {
-        if (!it.circle) { it.circle = L.circle(ll, { radius: rM, color: it.color, weight: 1, opacity: 0.4, fillColor: it.color, fillOpacity: 0.03, interactive: false }).addTo(layer); applyHighlight(); }
+        if (!it.circle) { it.circle = L.circle(ll, { radius: rM, color: it.color, weight: FP.weight, opacity: FP.opacity, dashArray: FP.dash, fillColor: it.color, fillOpacity: FP.fill, interactive: false }).addTo(layer); applyHighlight(); }
         else { it.circle.setLatLng(ll); it.circle.setRadius(rM); }
-      }
+      } else if (it.circle) { layer.removeLayer(it.circle); it.circle = null; }
     }
   }
 
@@ -162,7 +184,7 @@
           opacity: hi ? (fwd ? 0.85 : 1) : dim ? 0.12 : fwd ? 0.45 : 0.6,
         });
       });
-      if (it.circle) it.circle.setStyle({ opacity: hi ? 0.9 : dim ? 0.12 : 0.4, weight: hi ? 2 : 1, fillOpacity: hi ? 0.1 : dim ? 0.01 : 0.03 });
+      if (it.circle) it.circle.setStyle({ opacity: hi ? 0.6 : dim ? 0.1 : FP.opacity, weight: hi ? 1.25 : FP.weight, fillOpacity: hi ? 0.05 : dim ? 0.015 : FP.fill });
       if (it.dot) it.dot.setStyle({ radius: hi ? 6 : 4, fillOpacity: dim ? 0.35 : 1, opacity: dim ? 0.35 : 1 });
       const tt = it.hit && it.hit.getTooltip && it.hit.getTooltip();
       const el = tt && tt.getElement && tt.getElement();
@@ -264,6 +286,18 @@
     btn.classList.toggle("active", on);
     btn.title = (on ? "Hide" : "Show") + " favorite satellites' orbits on the map";
     btn.setAttribute("aria-pressed", on ? "true" : "false");
+    if (fpBtn) {
+      fpBtn.classList.toggle("active", fpOn);
+      fpBtn.title = (fpOn ? "Hide" : "Show") + " light footprints for favorites that are up or rising within 15 min";
+      fpBtn.setAttribute("aria-pressed", fpOn ? "true" : "false");
+    }
+  }
+
+  function setFp(v) {
+    fpOn = !!v;
+    localStorage.setItem(LS_KEY + "Fp", fpOn ? "1" : "0");
+    syncBtn();
+    if (lastSt) updatePositions(lastSt);
   }
 
   function addButton() {
@@ -284,6 +318,19 @@
       sendSet({ on });
     });
     bar.insertBefore(btn, sked);
+    // Footprints sub-toggle directly below Favorites (standard toggle style).
+    fpBtn = document.createElement("a");
+    fpBtn.href = "#";
+    fpBtn.className = "decode-toggle-btn fav-fp-btn";
+    fpBtn.setAttribute("role", "button");
+    fpBtn.textContent = "Footprints";
+    fpBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setFp(!fpOn);
+      sendSet({ footprints: fpOn });
+    });
+    bar.insertBefore(fpBtn, sked);
     syncBtn();
     return true;
   }
@@ -333,7 +380,8 @@
     const fo = msg.favOverlay;
     if (!fo) {
       // First time for this profile: migrate this browser's cached toggle once.
-      sendSet({ on, shown: null });
+      sendSet({ on, shown: null, footprints: false });
+      if (fpOn) setFp(false);
       renderPicker();
       return;
     }
@@ -341,6 +389,7 @@
     const shownChanged = JSON.stringify(nextShown) !== JSON.stringify(shown);
     shown = nextShown;
     try { localStorage.setItem(LS_KEY + "Shown", JSON.stringify(shown)); } catch (_) {}
+    if (!!fo.footprints !== fpOn) setFp(!!fo.footprints);
     if (!!fo.on !== on) setOn(!!fo.on);
     else if (shownChanged || prevName !== profileName) { request(); fireChange(); }
     renderPicker();

@@ -802,6 +802,7 @@ wss.on("connection", (ws, req) => {
         const patch = {};
         if (msg.on !== undefined) patch.on = !!msg.on;
         if (msg.shown === null || Array.isArray(msg.shown)) patch.shown = msg.shown;
+        if (typeof msg.footprints === "boolean") patch.footprints = msg.footprints;
         const pf = profiles.updateActive({ favOverlay: patch });
         state.setFavOverlayShown(pf.favOverlay ? pf.favOverlay.shown : null);
         broadcastProfiles();
