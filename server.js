@@ -292,6 +292,8 @@ function broadcastRadioRoles() {
 }
 // A sat (or the Moon) becomes current: put its radio on uplink before its
 // offsets / tones are restored (state.loadSatellite runs this first).
+// Per-sat Flex profile memory follows the Flex's role (UL / DL).
+if (typeof state.setFlexRoleHook === "function") state.setFlexRoleHook(() => radioRoles.flexRole());
 state.setSatSelectHook((key) => {
   radioRoles.applyForSat(key, "sat");
   broadcastRadioRoles();
