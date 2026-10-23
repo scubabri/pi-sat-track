@@ -602,8 +602,8 @@
   /*
    * Favorite footprints (map "Footprints" sub-toggle, js/fav-overlay.js): same
    * rule as the 2D map — Favorites overlay on, Footprints on, favorite shown,
-   * not the selected sat, not the Moon, has a position (TLE) and is up or
-   * rising within 15 min (window.favFootprintNear). One small fill + ring
+   * not the selected sat, not the Moon, has a position (TLE) — every such
+   * favorite, wherever it is. One small fill + ring
    * group per favorite, built with the selected footprint's three.js
    * constructors, moved in applyState (2 s) and disposed when no longer wanted.
    * Styled like the map relative to the selected footprint: the selected globe
@@ -614,10 +614,8 @@
   const favFp = new Map(); // key -> { group, fill, ring, lam, R, band, color, ... }
   function favFpOn() { return favOn() && typeof window.isFavFootprintsOn === "function" && window.isFavFootprintsOn(); }
   /** Favorites (from a state snapshot) that should get a globe footprint now. */
-  function favFootprintList(st, now) {
+  function favFootprintList(st) {
     if (!st || !favFpOn()) return [];
-    const near = typeof window.favFootprintNear === "function" ? window.favFootprintNear : null;
-    if (!near) return [];
     const shown = typeof window.favOverlayShown === "function" ? window.favOverlayShown() : null;
     const ok = shown ? new Set(shown) : null;
     const out = [];
@@ -625,12 +623,11 @@
       if (!f || f.key === st.sat || f.isMoon || (ok && !ok.has(f.key))) continue;
       const p = f.position;
       if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon) || !(p.heightKm > 0)) continue;
-      if (!near(f, now)) continue;
       out.push(f);
     }
     return out;
   }
-  window.__globeFavFpKeys = (st, now) => favFootprintList(st || lastState, now != null ? now : Date.now()).map((f) => f.key); // tests
+  window.__globeFavFpKeys = (st) => favFootprintList(st || lastState).map((f) => f.key); // tests
   window.__globeFavFp = () => favFp; // tests / debug
   function makeFavFp(color) {
     const base = ensureFpMesh();
@@ -668,8 +665,8 @@
     }
   }
   /** Create / move / drop the favorite footprint groups for this snapshot. */
-  function updateFavFootprints(st, now) {
-    const want = favFootprintList(st, now);
+  function updateFavFootprints(st) {
+    const want = favFootprintList(st);
     const keep = new Set();
     for (const f of want) {
       let m = favFp.get(f.key);
@@ -1057,7 +1054,7 @@
         keep.add(f.key);
       }
     }
-    updateFavFootprints(st, pp && pp.get && pp.get() != null ? pp.get() : now);
+    updateFavFootprints(st);
     for (const k of [...pts.keys()]) if (!keep.has(k)) pts.delete(k);
     pts.forEach(styleDot);
     const extra = [];

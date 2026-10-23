@@ -1,6 +1,6 @@
 // Globe favorite footprints follow the map's Footprints sub-toggle
-// (js/fav-overlay.js): one dim fill + ring group per favorite that is up or
-// rising soon (window.favFootprintNear), none for the selected sat / Moon / no
+// (js/fav-overlay.js): one dim fill + ring group per shown favorite wherever it
+// is (no up / rising-soon filter), none for the selected sat / Moon / no
 // position, moved as the sats move, disposed when the toggle goes off or the
 // favorite leaves the list; always dimmer than the selected sat's footprint.
 // Real js/globe-view.js with a fake globe.gl + minimal three.js stand-ins.
@@ -78,7 +78,6 @@ function sandbox() {
     isFavOverlayOn: () => flags.fav,
     isFavFootprintsOn: () => flags.fp,
     favOverlayShown: () => flags.shown,
-    favFootprintNear: (f) => !!(f.look && f.look.el >= -5),
     __wsMsg: [],
   };
   const docLs = {};
@@ -116,8 +115,8 @@ test("globe favorite footprints: toggle, selection rules, movement, cleanup, dim
   s.flags.fp = true;
   s.fire("fav-footprints-change");
   const gs = s.groups("fav-footprint");
-  assert.strictEqual(gs.length, 2, "A + B only (not selected, Moon, below horizon, or without TLE)");
-  assert.deepStrictEqual([...s.sb.__globeFavFp().keys()].sort(), ["A", "B"]);
+  assert.strictEqual(gs.length, 3, "A + B + FAR (below the horizon too); not selected, Moon, or without TLE");
+  assert.deepStrictEqual([...s.sb.__globeFavFp().keys()].sort(), ["A", "B", "FAR"]);
   const sel = s.groups("sat-footprint")[0];
   const selFill = sel.children.find((c) => c.name === "sat-footprint-fill").material.opacity;
   const selRing = sel.children.find((c) => c.name === "sat-footprint-ring").material.opacity;
@@ -139,9 +138,12 @@ test("globe favorite footprints: toggle, selection rules, movement, cleanup, dim
   assert.strictEqual(s.sb.__globeFavFp().get("A"), a, "group reused");
   assert.strictEqual(Math.round(a.group.quaternion.v[0] * 1000), Math.round((40 / Math.hypot(40, 30, 1)) * 1000), "moved");
 
-  // Favorite drops out of the list (sets / removed): its group is removed and disposed.
-  const before = disposed;
+  // Setting (below the horizon) keeps the footprint; leaving the favorites list drops + disposes it.
   s.send(state([fav("SEL", 1, 2, 10), fav("A", 30, 40, 15), fav("B", -10, -40, -20)]));
+  s.fire("fav-footprints-change");
+  assert.deepStrictEqual([...s.sb.__globeFavFp().keys()].sort(), ["A", "B"], "FAR left the list; B kept while set");
+  const before = disposed;
+  s.send(state([fav("SEL", 1, 2, 10), fav("A", 30, 40, 15)]));
   s.fire("fav-footprints-change");
   assert.deepStrictEqual([...s.sb.__globeFavFp().keys()], ["A"]);
   assert.strictEqual(s.groups("fav-footprint").length, 1);

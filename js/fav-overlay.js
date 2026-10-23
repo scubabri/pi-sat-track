@@ -5,8 +5,9 @@
  * Toggle sits above Sked Finder in the map control bar. On/off and the shown
  * subset are saved in the active station profile (server "profiles" payload,
  * favOverlay {on, shown|null, footprints}); localStorage is only a startup cache.
- * "Footprints" (sub-toggle under Favorites, default off): a very light shade
- * for favorites that are up or rising within 15 min. Off = no favorite rings.
+ * "Footprints" (sub-toggle under Favorites, default off): a light dashed
+ * footprint for every shown favorite (not the selected sat, which has its own;
+ * not the Moon; none without a TLE / position). Off = no favorite rings.
  */
 (function () {
   const LS_KEY = "favOverlayOn";
@@ -26,21 +27,7 @@
   // sat's (fill 0.06 / solid 1 px outline 0.55, map.js). The globe
   // (js/globe-view.js) scales its own favorite footprints the same way.
   const FP = { fill: 0.05, opacity: 0.42, weight: 1, dash: "4 4" };
-  const FP_NEAR_EL = -5; // deg: just set / about to rise still counts
-  const FP_AOS_SOON_MS = 15 * 60e3; // or AOS within 15 min
-  /** Favorite worth a footprint: up (el >= -5 deg) or AOS within 15 min of `now`. */
-  function fpNear(f, now) {
-    const el = f && f.look && f.look.el;
-    if (Number.isFinite(el) && el >= FP_NEAR_EL) return true;
-    const np = f && f.nextPass;
-    // nextPass.aos is epoch ms from the server (ISO string tolerated).
-    const t = np && np.aos != null ? (typeof np.aos === "number" ? np.aos : Date.parse(np.aos)) : NaN;
-    const aos = t - now;
-    return aos > 0 && aos <= FP_AOS_SOON_MS;
-  }
-  window.__favFpNear = fpNear; // tests
   // Shared with the 3D globe (js/globe-view.js) so both views agree.
-  window.favFootprintNear = fpNear;
   window.isFavFootprintsOn = () => fpOn;
   const colorFor = (key) => (typeof favColor === "function" ? favColor(key) : "#b07cc6");
 
@@ -126,7 +113,6 @@
       const pv = f && pp && pp.posOf(f.key);
       return pv ? Object.assign({}, f, { position: pv.position, look: pv.look || f.look }) : f;
     });
-    const tNow = pp && pp.get && pp.get() != null && pp.posOf ? pp.get() : Date.now();
     const trackKeys = new Set(tracks.map((t) => t.key));
     for (const f of favs) {
       if (!f || f.key === currentKey || !trackKeys.has(f.key) || !f.position) continue;
@@ -145,8 +131,8 @@
         applyHighlight();
       } else { it.dot.setLatLng(ll); if (it.hit) it.hit.setLatLng(ll); }
       // Moon (EME): no satellite-style footprint circle (it would cover half the Earth).
-      // Footprints off, not up/rising soon, or no TLE (no position): no ring.
-      const rM = !fpOn || f.isMoon || !fpNear(f, tNow) ? 0 : typeof footprintRadiusM === "function" ? footprintRadiusM(p.heightKm) : 0;
+      // Footprints off or no TLE (no position, skipped above): no ring.
+      const rM = !fpOn || f.isMoon ? 0 : typeof footprintRadiusM === "function" ? footprintRadiusM(p.heightKm) : 0;
       if (rM > 0) {
         if (!it.circle) { it.circle = L.circle(ll, { radius: rM, color: it.color, weight: FP.weight, opacity: FP.opacity, dashArray: FP.dash, fillColor: it.color, fillOpacity: FP.fill, interactive: false }).addTo(layer); applyHighlight(); }
         else { it.circle.setLatLng(ll); it.circle.setRadius(rM); }
@@ -292,7 +278,7 @@
     btn.setAttribute("aria-pressed", on ? "true" : "false");
     if (fpBtn) {
       fpBtn.classList.toggle("active", fpOn);
-      fpBtn.title = (fpOn ? "Hide" : "Show") + " light footprints for favorites that are up or rising within 15 min";
+      fpBtn.title = (fpOn ? "Hide" : "Show") + " light footprints for all shown favorites";
       fpBtn.setAttribute("aria-pressed", fpOn ? "true" : "false");
     }
   }
