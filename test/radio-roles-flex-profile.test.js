@@ -64,3 +64,11 @@ test("Flex profile per sat follows the Flex role across swaps", async () => {
   const map = satOffsets.getFlexProfileByMode(K);
   assert.ok(Object.keys(map).some((k) => /@ul$/.test(k) && map[k] === "PiTrack-144up"), JSON.stringify(map));
 });
+
+test("state.applyUlDial: uplink dial → passband (Moon: TX/RX together, +)", () => {
+  const r = radios.active();
+  r.setOffsets({ ulFineOffset: 0, dlFineOffset: 0, manualDlOffset: -40347 });
+  assert.strictEqual(state.applyUlDial(500), true);
+  assert.strictEqual(r.getRadioState().manualDlOffset, -39847, "kept the existing manual offset, moved it");
+  assert.strictEqual(state.applyUlDial(0), false);
+});
