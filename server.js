@@ -327,6 +327,16 @@ function applyProfileToRuntime(prof) {
   aprsService.configure(cfg.aprs, { profile: profiles.getActiveName() });
 }
 
+/**
+ * Toggle saves ("fav-overlay-set", "auto-select-set", "alerts-set") carrying a
+ * client seq: answer the sender after the broadcasts so it knows every later
+ * message already includes this change (js/set-guard.js, latest click wins).
+ */
+function ackSet(ws, msg) {
+  if (!msg || !Number.isFinite(msg.seq) || !ws || ws.readyState !== 1) return;
+  try { ws.send(JSON.stringify({ type: "set-ack", seq: msg.seq })); } catch (_) {}
+}
+
 function broadcastProfiles() {
   broadcast(profiles.publicPayload());
 }
@@ -834,6 +844,7 @@ wss.on("connection", (ws, req) => {
         broadcastProfiles();
         const st = state.computeState();
         if (st) broadcast(st);
+        ackSet(ws, msg);
         return;
       }
 
@@ -845,6 +856,7 @@ wss.on("connection", (ws, req) => {
         broadcastProfiles();
         const st = state.computeState();
         if (st) broadcast(st);
+        ackSet(ws, msg);
         return;
       }
 
@@ -860,6 +872,7 @@ wss.on("connection", (ws, req) => {
         broadcastFavTracks(true);
         const fp = favProfileCached(false);
         if (fp) broadcast(fp);
+        ackSet(ws, msg);
         return;
       }
       if (msg.type === "globe-orbits-get" && Number.isFinite(msg.t)) {

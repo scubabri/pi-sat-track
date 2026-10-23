@@ -183,7 +183,11 @@
     alerts = C.pruneAlerts(next, Date.now()).alerts;
     try { localStorage.setItem(LS_ALERTS, JSON.stringify(alerts)); } catch (_) {}
     const s = sock();
-    if (s) s.send(JSON.stringify({ type: "alerts-set", alerts }));
+    if (s) {
+      const m = { type: "alerts-set", alerts };
+      if (guard) m.seq = guard.begin(["alerts"]); // latest click wins over stale echoes
+      s.send(JSON.stringify(m));
+    }
     paint();
   }
 
@@ -205,8 +209,14 @@
     }
   }
 
+  // js/set-guard.js: while a bell change is un-acked, "profiles" echoes are
+  // remembered (lastProfileMsg) and re-applied on ack instead of reverting it.
+  let lastProfileMsg = null;
+  const guard = typeof createSetGuard === "function" ? createSetGuard({ onRelease: () => { if (lastProfileMsg) applyProfile(lastProfileMsg); } }) : null;
   function applyProfile(msg) {
     if (!msg || !msg.alerts) return;
+    lastProfileMsg = msg;
+    if (guard && guard.held("alerts")) return;
     alerts = C.normalizeAlerts(msg.alerts);
     try { localStorage.setItem(LS_ALERTS, JSON.stringify(alerts)); } catch (_) {}
     // favorites may have changed in the same payload; sat-menu applies them first
@@ -373,6 +383,7 @@
     paint,
     // called from js/tracker.js; never let an alert bug break its handler
     onProfiles: (msg) => { try { applyProfile(msg); } catch (e) { console.warn("pass alerts", e); } },
+    onAck: (seq) => { if (guard) guard.ack(seq); },
     onState: (msg) => { try { applyState(msg); } catch (e) { console.warn("pass alerts", e); } },
     playDing,
     unlockAudio,

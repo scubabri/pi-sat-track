@@ -1,6 +1,6 @@
 // Map Favorites "Footprints" sub-toggle (js/fav-overlay.js + lib/profiles.js):
 // saved per station profile (favOverlay.footprints, default off); when on, a
-// faint dashed footprint only for favorites up or rising within 15 min (no TLE
+// faint dashed footprint for every favorite with a position (no TLE
 // -> none); when off, no favorite rings at all. Real js/fav-overlay.js with a
 // fake Leaflet / DOM / socket.
 const test = require("node:test");
@@ -87,6 +87,7 @@ const favs = [
   { key: "SOONISO", position: pos, look: { el: -30 }, nextPass: { aos: new Date(now + 5 * 60e3).toISOString() } },
   { key: "NOTLE", position: null, look: null },
   { key: "SEL", position: pos, look: { el: 30 } },
+  { key: "MOON", position: pos, look: { el: 30 }, isMoon: true },
 ];
 const tracks = favs.map((f) => ({ key: f.key, trail: [], forward: [] }));
 
@@ -99,7 +100,7 @@ test("Footprints button sits right below Favorites with the standard toggle clas
   assert(!fp.cls.has("active"), "default off");
 });
 
-test("off: no favorite rings; on: faint dashed rings only for up / rising <15 min", () => {
+test("off: no favorite rings; on: faint dashed rings for every favorite (not selected / Moon / no TLE)", () => {
   const s = sandbox();
   s.emit({ type: "profiles", active: "A", favOverlay: { on: true, shown: null } });
   s.emit({ type: "fav-tracks", current: "SEL", tracks });
@@ -107,9 +108,11 @@ test("off: no favorite rings; on: faint dashed rings only for up / rising <15 mi
   assert.strictEqual(s.circles().length, 0, "off -> clean map");
   s.emit({ type: "profiles", active: "A", favOverlay: { on: true, shown: null, footprints: true } });
   const c = s.circles();
-  assert.strictEqual(c.length, 3, "UP + SOON + SOONISO only (LATER too far, NOTLE no position, SEL drawn by map.js)");
+  assert.strictEqual(c.length, 4, "UP + SOON + LATER + SOONISO, wherever they are (NOTLE no position, SEL drawn by map.js, no Moon ring)");
   for (const x of c) {
-    assert(x.options.fillOpacity <= 0.04 && x.options.opacity < 0.55 && x.options.dashArray, "much dimmer than selected (fill .06 / .55 solid)");
+    // A bit stronger than the first cut (fill .04 / outline .28), still under the selected (fill .06 / .55 solid).
+    assert(x.options.fillOpacity > 0.04 && x.options.fillOpacity < 0.06, "fill " + x.options.fillOpacity);
+    assert(x.options.opacity > 0.28 && x.options.opacity < 0.55 && x.options.dashArray, "outline " + x.options.opacity);
   }
   assert(s.bar.kids[1].cls.has("active"));
   // Clicking turns it off, saves to the profile, removes the rings.

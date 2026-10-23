@@ -158,10 +158,25 @@ function updateAutoSelectUi(on) {
   btn.textContent = autoSelectOn ? "Auto Select ON" : "Auto Select";
 }
 
+// Latest click wins (js/set-guard.js): until the server acks this set, the
+// "profiles" / "state" values for Auto Select are remembered, not applied.
+let lastServerAutoSelect = null;
+const autoSelectGuard = typeof createSetGuard === "function"
+  ? createSetGuard({ onRelease: () => { if (lastServerAutoSelect != null) updateAutoSelectUi(lastServerAutoSelect); } })
+  : null;
+/** Auto Select as reported by the server (profiles payload / state.afterLos). */
+function applyServerAutoSelect(on) {
+  lastServerAutoSelect = !!on;
+  if (autoSelectGuard && autoSelectGuard.held("autoSelect")) return;
+  updateAutoSelectUi(on);
+}
+
 function sendAutoSelect(on) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   updateAutoSelectUi(on); // optimistic; server broadcast confirms
-  ws.send(JSON.stringify({ type: "auto-select-set", on: !!on }));
+  const m = { type: "auto-select-set", on: !!on };
+  if (autoSelectGuard) m.seq = autoSelectGuard.begin(["autoSelect"]);
+  ws.send(JSON.stringify(m));
 }
 
 function updateAntennaUi(on, azConnected, elConnected) {
@@ -526,8 +541,15 @@ function connectTracker() {
         if (typeof applyProfilesMessage === "function") {
           applyProfilesMessage(msg);
         }
-        updateAutoSelectUi(msg.autoSelect === true);
+        applyServerAutoSelect(msg.autoSelect === true);
         if (window.PassAlerts) window.PassAlerts.onProfiles(msg);
+        return;
+      }
+
+      if (msg.type === "set-ack") {
+        // Toggle save acknowledged (js/set-guard.js); fav-overlay.js has its own listener.
+        if (autoSelectGuard) autoSelectGuard.ack(msg.seq);
+        if (window.PassAlerts && window.PassAlerts.onAck) window.PassAlerts.onAck(msg.seq);
         return;
       }
 
