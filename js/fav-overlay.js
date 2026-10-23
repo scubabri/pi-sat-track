@@ -22,9 +22,10 @@
   const items = new Map(); // key -> { color, lines:[], dot, circle }
   let fpOn = localStorage.getItem(LS_KEY + "Fp") === "1";
   let fpBtn = null;
-  // Favorites' footprints must read as background: well under the selected
-  // sat's (fill 0.06 / solid outline 0.55, map.js).
-  const FP = { fill: 0.04, opacity: 0.28, weight: 0.75, dash: "3 5" };
+  // Favorites' footprints must read as background: still under the selected
+  // sat's (fill 0.06 / solid 1 px outline 0.55, map.js). The globe
+  // (js/globe-view.js) scales its own favorite footprints the same way.
+  const FP = { fill: 0.05, opacity: 0.42, weight: 1, dash: "4 4" };
   const FP_NEAR_EL = -5; // deg: just set / about to rise still counts
   const FP_AOS_SOON_MS = 15 * 60e3; // or AOS within 15 min
   /** Favorite worth a footprint: up (el >= -5 deg) or AOS within 15 min of `now`. */
@@ -38,6 +39,9 @@
     return aos > 0 && aos <= FP_AOS_SOON_MS;
   }
   window.__favFpNear = fpNear; // tests
+  // Shared with the 3D globe (js/globe-view.js) so both views agree.
+  window.favFootprintNear = fpNear;
+  window.isFavFootprintsOn = () => fpOn;
   const colorFor = (key) => (typeof favColor === "function" ? favColor(key) : "#b07cc6");
 
   function getMap() { return typeof map !== "undefined" && map ? map : null; }
@@ -184,7 +188,7 @@
           opacity: hi ? (fwd ? 0.85 : 1) : dim ? 0.12 : fwd ? 0.45 : 0.6,
         });
       });
-      if (it.circle) it.circle.setStyle({ opacity: hi ? 0.6 : dim ? 0.1 : FP.opacity, weight: hi ? 1.25 : FP.weight, fillOpacity: hi ? 0.05 : dim ? 0.015 : FP.fill });
+      if (it.circle) it.circle.setStyle({ opacity: hi ? 0.65 : dim ? 0.12 : FP.opacity, weight: hi ? 1.25 : FP.weight, fillOpacity: hi ? 0.07 : dim ? 0.02 : FP.fill });
       if (it.dot) it.dot.setStyle({ radius: hi ? 6 : 4, fillOpacity: dim ? 0.35 : 1, opacity: dim ? 0.35 : 1 });
       const tt = it.hit && it.hit.getTooltip && it.hit.getTooltip();
       const el = tt && tt.getElement && tt.getElement();
@@ -294,10 +298,12 @@
   }
 
   function setFp(v) {
+    const changed = !!v !== fpOn;
     fpOn = !!v;
     localStorage.setItem(LS_KEY + "Fp", fpOn ? "1" : "0");
     syncBtn();
     if (lastSt) updatePositions(lastSt);
+    if (changed) document.dispatchEvent(new CustomEvent("fav-footprints-change", { detail: { footprints: fpOn } }));
   }
 
   function addButton() {

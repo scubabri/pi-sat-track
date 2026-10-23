@@ -109,7 +109,9 @@ test("off: no favorite rings; on: faint dashed rings only for up / rising <15 mi
   const c = s.circles();
   assert.strictEqual(c.length, 3, "UP + SOON + SOONISO only (LATER too far, NOTLE no position, SEL drawn by map.js)");
   for (const x of c) {
-    assert(x.options.fillOpacity <= 0.04 && x.options.opacity < 0.55 && x.options.dashArray, "much dimmer than selected (fill .06 / .55 solid)");
+    // A bit stronger than the first cut (fill .04 / outline .28), still under the selected (fill .06 / .55 solid).
+    assert(x.options.fillOpacity > 0.04 && x.options.fillOpacity < 0.06, "fill " + x.options.fillOpacity);
+    assert(x.options.opacity > 0.28 && x.options.opacity < 0.55 && x.options.dashArray, "outline " + x.options.opacity);
   }
   assert(s.bar.kids[1].cls.has("active"));
   // Clicking turns it off, saves to the profile, removes the rings.

@@ -568,7 +568,7 @@
     const fillGeo = new m.SphereGeometry(m.R, 64, Math.max(8, Math.ceil(lam * 24)), 0, Math.PI * 2, 0, lam);
     m.fill.geometry.dispose();
     m.fill.geometry = fillGeo;
-    const band = 0.0035; // ~0.2 deg visual width
+    const band = m.band || 0.0035; // ~0.2 deg visual width
     const ringGeo = new m.SphereGeometry(m.R * 1.0004, 96, 3, 0, Math.PI * 2, Math.max(0, lam - band / 2), band);
     m.ring.geometry.dispose();
     m.ring.geometry = ringGeo;
@@ -580,6 +580,9 @@
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || !(hKm > 0)) return;
     const m = ensureFpMesh();
     if (!m) return;
+    orientFpGroup(m, lat, lng, hKm);
+  }
+  function orientFpGroup(m, lat, lng, hKm) {
     const lam = Math.acos(RE_KM / (RE_KM + hKm));
     if (!(lam > 1e-4)) { m.group.visible = false; return; }
     m.group.visible = true;
@@ -594,6 +597,93 @@
 
   function hideFpMesh() {
     if (fpMesh && fpMesh.group) fpMesh.group.visible = false;
+  }
+
+  /*
+   * Favorite footprints (map "Footprints" sub-toggle, js/fav-overlay.js): same
+   * rule as the 2D map — Favorites overlay on, Footprints on, favorite shown,
+   * not the selected sat, not the Moon, has a position (TLE) and is up or
+   * rising within 15 min (window.favFootprintNear). One small fill + ring
+   * group per favorite, built with the selected footprint's three.js
+   * constructors, moved in applyState (2 s) and disposed when no longer wanted.
+   * Styled like the map relative to the selected footprint: the selected globe
+   * footprint is fill 0.22 / ring 0.95, a favorite fill 0.08 / ring 0.45 with a
+   * thinner ring, slightly below and drawn before the selected one.
+   */
+  const FAV_FP = { fill: 0.08, ring: 0.45, band: 0.0022, rScale: 1.0040 };
+  const favFp = new Map(); // key -> { group, fill, ring, lam, R, band, color, ... }
+  function favFpOn() { return favOn() && typeof window.isFavFootprintsOn === "function" && window.isFavFootprintsOn(); }
+  /** Favorites (from a state snapshot) that should get a globe footprint now. */
+  function favFootprintList(st, now) {
+    if (!st || !favFpOn()) return [];
+    const near = typeof window.favFootprintNear === "function" ? window.favFootprintNear : null;
+    if (!near) return [];
+    const shown = typeof window.favOverlayShown === "function" ? window.favOverlayShown() : null;
+    const ok = shown ? new Set(shown) : null;
+    const out = [];
+    for (const f of st.favorites || []) {
+      if (!f || f.key === st.sat || f.isMoon || (ok && !ok.has(f.key))) continue;
+      const p = f.position;
+      if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon) || !(p.heightKm > 0)) continue;
+      if (!near(f, now)) continue;
+      out.push(f);
+    }
+    return out;
+  }
+  window.__globeFavFpKeys = (st, now) => favFootprintList(st || lastState, now != null ? now : Date.now()).map((f) => f.key); // tests
+  window.__globeFavFp = () => favFp; // tests / debug
+  function makeFavFp(color) {
+    const base = ensureFpMesh();
+    if (!base || !base.group || !base.group.parent) return null;
+    const R = G.getGlobeRadius() * FAV_FP.rScale;
+    const mat = (op) => {
+      const m = new base.Mat({ color, transparent: true, opacity: op, depthWrite: false, shininess: 0, side: 2 });
+      if (m.specular) m.specular.setRGB(0, 0, 0);
+      return m;
+    };
+    const Object3D = base.group.constructor;
+    const group = new Object3D();
+    group.name = "fav-footprint";
+    const fill = new base.Mesh(new base.SphereGeometry(R, 8, 2, 0, Math.PI * 2, 0, 0.01), mat(FAV_FP.fill));
+    fill.raycast = () => {};
+    fill.renderOrder = -0.5; // after the night shell (-1), before the selected footprint (0 / 1)
+    fill.name = "fav-footprint-fill";
+    const ring = new base.Mesh(new base.SphereGeometry(R, 8, 2, 0, Math.PI * 2, 0.009, 0.002), mat(FAV_FP.ring));
+    ring.raycast = () => {};
+    ring.renderOrder = -0.4;
+    ring.name = "fav-footprint-ring";
+    group.add(fill);
+    group.add(ring);
+    base.group.parent.add(group);
+    return { group, fill, ring, lam: -1, R, band: FAV_FP.band, color, V3: base.V3, Quat: base.Quat, SphereGeometry: base.SphereGeometry };
+  }
+  function dropFavFp(key) {
+    const m = favFp.get(key);
+    if (!m) return;
+    favFp.delete(key);
+    if (m.group.parent) m.group.parent.remove(m.group);
+    for (const o of [m.fill, m.ring]) {
+      if (o.geometry && o.geometry.dispose) o.geometry.dispose();
+      if (o.material && o.material.dispose) o.material.dispose();
+    }
+  }
+  /** Create / move / drop the favorite footprint groups for this snapshot. */
+  function updateFavFootprints(st, now) {
+    const want = favFootprintList(st, now);
+    const keep = new Set();
+    for (const f of want) {
+      let m = favFp.get(f.key);
+      const col = colorOf(f.key);
+      if (!m) { m = makeFavFp(col); if (!m) break; favFp.set(f.key, m); }
+      else if (m.color !== col) {
+        m.color = col;
+        m.fill.material.color.set(col);
+        m.ring.material.color.set(col);
+      }
+      orientFpGroup(m, f.position.lat, f.position.lon, f.position.heightKm);
+      keep.add(f.key);
+    }
+    for (const k of [...favFp.keys()]) if (!keep.has(k)) dropFavFp(k);
   }
 
   /**
@@ -919,7 +1009,7 @@
     const pT = pvSel ? pp.get() : null;
     const st = !pp || !pp.get() ? lastState : Object.assign({}, lastState, {
       position: pvSel ? pvSel.position : lastState.position,
-      favorites: (lastState.favorites || []).map((f) => { const v = f && pp.posOf(f.key); return v ? Object.assign({}, f, { position: v.position }) : f; }),
+      favorites: (lastState.favorites || []).map((f) => { const v = f && pp.posOf(f.key); return v ? Object.assign({}, f, { position: v.position, look: v.look || f.look }) : f; }),
     });
     const keep = new Set();
     if (st.position && Number.isFinite(st.position.lat)) {
@@ -967,6 +1057,7 @@
         keep.add(f.key);
       }
     }
+    updateFavFootprints(st, pp && pp.get && pp.get() != null ? pp.get() : now);
     for (const k of [...pts.keys()]) if (!keep.has(k)) pts.delete(k);
     pts.forEach(styleDot);
     const extra = [];
@@ -1128,6 +1219,7 @@
     const t = setInterval(() => { if (addButton()) clearInterval(t); }, 300);
     document.addEventListener("visibilitychange", onVisibility);
     document.addEventListener("fav-overlay-change", () => { requestOrbits(); renderPaths(); applyState(true); });
+    document.addEventListener("fav-footprints-change", () => applyState(true));
     if (mode === "globe") setMode("globe", false);
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
