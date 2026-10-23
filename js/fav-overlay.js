@@ -307,7 +307,7 @@
       e.stopPropagation();
       if (e.target && e.target.closest && e.target.closest(".fav-pick-caret")) { togglePicker(); return; }
       setOn(!on);
-      sendSet({ on });
+      sendSet({ on }, true);
     });
     bar.insertBefore(btn, sked);
     // Footprints sub-toggle directly below Favorites (standard toggle style).
@@ -320,7 +320,7 @@
       e.preventDefault();
       e.stopPropagation();
       setFp(!fpOn);
-      sendSet({ footprints: fpOn });
+      sendSet({ footprints: fpOn }, true);
     });
     bar.insertBefore(fpBtn, sked);
     syncBtn();
@@ -337,7 +337,10 @@
           currentKey = msg.current || currentKey;
           drawTracks();
         } else if (msg.type === "profiles") {
+          lastProfileMsg = msg;
           applyProfile(msg);
+        } else if (msg.type === "set-ack") {
+          if (guard) guard.ack(msg.seq);
         } else if (msg.type === "state") {
           if (msg.sat && msg.sat !== currentKey) { currentKey = msg.sat; drop(currentKey); }
           updatePositions(msg);
@@ -349,7 +352,18 @@
     else ws.addEventListener("open", request);
   }
 
-  function sendSet(o) { const s = sock(); if (s) s.send(JSON.stringify(Object.assign({ type: "fav-overlay-set" }, o))); }
+  // User clicks are guarded (js/set-guard.js): until the server acks this
+  // set, "profiles" echoes can't flip on / shown / footprints back.
+  let lastProfileMsg = null;
+  const guard = typeof createSetGuard === "function" ? createSetGuard({ onRelease: () => { if (lastProfileMsg) applyProfile(lastProfileMsg); } }) : null;
+  function sendSet(o, user) {
+    const s = sock();
+    if (!s) return;
+    const m = Object.assign({ type: "fav-overlay-set" }, o);
+    if (user && guard) m.seq = guard.begin(Object.keys(o));
+    s.send(JSON.stringify(m));
+  }
+  const held = (f) => !!(guard && guard.held(f));
 
   function fireChange() {
     document.dispatchEvent(new CustomEvent("fav-overlay-change", { detail: { on, shown } }));
@@ -377,12 +391,15 @@
       renderPicker();
       return;
     }
+    // Fields with an un-acked local change keep the local value (stale echo).
     const nextShown = Array.isArray(fo.shown) ? fo.shown.slice() : null;
-    const shownChanged = JSON.stringify(nextShown) !== JSON.stringify(shown);
-    shown = nextShown;
-    try { localStorage.setItem(LS_KEY + "Shown", JSON.stringify(shown)); } catch (_) {}
-    if (!!fo.footprints !== fpOn) setFp(!!fo.footprints);
-    if (!!fo.on !== on) setOn(!!fo.on);
+    const shownChanged = !held("shown") && JSON.stringify(nextShown) !== JSON.stringify(shown);
+    if (!held("shown")) {
+      shown = nextShown;
+      try { localStorage.setItem(LS_KEY + "Shown", JSON.stringify(shown)); } catch (_) {}
+    }
+    if (!held("footprints") && !!fo.footprints !== fpOn) setFp(!!fo.footprints);
+    if (!held("on") && !!fo.on !== on) setOn(!!fo.on);
     else if (shownChanged || prevName !== profileName) { request(); fireChange(); }
     renderPicker();
   }
@@ -420,12 +437,12 @@
       const keys = [...picker.querySelectorAll("input[data-key]")].filter((c) => c.checked).map((c) => c.dataset.key);
       const all = keys.length === favs.length;
       shown = all ? null : keys;
-      sendSet({ shown, on: true });
+      sendSet({ shown, on: true }, true);
     }));
     picker.querySelectorAll("a[data-act]").forEach((a) => a.addEventListener("click", (e) => {
       e.preventDefault();
       shown = a.dataset.act === "all" ? null : [];
-      sendSet({ shown, on: true });
+      sendSet({ shown, on: true }, true);
       renderPicker();
     }));
   }

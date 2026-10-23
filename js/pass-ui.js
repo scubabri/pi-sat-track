@@ -318,7 +318,8 @@ function updateAfterLosIndicator(state) {
   const el = document.getElementById("after-los-ind");
   if (!el) return;
   const a = state && state.afterLos;
-  if (a && typeof updateAutoSelectUi === "function") updateAutoSelectUi(a.autoSelect === true);
+  if (a && typeof applyServerAutoSelect === "function") applyServerAutoSelect(a.autoSelect === true);
+  else if (a && typeof updateAutoSelectUi === "function") updateAutoSelectUi(a.autoSelect === true);
   const wantPark = !!a && a.mode === "park";
   const wantAuto = !!a && a.autoSelect === true;
   if (!wantPark && !wantAuto) {
