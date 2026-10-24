@@ -1,7 +1,7 @@
 /**
  * Flex SmartSDR global profile dropdown — own row above Uplink.
  * Always visible. Greyed/disabled for non-Flex radios or when API is down
- * (same idea as CW greyed on FM). Blank = "(no change)".
+ * (same idea as CW greyed on FM). Blank = "Select Profile" (nothing loaded).
  */
 (function () {
   let supported = false;
@@ -23,7 +23,7 @@
     sel.innerHTML = "";
     const blank = document.createElement("option");
     blank.value = "";
-    blank.textContent = "(no change)";
+    blank.textContent = "Select Profile";
     sel.appendChild(blank);
     for (const n of names) {
       const opt = document.createElement("option");
@@ -50,8 +50,8 @@
         : !hasList
           ? "Connected — waiting for profile list…"
           : selected
-            ? 'SmartSDR global profile: "' + selected + '" — blank = no change'
-            : "SmartSDR global profile for this satellite (blank = no change)";
+            ? 'SmartSDR global profile: "' + selected + '" — blank = none loaded'
+            : "SmartSDR global profile for this satellite (blank = none loaded)";
     rebuildOptions();
   }
 
