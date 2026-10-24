@@ -249,7 +249,6 @@
 .role-select-wrap .mode-select { margin-top: 0; }
 .role-select-wrap .mode-select.ul { border-color: rgba(88, 166, 255, .45); }
 .role-select-wrap .mode-select.dl { border-color: rgba(63, 185, 80, .45); }
-.role-saved { font-size: 11px; color: #6e7681; margin-top: 3px; }
 /* Leg Disabled for this sat (Radio dropdown = Disabled, js/radio-roles.js). */
 .freq-block.role-off .freq-value { color: #6e7681 !important; opacity: .7; font-style: italic; }
 .freq-block.role-off .freq-label,

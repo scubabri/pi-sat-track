@@ -69,11 +69,6 @@
       // Never both legs: the other side's Disabled can't be picked meanwhile.
       const offOpt = [...(sel.options || [])].find((o) => o.value === OFF);
       if (offOpt) offOpt.disabled = !!off && off !== side;
-      const saved = el("radio-role-" + side + "-saved");
-      if (saved) {
-        const where = m.profile ? " \u00b7 " + m.profile : "";
-        saved.textContent = m.saved ? "Saved for " + (m.sat || "this sat") + where : "Profile default" + where;
-      }
     }
     paintOff();
     // Flex Profile label: which radio / role the Flex is on now.

@@ -280,7 +280,7 @@ function panel() {
     Object.defineProperty(e, "innerHTML", { set(v) { if (v === "") e.options = []; }, get() { return ""; } });
     return e;
   };
-  for (const id of ["radio-role-ul-wrap", "radio-role-dl-wrap", "radio-role-ul", "radio-role-dl", "radio-role-ul-saved", "radio-role-dl-saved",
+  for (const id of ["radio-role-ul-wrap", "radio-role-dl-wrap", "radio-role-ul", "radio-role-dl", 
     "freq-ul", "freq-dl", "freq-ul-doppler", "freq-dl-doppler", "btn-fine-ul-minus", "btn-fine-ul-plus", "btn-fine-dl-minus", "btn-fine-dl-plus", "flex-profile-label"]) els[id] = mk(id);
   const blocks = { ul: mk("block-ul"), dl: mk("block-dl") };
   els["freq-ul"].closest = () => blocks.ul;
