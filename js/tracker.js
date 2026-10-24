@@ -343,6 +343,9 @@ function applyFreqAndLook(msg) {
     if (lvl) dlEl.title = ob.text;
     else if (dlDop == null && /^(Out of band|Station frequency outside)/.test(dlEl.title)) dlEl.title = "";
   }
+  // Two radios, one leg Disabled for this sat (js/radio-roles.js): its readout
+  // reads "Disabled" instead of a frequency nothing is tuned to.
+  if (typeof window.radioRolesPaintOff === "function") window.radioRolesPaintOff();
 
   if (pbUl) pbUl.textContent = msg.passbandUl || "-";
   if (pbDl) pbDl.textContent = msg.passbandDl || "-";
