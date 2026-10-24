@@ -53,9 +53,9 @@ test("passForPreview: past preview time", () => {
   // In a pass that is still running now -> that pass.
   const running = { aos: iso(NOW - 5 * MIN), los: iso(NOW + 5 * MIN) };
   assert.strictEqual(C.passForPreview([running, P1], NOW - 2 * MIN, NOW).aosMs, ms(running.aos));
-  // Past and between passes: the pass right after it may be a finished one the
-  // list no longer holds -> no bell rather than a wrong pass.
-  assert.strictEqual(C.passForPreview([P1, P2], NOW - 60 * MIN, NOW), null);
+  // Past and between passes (incl. Preview "now", which trails the clock):
+  // counts as now -> the next upcoming pass (Next Passes row #1), not "no bell".
+  assert.strictEqual(C.passForPreview([P1, P2], NOW - 60 * MIN, NOW).aosMs, ms(P1.aos));
 });
 
 /* ---------------- banner bell <-> Next Passes bell ---------------- */

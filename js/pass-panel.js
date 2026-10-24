@@ -93,6 +93,65 @@ function togglePassDrawer(e) {
   setPassDrawerOpen(!passDrawerOpen);
 }
 
+/** Set text only when it changed (no DOM churn on the 1 s refresh). */
+function setPassCellText(el, txt) {
+  if (el.textContent !== txt) el.textContent = txt;
+}
+
+/**
+ * One Next Passes row: built once, then updated in place. The rows are
+ * refreshed every second (countdown) and on every "state" message; rebuilding
+ * them (innerHTML) replaced the bell under the pointer between pointerdown and
+ * pointerup, so the browser fired no click on it and the single-pass alert
+ * never toggled (worst on a busy Pi / touch screen). The bell element must
+ * stay the same node; only its data-sat / data-aos / data-los change.
+ */
+function passRowEl(body, idx) {
+  let row = body.children[idx];
+  if (row && row.classList && row.classList.contains("pass-row-item") && row.__passCells) return row;
+  row = document.createElement("div");
+  row.className = "pass-row-item";
+  const mk = (cls) => {
+    const c = document.createElement("span");
+    c.className = "pass-cell " + cls;
+    row.appendChild(c);
+    return c;
+  };
+  const cells = {
+    alert: mk("pass-alert"),
+    idx: mk("pass-idx"),
+    aos: mk("pass-time"),
+    los: mk("pass-time"),
+    maxEl: mk("pass-num"),
+    dur: mk("pass-num"),
+    aosAz: mk("pass-num"),
+    status: mk("pass-status"),
+  };
+  row.__passCells = cells;
+  if (idx < body.children.length) body.insertBefore(row, body.children[idx]);
+  else body.appendChild(row);
+  return row;
+}
+
+function syncPassRowBell(cell, sat, aosMs, losMs) {
+  let bell = cell.querySelector(".sat-alert");
+  if (!sat || !Number.isFinite(aosMs)) {
+    if (bell) bell.remove();
+    return;
+  }
+  if (!bell) {
+    bell = document.createElement("button");
+    bell.type = "button";
+    bell.className = "sat-alert";
+    bell.setAttribute("data-alert", "pass");
+    cell.appendChild(bell);
+  }
+  const los = Number.isFinite(losMs) ? String(losMs) : "";
+  if (bell.getAttribute("data-sat") !== String(sat)) bell.setAttribute("data-sat", String(sat));
+  if (bell.getAttribute("data-aos") !== String(aosMs)) bell.setAttribute("data-aos", String(aosMs));
+  if (bell.getAttribute("data-los") !== los) bell.setAttribute("data-los", los);
+}
+
 function renderPassPanel() {
   const body = document.getElementById("pass-panel-body");
   if (!body) return;
@@ -100,29 +159,39 @@ function renderPassPanel() {
   const passes = (lastPassList || []).slice(0, 5);
   updatePassDrawerChrome((lastPassList || []).length);
 
-  body.innerHTML = "";
-
   if (!passes.length) {
-    const empty = document.createElement("div");
-    empty.className = "pass-panel-empty";
-    empty.textContent = lastPassListSat
+    const msg = lastPassListSat
       ? "No upcoming passes computed"
       : "Select a satellite to see upcoming passes";
+    const first = body.children[0];
+    if (body.children.length === 1 && first.classList.contains("pass-panel-empty")) {
+      setPassCellText(first, msg);
+      return;
+    }
+    body.innerHTML = "";
+    const empty = document.createElement("div");
+    empty.className = "pass-panel-empty";
+    empty.textContent = msg;
     body.appendChild(empty);
     return;
   }
 
+  // Drop the empty-state note / surplus rows; keep existing rows (and bells).
+  Array.from(body.children).forEach((c, i) => {
+    if (!c.classList.contains("pass-row-item") || i >= passes.length) c.remove();
+  });
+
   const now = Date.now();
   passes.forEach((p, idx) => {
-    const row = document.createElement("div");
+    const row = passRowEl(body, idx);
+    const cells = row.__passCells;
     const aosMs = new Date(p.aos).getTime();
     const losMs = new Date(p.los).getTime();
     const inPass = now >= aosMs && now <= losMs;
     const past = now > losMs;
-    row.className =
-      "pass-row-item" + (inPass ? " in-pass" : past ? " past" : "");
+    const cls = "pass-row-item" + (inPass ? " in-pass" : past ? " past" : "");
+    if (row.className !== cls) row.className = cls;
 
-    const status = passStatusLabel(p, now);
     const maxEl =
       p.maxEl != null && Number.isFinite(p.maxEl)
         ? Number(p.maxEl).toFixed(1) + "\u00B0"
@@ -133,38 +202,14 @@ function renderPassPanel() {
         : "\u2014";
 
     // Pass alert bell (js/pass-alerts.js paints on/inherited/off + clicks).
-    const bell =
-      lastPassListSat && Number.isFinite(aosMs)
-        ? '<button type="button" class="sat-alert" data-alert="pass" data-sat="' +
-          String(lastPassListSat).replace(/"/g, "&quot;") +
-          '" data-aos="' + aosMs + '" data-los="' + (Number.isFinite(losMs) ? losMs : "") +
-          '"></button>'
-        : "";
-    row.innerHTML =
-      '<span class="pass-cell pass-alert">' + bell + "</span>" +
-      '<span class="pass-cell pass-idx">' +
-      (idx + 1) +
-      "</span>" +
-      '<span class="pass-cell pass-time">' +
-      passTimeText(p.aos) +
-      "</span>" +
-      '<span class="pass-cell pass-time">' +
-      passTimeText(p.los) +
-      "</span>" +
-      '<span class="pass-cell pass-num">' +
-      maxEl +
-      "</span>" +
-      '<span class="pass-cell pass-num">' +
-      passDurLabel(p.aos, p.los) +
-      "</span>" +
-      '<span class="pass-cell pass-num">' +
-      aosAz +
-      "</span>" +
-      '<span class="pass-cell pass-status">' +
-      status +
-      "</span>";
-
-    body.appendChild(row);
+    syncPassRowBell(cells.alert, lastPassListSat, aosMs, losMs);
+    setPassCellText(cells.idx, String(idx + 1));
+    setPassCellText(cells.aos, passTimeText(p.aos));
+    setPassCellText(cells.los, passTimeText(p.los));
+    setPassCellText(cells.maxEl, maxEl);
+    setPassCellText(cells.dur, passDurLabel(p.aos, p.los));
+    setPassCellText(cells.aosAz, aosAz);
+    setPassCellText(cells.status, passStatusLabel(p, now));
   });
   if (window.PassAlerts) window.PassAlerts.paint(body);
 }
