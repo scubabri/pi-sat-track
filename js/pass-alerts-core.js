@@ -251,9 +251,11 @@
    *   server findPasses with the rotor min-EL cutoff, so "a pass" means the
    *   same thing as a Next Passes row). t: preview time, now: wall clock.
    * Returns { aosMs, losMs } of the pass containing t (AOS <= t <= LOS), else
-   * of the first pass starting after t, else null. A past t between passes
-   * gives null: the list only holds passes still running at `now`, so the
-   * pass right after t may be an already finished one that is not listed.
+   * of the first pass starting after t, else null.
+   * A t before `now` (Preview "now": the banner time trails the wall clock by
+   * a few seconds/minutes; or any past time) counts as `now`: the list only
+   * holds passes still running at `now`, so the answer is the pass in progress
+   * or the next upcoming one (Next Passes row #1), never "no bell".
    */
   function passForPreview(passes, t, now) {
     t = Number(t);
@@ -271,7 +273,11 @@
     const end = (p) => (p.losMs != null ? p.losMs : p.aosMs + DEFAULT_PASS_MS);
     const inPass = list.find((p) => t >= p.aosMs && t <= end(p));
     if (inPass) return inPass;
-    if (Number.isFinite(Number(now)) && t < Number(now)) return null;
+    if (Number.isFinite(Number(now)) && t < Number(now)) {
+      // Past / "now" preview between passes -> the pass running now, else the next one.
+      const n = Number(now);
+      return list.find((p) => n >= p.aosMs && n <= end(p)) || list.find((p) => p.aosMs > n) || null;
+    }
     return list.find((p) => p.aosMs > t) || null;
   }
 
