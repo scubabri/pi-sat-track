@@ -25,7 +25,7 @@ function setCenterChoice(choice) {
   try {
     localStorage.setItem(MAP_CENTER_KEY, choice);
   } catch (e) {}
-  document.querySelectorAll(".map-center-btn").forEach(function (b) {
+  document.querySelectorAll(".map-center-btn[data-center]").forEach(function (b) {
     b.classList.toggle("active", b.dataset.center === choice);
   });
 }
@@ -43,6 +43,14 @@ function centerMidAtlantic() {
   if (!map) return;
   map.setView([MID_ATLANTIC_VIEW.lat, MID_ATLANTIC_VIEW.lon], MID_ATLANTIC_VIEW.zoom);
 }
+
+/** Small line-art satellite (body + two panels + dish) for the Follow satellite button. */
+const SAT_FOLLOW_SVG =
+  '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round">' +
+  '<rect x="9.2" y="9.2" width="5.6" height="5.6" rx="0.8" transform="rotate(45 12 12)"/>' +
+  '<path d="M8.2 8.2 4.9 4.9M2.4 7.4l5-5 3 3-5 5zM15.8 15.8l3.3 3.3M21.6 16.6l-5 5-3-3 5-5z"/>' +
+  '<path d="M15.2 8.8a3 3 0 0 0 0-3.4M17.6 6.4a6 6 0 0 0 0-1.8" stroke-width="1.4"/>' +
+  "</svg>";
 
 function initMap() {
   map = L.map("map", {
@@ -98,6 +106,8 @@ function initMap() {
         if (getCenterChoice() === choice) btn.classList.add("active");
         L.DomEvent.on(btn, "click", function (e) {
           L.DomEvent.preventDefault(e);
+          // Centering on the station / mid-Atlantic ends Follow satellite.
+          if (window.satFollow) window.satFollow.set(false, { source: "center" });
           setCenterChoice(choice);
           fn();
         });
@@ -105,6 +115,19 @@ function initMap() {
       L.DomEvent.disableClickPropagation(container);
       mkBtn("station", "Center on station (keep zoom)", "Center on station", "&#8982;", centerOnStation);
       mkBtn("atlantic", "Center mid-Atlantic", "Center mid-Atlantic", "&#127760;&#xFE0E;", centerMidAtlantic);
+      // Follow satellite toggle (js/sat-follow.js: one state shared with the globe follow).
+      const fb = L.DomUtil.create("a", "map-center-btn map-follow-btn", container);
+      fb.href = "#";
+      fb.title = "Follow satellite";
+      fb.setAttribute("role", "button");
+      fb.setAttribute("aria-label", "Follow satellite");
+      fb.setAttribute("aria-pressed", "false");
+      fb.innerHTML = SAT_FOLLOW_SVG;
+      L.DomEvent.on(fb, "click", function (e) {
+        L.DomEvent.preventDefault(e);
+        if (window.satFollow) window.satFollow.toggle();
+      });
+      if (window.satFollow) setTimeout(window.satFollow.syncButtons, 0);
 
       return container;
     },
@@ -432,6 +455,7 @@ function updateMapTracking(state) {
   }
 
   lastMapState = state;
+  if (window.satFollow) window.satFollow.onMapState(state); // live sample for Follow satellite
   // Pass preview: draw the selected sat at the preview time instead of now,
   // with a hollow red "now" ghost at the live position.
   const pv = window.passPreview && window.passPreview.posOf(state.sat);
@@ -443,8 +467,11 @@ function updateMapTracking(state) {
   } else if (nowGhost && map.hasLayer(nowGhost)) map.removeLayer(nowGhost);
 
   if (state.position) {
-    const lat = state.position.lat;
-    const lon = state.position.lon;
+    // Following in 2D (live view): the follow integrator owns the marker, so
+    // the 1 s server sample doesn't snap it (js/sat-follow.js).
+    const sp = !pv && window.satFollow ? window.satFollow.smoothPos(state.sat) : null;
+    const lat = sp ? sp.lat : state.position.lat;
+    const lon = sp ? sp.lon : state.position.lon;
     if (Number.isFinite(lat) && Number.isFinite(lon)) {
       if (!satMarker) {
         satMarker = L.circleMarker([lat, lon], {

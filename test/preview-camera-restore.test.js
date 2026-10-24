@@ -256,3 +256,43 @@ test("wiring: station button marks home; legend restores instead of snapping dur
   const ix = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
   assert.ok(ix.indexOf("js/preview-camera.js") > 0 && ix.indexOf("js/preview-camera.js") < ix.indexOf("js/globe-view.js"));
 });
+
+/* Regression (Brian): following, then switching the selected sat left the
+ * globe on the PREVIOUS sat. Any selection path ends in currentSatKey; the
+ * follow loop retargets to it at once and glides to the new sat's position. */
+test("regression: following -> selector pick (no preview) -> globe follows the new sat, glides there", async () => {
+  const realNow = Date.now;
+  let T = realNow();
+  Date.now = () => T;
+  try {
+    const s = await globe();
+    const q = [];
+    s.sb.requestAnimationFrame = (fn) => { q.push(fn); return q.length; };
+    const frames = (n) => { for (let i = 0; i < n; i++) { T += 16; const fn = q.shift(); if (fn) fn(T); } };
+    s.sb.globeSnapTo("ISS");
+    s.state("ISS", 10, 20);
+    frames(120);
+    assert.ok(Math.abs(last(s).lat - 10) < 0.5, "following ISS: " + JSON.stringify(last(s)));
+    s.sb.selectSatellite("FO-29", "FO-29"); // white selector / Favorites / Sked Finder ...
+    frames(2);
+    assert.strictEqual(s.sb.globeFollowing(), "FO-29", "retargeted before its first state");
+    s.state("FO-29", -20, 150);
+    frames(1);
+    assert.ok(last(s).lat > -15, "no snap across the globe: " + JSON.stringify(last(s)));
+    frames(150);
+    const p = last(s);
+    assert.ok(Math.abs(p.lat + 20) < 0.5 && Math.abs(p.lng - 150) < 0.5, "camera on FO-29: " + JSON.stringify(p));
+    assert.strictEqual(s.sb.globeFollowing(), "FO-29");
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test("regression: following -> server-side selection (Auto Select / another client) follows the new sat", async () => {
+  const s = await globe();
+  s.sb.globeSnapTo("ISS");
+  s.state("RS-44", -10, 100); // tracker sets currentSatKey, then the globe sees the state
+  assert.strictEqual(s.sb.globeFollowing(), "RS-44");
+  s.state("RS-44", -9, 101);
+  assert.strictEqual(s.sb.globeFollowing(), "RS-44", "still following");
+});

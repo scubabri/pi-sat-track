@@ -23,7 +23,7 @@ test("wiring: chart snap starts follow; drag, center buttons, Map stop it", () =
   // preview of the followed sat: followFrame centers it; another sat's preview stops following
   assert.match(src, /window\.globeCenterOn = function \(lat, lng, opts\) \{[\s\S]*?if \(opts && opts\.preview && follow\.key && \(!opts\.key \|\| opts\.key === follow\.key\)\) return true;[\s\S]*?stopFollow\(\);/);
   assert.match(src, /pointermove[\s\S]{0,200}stopFollow\(\)/);
-  assert.match(src, /\} else \{\s*stopFollow\(\);\s*if \(el\) el\.hidden = true;/);
+  assert.match(src, /\} else \{\s*stopFollow\(true\);[^\n]*\n\s*if \(el\) el\.hidden = true;/, "Map view: internal stop, shared Follow satellite stays on");
   const pp = fs.readFileSync(path.join(__dirname, "../js/pass-preview.js"), "utf8");
   assert.match(pp, /globeCenterOn\(cur\.position\.lat, cur\.position\.lon, \{ preview: true, key: cur\.key \}\)/);
 });

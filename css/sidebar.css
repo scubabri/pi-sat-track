@@ -337,6 +337,16 @@
   box-shadow: inset 0 0 0 1px #58a6ff55;
 }
 
+/* Follow satellite toggle: lit like other active toggles while following */
+.map-follow-btn svg { display: block; margin: 6px auto 0; }
+.map-follow-btn.on {
+  color: #58a6ff !important;
+  background: #1f2a37 !important;
+  box-shadow: inset 0 0 0 1px #58a6ff;
+}
+.map-follow-btn.disabled { color: #6e7681 !important; cursor: default; }
+.map-follow-btn.disabled:hover { background: #161b22 !important; color: #6e7681 !important; }
+
 .map-center-btn:hover {
   background: #21262d !important;
   color: #58a6ff !important;

@@ -278,6 +278,8 @@
     if (mode !== "globe" || !G || !Number.isFinite(lat) || !Number.isFinite(lng)) return false;
     // Preview of the followed sat: followFrame glides the camera there itself.
     if (opts && opts.preview && follow.key && (!opts.key || opts.key === follow.key)) return true;
+    // Following, preview of another sat (chart pick selects it): follow that sat.
+    if (opts && opts.preview && follow.key && opts.key) { retargetFollow(opts.key); return true; }
     stopFollow();
     if (!(opts && opts.preview)) homeLock = !!(opts && opts.home); // the station button: QTH-centered
     centerOn(lat, lng);
@@ -319,11 +321,29 @@
     if (lastState && lastState.sat === key) followSample(lastState);
     if (!follow.raf) follow.raf = requestAnimationFrame(followFrame);
   }
-  function stopFollow() {
+  /**
+   * keep: internal stop (Map view, camera restore) that leaves the shared
+   * Follow satellite state (js/sat-follow.js) on; a user stop (drag, center
+   * buttons) turns it off everywhere.
+   */
+  function stopFollow(keep) {
+    if (!keep && window.satFollow && window.satFollow.isOn()) window.satFollow.set(false, { source: "globe" });
     follow.key = null;
     follow.samples = [];
     if (follow.raf) { cancelAnimationFrame(follow.raf); follow.raf = 0; }
     if (G && G.__savePov) G.__savePov();
+  }
+  /** Keep following, now another sat: integrator restarts, camera glides over (~1.5 s). */
+  function retargetFollow(key) {
+    follow.key = key;
+    follow.samples = [];
+    follow.lat = follow.lng = follow.alt = null;
+    follow.vLat = follow.vLng = follow.vAlt = 0;
+    follow.pullLat = follow.pullLng = follow.pullAlt = 0;
+    follow.lastFrame = 0;
+    follow.blendUntil = Date.now() + 1500;
+    if (lastState && lastState.sat === key) followSample(lastState);
+    if (!follow.raf) follow.raf = requestAnimationFrame(followFrame);
   }
   function followSample(msg) {
     const p = msg && msg.position; // live position (a pass preview only highlights)
@@ -337,6 +357,7 @@
     // Seed or softly correct the integrator so a new sample never snaps the camera.
     if (follow.lat == null) {
       follow.lat = p.lat; follow.lng = p.lon; follow.alt = alt;
+      if (follow.camLat != null) follow.blendUntil = now + 1500; // first fix after a retarget: glide there
       if (q.length === 2) {
         const dt = q[1].t - q[0].t;
         if (dt > 0) {
@@ -368,6 +389,9 @@
     follow.raf = 0;
     if (!follow.key || !G || mode !== "globe") return;
     follow.raf = requestAnimationFrame(followFrame);
+    // Selected sat changed (any path sets currentSatKey first): follow the new one now.
+    const sel = typeof currentSatKey !== "undefined" ? currentSatKey : null;
+    if (sel && sel !== follow.key) retargetFollow(sel);
     if (document.hidden) { follow.lastFrame = 0; return; }
     const now = Date.now();
     if (now < follow.since || follow.lat == null) return;
@@ -452,7 +476,10 @@
   /** Profile chart click: once that sat's position arrives, spin the globe to it, then follow it. */
   let snapKey = null;
   window.globeSnapTo = function (key) {
-    if (mode !== "globe" || !key) return;
+    if (!key) return;
+    // One shared Follow satellite state (map button lit; 2D map follows too).
+    if (window.satFollow) window.satFollow.set(true, { source: "globe" });
+    if (mode !== "globe") return;
     snapKey = key;
     startFollow(key);
     applyState(true);
@@ -1101,6 +1128,11 @@
         updateSun(true);
         requestOrbits();
         applyState(true);
+        // Follow satellite on (button / earlier follow / reload): follow on the globe too.
+        if (window.satFollow && window.satFollow.isOn() && !follow.key) {
+          const k = typeof currentSatKey !== "undefined" && currentSatKey ? currentSatKey : lastState && lastState.sat;
+          if (k) window.globeSnapTo(k);
+        }
         // 60 s: orbits + sun / terminator / night shading
         if (!orbitTimer) orbitTimer = setInterval(() => { requestOrbits(); updateSun(true); applyState(true); }, 60000);
       }).catch((e) => {
@@ -1109,7 +1141,7 @@
         setMode("map", true);
       });
     } else {
-      stopFollow();
+      stopFollow(true); // the 2D map keeps following (js/sat-follow.js)
       if (el) el.hidden = true;
       if (G) G.pauseAnimation();
       if (orbitTimer) { clearInterval(orbitTimer); orbitTimer = null; }
@@ -1162,7 +1194,10 @@
           lastState = msg;
           if (follow.key) {
             if (msg.sat === follow.key) followSample(msg);
-            else if (snapKey !== msg.sat && Date.now() - follow.since > 5000) stopFollow(); // another sat picked elsewhere
+            else if (msg.sat && (typeof currentSatKey === "undefined" || !currentSatKey || currentSatKey === msg.sat)) {
+              retargetFollow(msg.sat); // another sat selected: follow it (not a stale state of the old one)
+              followSample(msg);
+            }
           }
           if (satChanged) { requestOrbits(); applyState(true); }
           else applyState(false);
@@ -1188,11 +1223,11 @@
   }
   function restoreCamera(m) {
     if (!G || mode !== "globe" || !m) return;
-    if (m.mode === "follow") {
+    if (m.mode === "follow" || (window.satFollow && window.satFollow.isOn())) {
       const key = typeof currentSatKey !== "undefined" && currentSatKey ? currentSatKey : lastState && lastState.sat;
       if (key) { window.globeSnapTo(key); return; } // follow the (newly) selected sat live
     }
-    stopFollow();
+    stopFollow(true);
     snapKey = null;
     if (m.mode === "qth") {
       homeLock = true;
@@ -1210,8 +1245,18 @@
     clearTimeout(pvOrbitTimer);
     pvOrbitTimer = setTimeout(requestOrbits, 250); // coalesce drags
   }
+  /** Shared Follow satellite state changed (map button, 2D drag, center buttons). */
+  function onFollowChange(e) {
+    const on = !!(e && e.detail && e.detail.on);
+    if (!on) { if (follow.key) stopFollow(true); snapKey = null; return; }
+    if (mode !== "globe" || !G || follow.key) return;
+    const k = typeof currentSatKey !== "undefined" && currentSatKey ? currentSatKey : lastState && lastState.sat;
+    if (k) window.globeSnapTo(k);
+  }
   function init() {
     document.addEventListener("pass-preview-change", onPreviewChange);
+    document.addEventListener("sat-follow-change", onFollowChange);
+    document.addEventListener("sat-follow-target", (e) => { const k = e.detail && e.detail.key; if (follow.key && k && k !== follow.key) retargetFollow(k); });
     setInterval(patchWs, 500);
     const t = setInterval(() => { if (addButton()) clearInterval(t); }, 300);
     document.addEventListener("visibilitychange", onVisibility);
