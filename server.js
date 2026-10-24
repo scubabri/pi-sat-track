@@ -864,9 +864,13 @@ wss.on("connection", (ws, req) => {
       }
 
       if (msg.type === "auto-engage-passes-set" && Array.isArray(msg.passes)) {
-        // Per-pass Auto Engage marks (Next Passes / Preview icon), per profile.
-        const pf = profiles.updateActive({ autoEngagePasses: msg.passes });
-        console.log("Auto Engage passes:", pf.autoEngagePasses.length ? pf.autoEngagePasses.map((p) => p.key + "@" + new Date(p.aosMs).toTimeString().slice(0, 5)).join(", ") : "none");
+        // Per-pass Auto Engage marks + skips under the button (top bar / Next
+        // Passes / Preview icon), per profile.
+        const patch = { autoEngagePasses: msg.passes };
+        if (Array.isArray(msg.skips)) patch.autoEngageSkips = msg.skips;
+        const pf = profiles.updateActive(patch);
+        const fmtList = (l) => (l.length ? l.map((p) => p.key + "@" + new Date(p.aosMs).toTimeString().slice(0, 5)).join(", ") : "none");
+        console.log("Auto Engage passes:", fmtList(pf.autoEngagePasses), "| skipped:", fmtList(pf.autoEngageSkips));
         broadcastProfiles();
         stateCycle(false);
         ackSet(ws, msg);
@@ -1492,6 +1496,7 @@ function stateCycle(withAfterLos) {
         passes: s.passes,
         toggle: pf.autoEngage === true,
         marks: pf.autoEngagePasses,
+        skips: pf.autoEngageSkips,
         afterLos: s.afterLos,
         afterLosDone: done,
       });

@@ -97,3 +97,16 @@ test("state module: Auto Engage flag per profile", () => {
   st.setAutoEngage("yes");
   assert.strictEqual(st.getAutoEngage(), false, "strict boolean");
 });
+
+test("skips under the button persist per profile and are pruned after LOS", () => {
+  assert.ok(profiles.setActive("Home"));
+  profiles.updateActive({ autoEngageSkips: [{ key: "ISS", aosMs: now + 60 * MIN, losMs: now + 70 * MIN }, { key: "AO-7", aosMs: now - 60 * MIN, losMs: now - 50 * MIN }] });
+  assert.deepStrictEqual(profiles.publicPayload().autoEngageSkips.map((p) => p.key), ["ISS", "AO-7"]);
+  const disk = JSON.parse(fs.readFileSync(file, "utf8"));
+  assert.strictEqual(disk.profiles.Home.autoEngageSkips.length, 2);
+  assert.ok(profiles.setActive("Portable"));
+  assert.deepStrictEqual(profiles.getActive().autoEngageSkips, [], "per profile");
+  assert.ok(profiles.setActive("Home"));
+  assert.strictEqual(profiles.pruneAutoEngagePasses(now), true);
+  assert.deepStrictEqual(profiles.getActive().autoEngageSkips.map((p) => p.key), ["ISS"]);
+});

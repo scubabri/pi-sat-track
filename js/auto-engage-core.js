@@ -7,7 +7,8 @@
  * LOS (only what it turned on). Two independent sources, both per station
  * profile (profiles.json → profiles[name]):
  *   autoEngage: true|false                 // top-bar button: every pass of the selected sat
- *   autoEngagePasses: [{ key, aosMs, losMs }] // per-pass marks (Next Passes / Preview icon)
+ *   autoEngagePasses: [{ key, aosMs, losMs }] // per-pass marks (top bar / Next Passes / Preview icon)
+ *   autoEngageSkips:  [{ key, aosMs, losMs }] // passes skipped under the button (exceptions)
  * Completely separate from the pass alert bells (js/pass-alerts-core.js).
  * A pass is identified by sat key + AOS; AOS jitters by up to ~30 s between
  * server recomputes, so passes match within PASS_MATCH_TOL_MS (same as bells).
@@ -81,6 +82,60 @@
     return { marks: kept, changed: kept.length !== list.length };
   }
 
+  function removePass(list, p) {
+    return normalizeMarks(list).filter((m) => !samePass(m, p));
+  }
+  function addPass(list, p) {
+    const l = removePass(list, p);
+    l.push(p);
+    return l;
+  }
+
+  /**
+   * Icon state for one pass (top bar, Next Passes row, Preview banner).
+   * o: { marks, skips, toggleOn, selectedKey, key, aosMs, engaged: {sat, aosMs} | null }
+   *   covered: the Auto Engage button covers it (button on, pass of the selected sat)
+   *   look: "active" (green, engaged now) | "on" (bright yellow, this pass marked)
+   *       | "inherited" (dim yellow, covered by the button) | "skipped" (grey,
+   *         button on but this pass skipped) | "off"
+   */
+  function passEngageState(o) {
+    o = o || {};
+    const key = o.key;
+    const aosMs = Number(o.aosMs);
+    const off = { look: "off", marked: false, covered: false, skipped: false, armed: false, active: false };
+    if (!key || isMoonKey(key) || !Number.isFinite(aosMs)) return off;
+    const p = { key, aosMs };
+    const marked = isMarked(o.marks, key, aosMs);
+    const covered = !!o.toggleOn && key === o.selectedKey;
+    const skipped = covered && normalizeMarks(o.skips).some((m) => samePass(m, p));
+    const e = o.engaged;
+    const active = !!e && samePass({ key: e.sat != null ? e.sat : e.key, aosMs: Number(e.aosMs) }, p);
+    const look = active ? "active" : marked ? "on" : covered ? (skipped ? "skipped" : "inherited") : "off";
+    return { look, marked, covered, skipped, armed: marked || (covered && !skipped), active };
+  }
+
+  /**
+   * Icon click → new { marks, skips }:
+   *   skipped → un-skip; covered by the button → skip this pass (and drop a
+   *   mark); marked → unmark; else mark.
+   */
+  function clickPass(o, pass) {
+    const st = passEngageState(Object.assign({}, o, { key: pass && pass.key, aosMs: pass && pass.aosMs }));
+    let marks = normalizeMarks(o && o.marks);
+    let skips = normalizeMarks(o && o.skips);
+    if (!pass || !pass.key || isMoonKey(pass.key) || !Number.isFinite(Number(pass.aosMs))) return { marks, skips };
+    const p = { key: pass.key, aosMs: Math.round(Number(pass.aosMs)) };
+    if (pass.losMs != null && Number.isFinite(Number(pass.losMs))) p.losMs = Math.round(Number(pass.losMs));
+    if (st.skipped) skips = removePass(skips, p);
+    else if (st.covered) {
+      skips = addPass(skips, p);
+      marks = removePass(marks, p);
+    } else if (st.marked) marks = removePass(marks, p);
+    else marks = addPass(marks, p);
+    return { marks, skips };
+  }
+
   const api = {
     PASS_MATCH_TOL_MS,
     PRE_MS,
@@ -94,6 +149,8 @@
     toggleMark,
     passEndMs,
     pruneMarks,
+    passEngageState,
+    clickPass,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.AutoEngageCore = api;

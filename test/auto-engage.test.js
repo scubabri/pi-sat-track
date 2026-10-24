@@ -349,3 +349,57 @@ test("marks are independent of the pass alert bells (separate data)", () => {
   h.at(25).check({ toggle: false, marks: [], passes: [pass(30, 40)] });
   assert.deepStrictEqual(h.calls, []);
 });
+
+/* ---------------- v2: skips under the button ---------------- */
+
+test("skipped pass: the button does not engage it; the next pass engages; a mark still would", () => {
+  const h = rig();
+  const skips = [mark("ISS", 30, 40)];
+  for (const m of [25, 30, 35]) h.at(m).check({ toggle: true, skips, passes: [pass(30, 40)] });
+  assert.deepStrictEqual(h.calls, [], "skipped");
+  h.at(125).check({ toggle: true, skips, passes: [pass(130, 140)] });
+  assert.deepStrictEqual(h.calls, ["radio:on", "antenna:on"], "next pass engages");
+  const g = rig();
+  g.at(25).check({ toggle: true, skips, marks: [mark("ISS", 30, 40)], passes: [pass(30, 40)] });
+  assert.deepStrictEqual(g.calls, ["radio:on", "antenna:on"], "explicit mark wins");
+});
+
+test("skipped mid-pass: stops managing, leaves Radio / Antenna on", () => {
+  const h = rig();
+  h.at(25).check({ toggle: true, passes: [pass(30, 40)] });
+  h.at(32).check({ toggle: true, skips: [mark("ISS", 30, 40)], passes: [pass(30, 40)] });
+  h.at(41).check({ toggle: true, skips: [mark("ISS", 30, 40)], passes: [pass(130, 140)] });
+  assert.deepStrictEqual(h.calls, ["radio:on", "antenna:on"]);
+  assert.ok(h.logs.some((l) => /stopped managing ISS pass .*skipped/.test(l)));
+  // un-skip mid-pass would engage again (only what is off)
+  const g = rig();
+  g.at(30).check({ toggle: true, skips: [mark("ISS", 30, 40)], passes: [pass(30, 40)] });
+  g.at(31).check({ toggle: true, skips: [], passes: [pass(30, 40)] });
+  assert.deepStrictEqual(g.calls, ["radio:on", "antenna:on"]);
+});
+
+test("icon state + click logic (core): off -> marked -> off; covered -> skipped -> covered; marked+covered -> skipped", () => {
+  const base = { marks: [], skips: [], toggleOn: false, selectedKey: "ISS", engaged: null };
+  const P = { key: "ISS", aosMs: T0 + 30 * MIN, losMs: T0 + 40 * MIN };
+  const st = (o) => C.passEngageState(Object.assign({}, o, { key: P.key, aosMs: P.aosMs })).look;
+  assert.strictEqual(st(base), "off");
+  let r = C.clickPass(base, P);
+  assert.deepStrictEqual(r, { marks: [P], skips: [] });
+  assert.strictEqual(st(Object.assign({}, base, r)), "on");
+  r = C.clickPass(Object.assign({}, base, r), P);
+  assert.deepStrictEqual(r, { marks: [], skips: [] });
+  const on = Object.assign({}, base, { toggleOn: true });
+  assert.strictEqual(st(on), "inherited");
+  assert.strictEqual(C.passEngageState(Object.assign({}, on, { key: "SO-50", aosMs: P.aosMs })).look, "off", "button covers the selected sat only");
+  r = C.clickPass(on, P);
+  assert.deepStrictEqual(r, { marks: [], skips: [P] });
+  assert.strictEqual(st(Object.assign({}, on, r)), "skipped");
+  r = C.clickPass(Object.assign({}, on, r), P);
+  assert.deepStrictEqual(r, { marks: [], skips: [] });
+  const both = Object.assign({}, on, { marks: [P] });
+  assert.strictEqual(st(both), "on", "marked shows bright over covered");
+  assert.deepStrictEqual(C.clickPass(both, P), { marks: [], skips: [P] });
+  assert.strictEqual(st(Object.assign({}, on, { engaged: { sat: "ISS", aosMs: P.aosMs + 30000 } })), "active");
+  assert.strictEqual(st(Object.assign({}, base, { key: "MOON" })), "off");
+  assert.strictEqual(C.passEngageState({ toggleOn: true, selectedKey: "MOON", key: "MOON", aosMs: T0 }).look, "off", "Moon never");
+});

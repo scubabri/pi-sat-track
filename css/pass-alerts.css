@@ -95,8 +95,10 @@
 }
 .pass-cell.pass-alert .sat-alert { width: 22px; height: 22px; margin: 0; }
 
-/* Auto Engage per-pass icon (js/auto-engage-ui.js): outline = off,
- * green = Radio + Antenna engage for this pass. Independent of the bell. */
+/* Auto Engage per-pass icon (js/auto-engage-ui.js), independent of the bell:
+ * grey = off, bright yellow = this pass marked, dim yellow = covered by the
+ * Auto Engage button, grey "skipped" = button on but this pass skipped,
+ * green with a ring = engaged now for this pass. */
 .pass-engage {
   flex-shrink: 0;
   display: inline-flex;
@@ -117,8 +119,8 @@
 .pass-engage[hidden] { display: none; }
 .pass-engage:hover,
 .pass-engage:focus-visible {
-  color: var(--green, #3fb950);
-  background: rgba(63, 185, 80, 0.12);
+  color: var(--yellow, #d4a72c);
+  background: rgba(212, 167, 44, 0.12);
   outline: none;
 }
 .pass-engage svg {
@@ -133,10 +135,23 @@
 }
 .pass-engage svg circle { fill: currentColor; }
 .pass-engage.on {
-  color: var(--green, #3fb950);
-  background: rgba(63, 185, 80, 0.18);
+  color: var(--yellow, #d4a72c);
+  background: rgba(212, 167, 44, 0.16);
 }
-.pass-engage.on svg { stroke-width: 2.1; }
+.pass-engage.on svg,
+.pass-engage.active svg { stroke-width: 2.1; }
+.pass-engage.inherited { color: #b08920; opacity: 0.72; }
+.pass-engage.skipped { color: var(--text-dim, #8b949e); opacity: 0.55; }
+.pass-engage.skipped svg { stroke-dasharray: 2 2; }
+.pass-engage.active {
+  color: var(--green, #3fb950);
+  background: rgba(63, 185, 80, 0.2);
+  box-shadow: 0 0 0 1px rgba(63, 185, 80, 0.55);
+  opacity: 1;
+}
+/* Top bar: [sat name ▾] ☆ 🔔 (antenna) */
+#sat-selector .pass-engage-top { width: 24px; height: 26px; margin: 0 2px; }
+#sat-selector .pass-engage-top svg { width: 16px; height: 16px; }
 .pass-cell.pass-engage-cell {
   display: flex;
   align-items: center;

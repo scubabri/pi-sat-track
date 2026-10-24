@@ -101,7 +101,15 @@ function sandbox(opts) {
     loadFavorites: () => o.favs || [],
     currentSatLabel: "ISS",
   };
-  const byId = { map: host, "pass-panel-body": passBody };
+  const sel = el("div");
+  body.appendChild(sel);
+  const topIcon = el("button");
+  topIcon.className = "pass-engage pass-engage-top";
+  topIcon.setAttribute("data-engage", "pass");
+  topIcon.setAttribute("data-engage-scope", "next");
+  topIcon.hidden = true;
+  sel.appendChild(topIcon);
+  const byId = { map: host, "pass-panel-body": passBody, "sat-engage-top": topIcon };
   sb.document = {
     readyState: "complete", body,
     getElementById: (id) => {
@@ -135,7 +143,8 @@ function sandbox(opts) {
   const engageSet = () => sent.filter((x) => x.type === "auto-engage-passes-set");
   const rowIcons = () => passBody.children.map((r) => r.querySelector(".pass-engage"));
   const bannerIcon = () => badge().children.find((c) => c.classList.contains("ppb-engage"));
-  return { sb, sent, alertsSet, engageSet, state, rowBells, rowIcons, passBody, badge, bannerBell, bannerIcon, click, tick, body, dings,
+  const engageState = (ae) => { vm.runInContext("updatePassPanelFromState", sb); sb.AutoEngage.onState({ type: "state", autoEngage: ae }); };
+  return { topIcon, engageState, sb, sent, alertsSet, engageSet, state, rowBells, rowIcons, passBody, badge, bannerBell, bannerIcon, click, tick, body, dings,
     setClock: (t) => { clock = t; }, pp: () => sb.passPreview, PA: () => sb.PassAlerts, AE: () => sb.AutoEngage };
 }
 
@@ -159,7 +168,7 @@ test("row icon next to the bell; same node across refreshes and state messages",
   assert.strictEqual(before[0].dataset.sat, "ISS");
   assert.strictEqual(Number(before[0].dataset.aos), ms(P1.aos));
   assert.strictEqual(Number(before[0].dataset.los), ms(P1.los));
-  assert.strictEqual(before[0].title, "Auto engage Radio + Antenna for this pass");
+  assert.strictEqual(before[0].title, "Auto engage Radio + Antenna for this pass (AOS 10:19 MT) \u2014 click to arm");
   assert.ok(!before[0].classList.contains("sat-alert"), "not a bell");
 });
 
@@ -233,7 +242,7 @@ test("Preview banner icon: next to the bell, targets the previewed pass, lights 
   assert.strictEqual(kids.indexOf(b), kids.indexOf(s.bannerBell()) + 1, "right after the bell");
   assert.strictEqual(b.dataset.sat, "ISS");
   assert.strictEqual(Number(b.dataset.aos), ms(P1.aos));
-  assert.strictEqual(b.title, "Auto engage Radio + Antenna for this pass (AOS 10:19 MT)");
+  assert.strictEqual(b.title, "Auto engage Radio + Antenna for this pass (AOS 10:19 MT) \u2014 click to arm");
   s.click(b);
   s.tick();
   assert.ok(s.bannerIcon().classList.contains("on"), "banner icon lit");
@@ -243,4 +252,114 @@ test("Preview banner icon: next to the bell, targets the previewed pass, lights 
   s.click(s.rowIcons()[0]);
   s.tick();
   assert.ok(!s.bannerIcon().classList.contains("on"), "cleared from the row");
+});
+
+/* ---------------- v2: top bar icon + yellow / dim / skipped / green states ---------------- */
+
+const look = (e) => ["on", "inherited", "skipped", "active"].filter((c) => e.classList.contains(c)).join(" ") || "off";
+
+test("top bar icon: selected sat's next pass (row #1), same node across refreshes, kept in sync both ways", () => {
+  const s = sandbox();
+  s.state("ISS", [P1, P2, P3]);
+  s.tick();
+  const top = s.topIcon;
+  assert.strictEqual(top.hidden, false);
+  assert.strictEqual(top.dataset.sat, "ISS");
+  assert.strictEqual(Number(top.dataset.aos), ms(P1.aos), "row #1 pass");
+  assert.strictEqual(top.title, "Auto engage Radio + Antenna for ISS's next pass (AOS 10:19 MT) \u2014 click to arm");
+  // refresh + state jitter: same node, same pass
+  s.state("ISS", [Object.assign({}, P1, { aos: iso(ms(P1.aos) + 900) }), P2, P3]);
+  s.tick();
+  assert.strictEqual(s.topIcon, top);
+  assert.strictEqual(Number(top.dataset.aos), ms(P1.aos), "frozen AOS (same as row #1)");
+  // top -> row #1
+  s.click(top);
+  s.tick();
+  assert.strictEqual(look(top), "on");
+  assert.strictEqual(look(s.rowIcons()[0]), "on", "row #1 lit");
+  assert.strictEqual(look(s.rowIcons()[1]), "off");
+  assert.strictEqual(top.title, "Armed: Radio + Antenna on at 10:14 MT (AOS\u22125), off after LOS \u2014 click to disarm this pass");
+  // row #1 -> top
+  s.click(s.rowIcons()[0]);
+  s.tick();
+  assert.strictEqual(look(top), "off");
+  // banner -> top
+  s.pp().set(NOW);
+  s.tick();
+  s.click(s.bannerIcon());
+  s.tick();
+  assert.strictEqual(look(top), "on", "banner click lights the top bar");
+  assert.strictEqual(s.PA().getAlerts().passes.length, 0, "bells untouched");
+});
+
+test("top bar icon: current pass while in progress; hidden for the Moon / no pass", () => {
+  const s = sandbox();
+  const running = { aos: iso(NOW - 2 * MIN), los: iso(NOW + 6 * MIN) };
+  s.state("ISS", [running, P1]);
+  s.tick();
+  assert.strictEqual(Number(s.topIcon.dataset.aos), ms(running.aos), "pass in progress");
+  s.setClock(NOW + 7 * MIN);
+  s.tick();
+  assert.strictEqual(Number(s.topIcon.dataset.aos), ms(P1.aos), "after LOS -> next pass");
+  vm.runInContext("currentSatKey = 'MOON'", s.sb);
+  s.state("MOON", [P1]);
+  s.tick();
+  assert.strictEqual(s.topIcon.hidden, true, "no icon for the Moon");
+  vm.runInContext("currentSatKey = 'SO-50'", s.sb);
+  s.state("SO-50", []);
+  s.tick();
+  assert.strictEqual(s.topIcon.hidden, true, "no pass");
+});
+
+test("button on: dim yellow everywhere; click skips just that pass (grey), again un-skips", () => {
+  const s = sandbox();
+  s.state("ISS", [P1, P2, P3]);
+  s.AE().onProfiles({ type: "profiles", autoEngage: true, autoEngagePasses: [], autoEngageSkips: [] });
+  s.tick();
+  assert.ok(s.rowIcons().every((e) => look(e) === "inherited"), "rows dim yellow");
+  assert.strictEqual(look(s.topIcon), "inherited", "top bar dim yellow");
+  assert.strictEqual(s.topIcon.title, "Armed by the Auto Engage button (every pass of ISS): on at 10:14 MT, off after LOS \u2014 click to skip this pass");
+  s.click(s.topIcon);
+  s.tick();
+  const m = s.engageSet().pop();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(m.skips)), [{ key: "ISS", aosMs: ms(P1.aos), losMs: ms(P1.los) }], "skip saved");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(m.passes)), []);
+  assert.strictEqual(look(s.topIcon), "skipped");
+  assert.strictEqual(look(s.rowIcons()[0]), "skipped", "row #1 skipped too");
+  assert.strictEqual(look(s.rowIcons()[1]), "inherited", "row #2 still covered");
+  assert.ok(/^Skipped: the Auto Engage button won't engage this pass/.test(s.rowIcons()[0].title));
+  assert.strictEqual(s.rowIcons()[0].getAttribute("aria-pressed"), "false");
+  s.click(s.rowIcons()[0]);
+  s.tick();
+  assert.strictEqual(look(s.topIcon), "inherited", "un-skipped");
+  assert.deepStrictEqual(s.engageSet().pop().skips, []);
+  // a marked pass under the button shows bright yellow; click -> skipped (mark dropped)
+  s.click(s.rowIcons()[1]); // covered -> skip
+  s.click(s.rowIcons()[1]); // skipped -> un-skip
+  s.AE().onAck(s.engageSet().pop().seq); // server acked: its echoes apply again
+  s.AE().onProfiles({ type: "profiles", autoEngage: true, autoEngagePasses: [{ key: "ISS", aosMs: ms(P2.aos) }], autoEngageSkips: [] });
+  s.tick();
+  assert.strictEqual(look(s.rowIcons()[1]), "on", "marked wins over covered");
+  // button off -> covered passes go grey, marks stay
+  s.engageState({ on: false, engaged: null });
+  s.tick();
+  assert.strictEqual(look(s.rowIcons()[0]), "off");
+});
+
+test("engaged now: green on the top bar, row and banner for that pass only", () => {
+  const s = sandbox();
+  const running = { aos: iso(NOW - 2 * MIN), los: iso(NOW + 6 * MIN) };
+  s.state("ISS", [running, P1]);
+  s.engageState({ on: true, engaged: { sat: "ISS", aosMs: ms(running.aos) + 20000, losMs: ms(running.los), radio: true, antenna: true } });
+  s.tick();
+  assert.strictEqual(look(s.topIcon), "active");
+  assert.strictEqual(look(s.rowIcons()[0]), "active");
+  assert.strictEqual(look(s.rowIcons()[1]), "inherited");
+  assert.strictEqual(s.topIcon.title, "Active: Auto Engage turned on Radio + Antenna for this pass (LOS 09:16 MT) \u2014 off after LOS; click to disarm (leaves them on)");
+  s.pp().set(NOW);
+  s.tick();
+  assert.strictEqual(look(s.bannerIcon()), "active", "banner green");
+  // disengaged -> back to dim yellow
+  s.engageState({ on: true, engaged: null });
+  assert.strictEqual(look(s.topIcon), "inherited");
 });

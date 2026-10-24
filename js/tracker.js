@@ -711,6 +711,7 @@ function connectTracker() {
       // Pass alerts: next passes of alerted sats (fires AOS−5 / AOS).
       if (window.PassAlerts) window.PassAlerts.onState(msg);
       if (msg.autoEngage) applyServerAutoEngage(msg.autoEngage.on === true, msg.autoEngage);
+      if (window.AutoEngage && window.AutoEngage.onState) window.AutoEngage.onState(msg);
 
       // After a local switch, drop in-flight state for any other sat (it would
       // draw the old sat's position under the new name). Expires after 15 s
