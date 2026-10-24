@@ -7,7 +7,10 @@
  * Doppler keep running on real time. Esc, double-click the chart, or the
  * badge's "Back to now" ends it.
  *
- * API: window.passPreview.{get, set(t, {center}), clear, posOf(key), active}
+ * The badge's bell sets the single-pass alert of the previewed pass
+ * (previewPass(); the same alert as that pass's Next Passes bell).
+ *
+ * API: window.passPreview.{get, set(t, {center}), clear, posOf(key), previewPass, active}
  * Event: "pass-preview-change" on document (detail.t, null when cleared).
  */
 (function () {
@@ -98,18 +101,73 @@
     return (data.sats || []).find((x) => x.key === key) || null;
   }
 
+  /**
+   * Pass behind the banner's alert bell: the selected sat's Next Passes row
+   * (js/pass-panel.js lastPassList, same frozen AOS as that row's bell) that
+   * contains T, else the next one after T (js/pass-alerts-core.js
+   * passForPreview). null when the list is for another sat / has no such pass.
+   */
+  function previewPass() {
+    const C = window.PassAlertsCore;
+    const k = typeof currentSatKey !== "undefined" ? currentSatKey : null;
+    if (!C || !C.passForPreview || T == null || !k) return null;
+    if (typeof lastPassListSat === "undefined" || lastPassListSat !== k || typeof lastPassList === "undefined") return null;
+    const p = C.passForPreview(lastPassList, T, Date.now());
+    return p ? { key: k, aosMs: p.aosMs, losMs: p.losMs } : null;
+  }
+
+  // Badge parts are built once and updated in place, so a click on the bell
+  // is never lost to the 1 s refresh replacing it mid-click.
+  let infoEl = null;
+  let bellEl = null;
+  let infoHtml = "";
+  let bellSig = "";
+  function buildBadge(host) {
+    badge = document.createElement("div");
+    badge.className = "pass-preview-badge";
+    ["pointerdown", "mousedown", "click", "dblclick", "wheel", "touchstart"].forEach((ev) => badge.addEventListener(ev, (e) => e.stopPropagation()));
+    badge.addEventListener("click", (e) => {
+      if (e.target && e.target.classList && e.target.classList.contains("ppb-back")) { e.preventDefault(); clear(); }
+    });
+    infoEl = document.createElement("span");
+    infoEl.className = "ppb-info";
+    // Same single-pass bell as the Next Passes row: js/pass-alerts.js paints it
+    // and handles its click (capture phase, before the badge's stopPropagation).
+    bellEl = document.createElement("button");
+    bellEl.type = "button";
+    bellEl.className = "sat-alert ppb-alert";
+    bellEl.setAttribute("data-alert", "pass");
+    bellEl.hidden = true;
+    const back = document.createElement("a");
+    back.href = "#";
+    back.className = "ppb-back";
+    back.title = "Back to live (Esc)";
+    back.textContent = "Back to now";
+    badge.appendChild(infoEl);
+    badge.appendChild(bellEl);
+    badge.appendChild(back);
+    host.appendChild(badge);
+  }
+
+  function renderBell() {
+    if (!bellEl) return;
+    const p = previewPass();
+    const sig = p ? p.key + "|" + p.aosMs + "|" + (p.losMs != null ? p.losMs : "") : "";
+    if (sig === bellSig) return;
+    bellSig = sig;
+    bellEl.hidden = !p;
+    if (!p) return;
+    bellEl.setAttribute("data-sat", p.key);
+    bellEl.setAttribute("data-aos", String(p.aosMs));
+    bellEl.setAttribute("data-los", p.losMs != null ? String(p.losMs) : "");
+    bellEl.setAttribute("data-aos-label", fmt(p.aosMs));
+    if (window.PassAlerts && window.PassAlerts.paint) window.PassAlerts.paint(badge);
+  }
+
   function renderBadge() {
     const host = document.getElementById("map");
     if (!host) return;
-    if (!badge) {
-      badge = document.createElement("div");
-      badge.className = "pass-preview-badge";
-      ["pointerdown", "mousedown", "click", "dblclick", "wheel", "touchstart"].forEach((ev) => badge.addEventListener(ev, (e) => e.stopPropagation()));
-      badge.addEventListener("click", (e) => {
-        if (e.target && e.target.classList.contains("ppb-back")) { e.preventDefault(); clear(); }
-      });
-      host.appendChild(badge);
-    }
+    if (!badge) buildBadge(host);
     if (T == null) { badge.hidden = true; return; }
     badge.hidden = false;
     const cur = curOf(data);
@@ -117,9 +175,9 @@
     const look = cur && cur.look && cur.look.el >= 0
       ? '<span class="ppb-sat">' + name + " " + Math.round(cur.look.el) + "\u00B0 \u00B7 az " + Math.round((cur.look.az + 360) % 360) + "\u00B0</span>"
       : cur ? '<span class="ppb-sat ppb-dim">' + name + " below horizon</span>" : "";
-    badge.innerHTML =
-      '<span class="ppb-dot"></span><b>Preview ' + fmt(T) + '</b><span class="ppb-rel">' + rel(T) + "</span>" + look +
-      '<a href="#" class="ppb-back" title="Back to live (Esc)">Back to now</a>';
+    const html = '<span class="ppb-dot"></span><b>Preview ' + fmt(T) + '</b><span class="ppb-rel">' + rel(T) + "</span>" + look;
+    if (html !== infoHtml) { infoHtml = html; infoEl.innerHTML = html; }
+    renderBell();
   }
 
   function patchWs() {
@@ -139,7 +197,7 @@
     if (T != null) { if (ws.readyState === 1) request(); else ws.addEventListener("open", request); }
   }
 
-  window.passPreview = { get: () => T, set, clear, settle, posOf, markOwnPick, onServerSat, active: () => T != null && !!data };
+  window.passPreview = { get: () => T, set, clear, settle, posOf, markOwnPick, onServerSat, previewPass, active: () => T != null && !!data };
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && T != null) clear(); });
   setInterval(patchWs, 500);
   let lastSat = null;

@@ -146,11 +146,13 @@
     }
     if (kind === "pass") {
       const st = C.passAlertState(alerts, f, key, Number(el.dataset.aos));
+      // data-aos-label (Preview banner bell): name the pass's AOS clock time.
+      const when = el.dataset.aosLabel ? "AOS " + el.dataset.aosLabel : "";
       setLook(el, st.look,
-        st.look === "inherited" ? "Alert on (every pass of this sat) \u2014 click to skip this pass"
-          : st.excepted ? "Skipped (sat alerts on) \u2014 click to alert for this pass"
-            : st.look === "on" ? "Alert on for this pass \u2014 click to clear"
-              : "Alert for this pass (AOS\u22125 min and AOS)");
+        st.look === "inherited" ? "Alert on (every pass of this sat" + (when ? ", " + when : "") + ") \u2014 click to skip this pass"
+          : st.excepted ? "Skipped (sat alerts on" + (when ? ", " + when : "") + ") \u2014 click to alert for this pass"
+            : st.look === "on" ? "Alert on for this pass" + (when ? " (" + when + ")" : "") + " \u2014 click to clear"
+              : when ? "Alert for this pass (" + when + ")" : "Alert for this pass (AOS\u22125 min and AOS)");
     }
   }
 

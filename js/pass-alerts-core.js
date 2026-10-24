@@ -245,6 +245,36 @@
     return out;
   }
 
+  /**
+   * Pass for the map's Preview banner bell (js/pass-preview.js).
+   * passes: the selected sat's Next Passes list ([{ aos, los }], ISO or ms;
+   *   server findPasses with the rotor min-EL cutoff, so "a pass" means the
+   *   same thing as a Next Passes row). t: preview time, now: wall clock.
+   * Returns { aosMs, losMs } of the pass containing t (AOS <= t <= LOS), else
+   * of the first pass starting after t, else null. A past t between passes
+   * gives null: the list only holds passes still running at `now`, so the
+   * pass right after t may be an already finished one that is not listed.
+   */
+  function passForPreview(passes, t, now) {
+    t = Number(t);
+    if (!Array.isArray(passes) || !Number.isFinite(t)) return null;
+    const list = [];
+    for (const p of passes) {
+      if (!p) continue;
+      const aosMs = toMs(p.aos != null ? p.aos : p.aosMs);
+      if (!Number.isFinite(aosMs)) continue;
+      const losRaw = toMs(p.los != null ? p.los : p.losMs);
+      const losMs = Number.isFinite(losRaw) && losRaw >= aosMs ? losRaw : null;
+      list.push({ aosMs, losMs });
+    }
+    list.sort((a, b) => a.aosMs - b.aosMs);
+    const end = (p) => (p.losMs != null ? p.losMs : p.aosMs + DEFAULT_PASS_MS);
+    const inPass = list.find((p) => t >= p.aosMs && t <= end(p));
+    if (inPass) return inPass;
+    if (Number.isFinite(Number(now)) && t < Number(now)) return null;
+    return list.find((p) => p.aosMs > t) || null;
+  }
+
   /** Toast / notification text. fmtClock(ms) → "17:03 MT" | "23:03 UTC". */
   function alertText(ev, fmtClock) {
     const name = ev.display || ev.key;
@@ -279,6 +309,7 @@
     alertSatKeys,
     dueAlerts,
     alertText,
+    passForPreview,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.PassAlertsCore = api;

@@ -142,6 +142,10 @@
 .pass-preview-badge .ppb-rel { color: #8b949e; }
 .pass-preview-badge .ppb-sat { color: #c9d1d9; padding-left: 8px; border-left: 1px solid #30363d; }
 .pass-preview-badge .ppb-dim { color: #8b949e; }
+.pass-preview-badge .ppb-info { display: flex; align-items: center; gap: 8px; }
+/* Pass alert bell (css/pass-alerts.css look: outline off, yellow on) */
+.pass-preview-badge .ppb-alert { width: 22px; height: 22px; margin: 0 -4px 0 0; }
+.pass-preview-badge .ppb-alert[hidden] { display: none; }
 .pass-preview-badge .ppb-back {
   margin-left: 4px; padding: 3px 9px; border-radius: 4px; background: #e3b341;
   color: #0d1117; font-weight: bold; text-decoration: none;
