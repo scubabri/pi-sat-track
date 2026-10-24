@@ -164,6 +164,12 @@ function loadRigctl(port, model) {
       ],
     },
     "GMSK-SAT": { modes: [{ mode: "GMSK", uplink: "", downlink: "436.500" }] },
+    "BEACON-SAT": {
+      modes: [
+        { mode: "SSB CW*", uplink: "145.935-145.995", downlink: "435.670-435.610" },
+        { mode: "Beacon CW", uplink: "", downlink: "435.605" },
+      ],
+    },
   });
   return require(rigPath);
 }
@@ -323,6 +329,20 @@ test("DL-only (GMSK): no SAT, plain VFOA + F, mode FM", async () => {
     assert.ok(fake.st.hamlibF.includes(436500000));
     assert.ok(!fake.st.cmds.some((c) => /^S 1/.test(c)));
   });
+});
+
+test("DL-only Beacon CW (catalog Beacon entry): no SAT, plain VFOA + F, mode CW, no split/TX", async () => {
+  await withRig({ sa: "0000000" }, "BEACON-SAT", async (rig, fake) => {
+    rig.setRadio(true);
+    await sleep(150);
+    await ticks(rig, 3, null, 435605000);
+    assert.ok(!fake.st.w.some((c) => /SA1/.test(c)), "no SAT on");
+    assert.ok(fake.st.cmds.includes("V VFOA"));
+    assert.ok(fake.st.cmds.includes("M CW 0"), fake.st.cmds.join("|"));
+    assert.ok(fake.st.hamlibF.includes(435605000));
+    assert.ok(!fake.st.cmds.some((c) => /^S 1/.test(c)), "no split");
+    assert.ok(!fake.st.cmds.some((c) => /^I /.test(c)), "no TX freq");
+  }, undefined, { currentSatKey: "BEACON-SAT", currentModeIndex: 1 });
 });
 
 test("`w` unsupported (RPRT -11): log once, fall back to Hamlib split", async () => {

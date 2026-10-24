@@ -185,6 +185,13 @@ catalog.getCatalog = () => ({
   ISS: {
     modes: [{ mode: "FM", uplink: "145.825", downlink: "145.825" }],
   },
+  // Catalog Beacon entry (lib/catalog.js addBeaconModes): DL-only, after SSB
+  "RS-44B": {
+    modes: [
+      { mode: "SSB CW*", uplink: "145.935-145.995", downlink: "435.670-435.610" },
+      { mode: "Beacon CW", uplink: "", downlink: "435.605" },
+    ],
+  },
 });
 
 // Fresh module load
@@ -971,6 +978,24 @@ test.skip("JO-97 sat switch at enable time (RS-44 → JO-97 before first tick): 
   assert.ok(!radio.cmds.some((c) => /^FB\d/.test(c) && parseInt(c.slice(2), 10) >= 300e6), "no 70cm FB");
   assert.ok(!radio.replies.some((x) => x.includes("?;")), "no naks");
   assert.ok(Math.abs(radio.fa - 435120017) < 50 && Math.abs(radio.fb - 145857040) < 50, radio.fa + " " + radio.fb);
+  ts.setRadio(false); await sleep(300); ts.close();
+});
+
+test("Beacon CW (DL-only catalog entry): SAT off, VFO A = DL, MD3, no FB/FR/FT", async () => {
+  resetRadio();
+  radio.sa = "1"; radio.saFull = "1010000";
+  ts.close(); ts._test.setCwModeFlag(false);
+  ts.init({ getContext: () => ({ currentSatKey: "RS-44B", currentModeIndex: 1, satrec: null, observer: null }), broadcast: () => {} });
+  ts.setLock(true);
+  ts.setRadio(true);
+  for (let i = 0; i < 6; i++) { await ts.pushFrequencies(null, 435606000 - i * 10); await sleep(250); }
+  assert.strictEqual(radio.sa, "0", "SAT off for RX-only");
+  assert.ok(Math.abs(radio.fa - 435605950) < 50, "FA = beacon DL: " + radio.fa);
+  assert.strictEqual(radio.mdA, "3", "Beacon CW → MD3");
+  assert.ok(!radio.cmds.some((c) => /^FB\d/i.test(c)), "no FB (no uplink/TX freq)");
+  assert.ok(!radio.cmds.some((c) => /^F[RT]1/i.test(c)), "no split");
+  const { modesForCatalogMode } = ts._test;
+  assert.strictEqual(modesForCatalogMode("Beacon").dlName, "USB", "plain Beacon → USB");
   ts.setRadio(false); await sleep(300); ts.close();
 });
 
