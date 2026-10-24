@@ -338,7 +338,15 @@
 }
 
 /* Follow satellite toggle: lit like other active toggles while following */
-.map-follow-btn svg { display: block; margin: 6px auto 0; }
+.map-follow-btn {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  line-height: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box;
+}
+.map-follow-btn svg { display: block; margin: 0; flex: none; }
 .map-follow-btn.on {
   color: #58a6ff !important;
   background: #1f2a37 !important;

@@ -46,7 +46,7 @@ function centerMidAtlantic() {
 
 /** Small line-art satellite (body + two panels + dish) for the Follow satellite button. */
 const SAT_FOLLOW_SVG =
-  '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round">' +
+  '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round">' +
   '<rect x="9.2" y="9.2" width="5.6" height="5.6" rx="0.8" transform="rotate(45 12 12)"/>' +
   '<path d="M8.2 8.2 4.9 4.9M2.4 7.4l5-5 3 3-5 5zM15.8 15.8l3.3 3.3M21.6 16.6l-5 5-3-3 5-5z"/>' +
   '<path d="M15.2 8.8a3 3 0 0 0 0-3.4M17.6 6.4a6 6 0 0 0 0-1.8" stroke-width="1.4"/>' +
