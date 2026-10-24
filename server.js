@@ -308,6 +308,7 @@ function applyProfileToRuntime(prof) {
   state.setFavorites(Array.isArray(prof.favorites) ? prof.favorites : []);
   state.setFavOverlayShown(prof.favOverlay ? prof.favOverlay.shown : null);
   state.setAutoSelect(prof.autoSelect === true);
+  state.setAutoEngage(prof.autoEngage === true);
   state.setPassAlerts(prof.alerts);
   const cfg = prof.config && typeof prof.config === "object" ? prof.config : {};
   if (Object.keys(cfg).length) {
@@ -850,6 +851,28 @@ wss.on("connection", (ws, req) => {
         return;
       }
 
+      if (msg.type === "auto-engage-set") {
+        // Top-bar Auto Engage button: saved per profile, synced to all clients.
+        // Separate from the pass alert bells.
+        const pf = profiles.updateActive({ autoEngage: msg.on === true });
+        state.setAutoEngage(pf.autoEngage === true);
+        console.log("Auto Engage", pf.autoEngage ? "ON" : "OFF");
+        broadcastProfiles();
+        stateCycle(false); // toggled on mid-pass / within T-5: engage now
+        ackSet(ws, msg);
+        return;
+      }
+
+      if (msg.type === "auto-engage-passes-set" && Array.isArray(msg.passes)) {
+        // Per-pass Auto Engage marks (Next Passes / Preview icon), per profile.
+        const pf = profiles.updateActive({ autoEngagePasses: msg.passes });
+        console.log("Auto Engage passes:", pf.autoEngagePasses.length ? pf.autoEngagePasses.map((p) => p.key + "@" + new Date(p.aosMs).toTimeString().slice(0, 5)).join(", ") : "none");
+        broadcastProfiles();
+        stateCycle(false);
+        ackSet(ws, msg);
+        return;
+      }
+
       if (msg.type === "alerts-set" && msg.alerts && typeof msg.alerts === "object") {
         // Pass alert bells: saved per profile, synced to all clients (each
         // browser fires its own AOS−5 / AOS alerts from state.alertPasses).
@@ -958,6 +981,7 @@ wss.on("connection", (ws, req) => {
         return;
       }
       if (msg.type === "radio") {
+        autoEngage.userSet("radio", !!msg.on);
         radios.setRadio(!!msg.on, ws._clientTag || "client");
         syncWsjtxGate();
       }
@@ -997,11 +1021,13 @@ wss.on("connection", (ws, req) => {
       }
 
       if (msg.type === "antenna") {
+        autoEngage.userSet("antenna", !!msg.on);
         rotor.setAntenna(!!msg.on);
         syncWsjtxGate();
       }
 
       if (msg.type === "park") {
+        autoEngage.userSet("antenna", false); // manual park takes the antenna over
         rotor.park();
       }
 
@@ -1421,16 +1447,73 @@ const afterLosWatch = require("./lib/after-los").createWatcher({
   notify: (evt) => broadcast({ type: "after-los", ...evt }),
 });
 
-setInterval(() => {
+// Auto Engage (top-bar button + per-pass marks): Radio + Antenna on at T-5,
+// off after LOS — only what it turned on. Uses the same enable paths as the
+// Radio / Antenna buttons, so the UI reflects it. See lib/auto-engage.js.
+const autoEngage = require("./lib/auto-engage").createEngine({
+  log: (m) => console.log(m),
+  radioAvailable: () => {
+    try { return radios.active().meta.id !== "none"; } catch (_) { return false; }
+  },
+  radioOn: () => wsjtxGateState().radioOn,
+  setRadio: (on) => {
+    radios.setRadio(!!on, "Auto Engage");
+    syncWsjtxGate();
+  },
+  antennaAvailable: () => {
+    try { return rotor.active().meta.id !== "none"; } catch (_) { return false; }
+  },
+  antennaOn: () => wsjtxGateState().antennaOn,
+  setAntenna: (on) => {
+    rotor.setAntenna(!!on);
+    syncWsjtxGate();
+  },
+  selectSat: (key) => {
+    // Marked pass of another sat at T-5: normal switch (immediate preposition).
+    rotor.deferSwitchPrep(null);
+    return selectSat(key);
+  },
+  parkPending: () => !!rotor.afterLosPending().resumeAtPrep,
+  cancelParkResume: () => rotor.cancelAfterLosResume(),
+  notify: (evt) => broadcast({ type: "auto-engage", ...evt }),
+});
+
+/** Broadcast "state", then After-LOS (park / Auto Select), then Auto Engage. */
+function stateCycle(withAfterLos) {
   const s = state.computeState();
-  if (s) broadcast(s);
-  afterLosWatch(s);
-}, STATE_MS);
+  const done = withAfterLos !== false ? afterLosWatch(s) : null;
+  let ae = null;
+  if (s) {
+    try {
+      const pf = profiles.getActive() || {};
+      ae = autoEngage.check({
+        sat: s.sat,
+        isMoon: !!s.isMoon,
+        passes: s.passes,
+        toggle: pf.autoEngage === true,
+        marks: pf.autoEngagePasses,
+        afterLos: s.afterLos,
+        afterLosDone: done,
+      });
+    } catch (e) {
+      console.warn("Auto Engage:", e.message);
+    }
+    s.autoEngage = Object.assign({}, s.autoEngage, ae || autoEngage.status());
+    broadcast(s);
+  }
+}
+
+setInterval(() => stateCycle(true), STATE_MS);
 
 setInterval(broadcastSats, SATS_BROADCAST_MS);
 
 // Pass alerts: drop single-pass alerts / exceptions once their LOS is over.
 function pruneAlertsNow() {
+  try {
+    if (profiles.pruneAutoEngagePasses(Date.now())) broadcastProfiles();
+  } catch (e) {
+    console.warn("Auto Engage prune failed:", e.message);
+  }
   try {
     if (profiles.pruneAlerts(Date.now())) {
       state.setPassAlerts(profiles.getActive().alerts);

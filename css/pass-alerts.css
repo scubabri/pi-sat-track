@@ -79,6 +79,7 @@
 .pass-row-item {
   grid-template-columns:
     24px   /* alert bell */
+    24px   /* auto engage */
     36px   /* # */
     120px  /* AOS */
     120px  /* LOS */
@@ -93,6 +94,57 @@
   justify-content: center;
 }
 .pass-cell.pass-alert .sat-alert { width: 22px; height: 22px; margin: 0; }
+
+/* Auto Engage per-pass icon (js/auto-engage-ui.js): outline = off,
+ * green = Radio + Antenna engage for this pass. Independent of the bell. */
+.pass-engage {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-dim, #8b949e);
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+  vertical-align: middle;
+}
+.pass-engage[hidden] { display: none; }
+.pass-engage:hover,
+.pass-engage:focus-visible {
+  color: var(--green, #3fb950);
+  background: rgba(63, 185, 80, 0.12);
+  outline: none;
+}
+.pass-engage svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+  pointer-events: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+.pass-engage svg circle { fill: currentColor; }
+.pass-engage.on {
+  color: var(--green, #3fb950);
+  background: rgba(63, 185, 80, 0.18);
+}
+.pass-engage.on svg { stroke-width: 2.1; }
+.pass-cell.pass-engage-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Top bar Auto Engage while it holds Radio / Antenna for a pass */
+#btn-auto-engage.active.engaged { box-shadow: 0 0 0 2px rgba(63, 185, 80, 0.7); }
 
 /* Toasts (bottom-center, above the after-LOS toast) */
 #pass-alert-toasts {

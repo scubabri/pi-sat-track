@@ -119,6 +119,7 @@ function passRowEl(body, idx) {
   };
   const cells = {
     alert: mk("pass-alert"),
+    engage: mk("pass-engage-cell"),
     idx: mk("pass-idx"),
     aos: mk("pass-time"),
     los: mk("pass-time"),
@@ -150,6 +151,33 @@ function syncPassRowBell(cell, sat, aosMs, losMs) {
   if (bell.getAttribute("data-sat") !== String(sat)) bell.setAttribute("data-sat", String(sat));
   if (bell.getAttribute("data-aos") !== String(aosMs)) bell.setAttribute("data-aos", String(aosMs));
   if (bell.getAttribute("data-los") !== los) bell.setAttribute("data-los", los);
+}
+
+/**
+ * Auto Engage icon (js/auto-engage-ui.js paints + handles clicks), next to the
+ * bell but independent of it. Same rule as the bell: built once per row and
+ * kept (only data-* change) so a click is never lost to a refresh. No icon for
+ * the Moon (EME is never auto engaged).
+ */
+function syncPassRowEngage(cell, sat, aosMs, losMs) {
+  let icon = cell.querySelector(".pass-engage");
+  const core = window.AutoEngageCore;
+  const moon = core ? core.isMoonKey(sat) : String(sat || "").toUpperCase() === "MOON";
+  if (!sat || !Number.isFinite(aosMs) || moon) {
+    if (icon) icon.remove();
+    return;
+  }
+  if (!icon) {
+    icon = document.createElement("button");
+    icon.type = "button";
+    icon.className = "pass-engage";
+    icon.setAttribute("data-engage", "pass");
+    cell.appendChild(icon);
+  }
+  const los = Number.isFinite(losMs) ? String(losMs) : "";
+  if (icon.getAttribute("data-sat") !== String(sat)) icon.setAttribute("data-sat", String(sat));
+  if (icon.getAttribute("data-aos") !== String(aosMs)) icon.setAttribute("data-aos", String(aosMs));
+  if (icon.getAttribute("data-los") !== los) icon.setAttribute("data-los", los);
 }
 
 function renderPassPanel() {
@@ -203,6 +231,7 @@ function renderPassPanel() {
 
     // Pass alert bell (js/pass-alerts.js paints on/inherited/off + clicks).
     syncPassRowBell(cells.alert, lastPassListSat, aosMs, losMs);
+    if (cells.engage) syncPassRowEngage(cells.engage, lastPassListSat, aosMs, losMs);
     setPassCellText(cells.idx, String(idx + 1));
     setPassCellText(cells.aos, passTimeText(p.aos));
     setPassCellText(cells.los, passTimeText(p.los));
@@ -212,6 +241,7 @@ function renderPassPanel() {
     setPassCellText(cells.status, passStatusLabel(p, now));
   });
   if (window.PassAlerts) window.PassAlerts.paint(body);
+  if (window.AutoEngage) window.AutoEngage.paint(body);
 }
 
 /**

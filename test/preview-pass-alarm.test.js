@@ -175,7 +175,11 @@ test("banner bell sits before Back to now; picks the containing / next pass; hid
   s.state("ISS", [P1, P2, P3]);
   s.pp().set(NOW + 65 * MIN); // inside P1
   const kids = s.badge().children;
-  assert.ok(kids[1].classList.contains("ppb-alert") && kids[2].classList.contains("ppb-back"), "bell before Back to now");
+  // Auto Engage icon (independent of the bell) sits right after the bell.
+  assert.ok(
+    kids[1].classList.contains("ppb-alert") && kids[2].classList.contains("ppb-engage") && kids[3].classList.contains("ppb-back"),
+    "bell (then the Auto Engage icon) before Back to now",
+  );
   const b = s.bell();
   assert.strictEqual(b.hidden, false);
   assert.strictEqual(b.dataset.alert, "pass");

@@ -86,6 +86,7 @@
 
       <div id="top-controls">
         <button class="btn" id="btn-auto-select" title="Auto Select: at LOS, select the favorite with the soonest AOS">Auto Select</button>
+        <button class="btn" id="btn-auto-engage" title="Auto Engage: turn Radio and Antenna on 5 min before AOS of the selected sat's next pass and back off after LOS (only what it turned on). Separate from the pass alert bells.">Auto Engage</button>
         <button class="btn" id="btn-radio">Radio</button>
         <button class="btn" id="btn-antenna">Antenna</button>
         <button class="btn" id="btn-park" title="Park the rotor">Park</button>
@@ -1253,6 +1254,7 @@
         <div id="pass-panel-table">
           <div class="pass-head">
             <span class="pass-cell pass-alert" title="Pass alerts (AOS&#8722;5 min and AOS)"></span>
+            <span class="pass-cell pass-engage-cell" title="Auto engage Radio + Antenna for a pass (T&#8722;5 min to LOS)"></span>
             <span class="pass-cell pass-idx">#</span>
             <span class="pass-cell pass-time">AOS</span>
             <span class="pass-cell pass-time">LOS</span>
@@ -1639,6 +1641,8 @@
     <script src="js/fav-overlay.js"></script>
     <script src="js/pass-alerts-core.js"></script>
     <script src="js/pass-alerts.js"></script>
+    <script src="js/auto-engage-core.js"></script>
+    <script src="js/auto-engage-ui.js"></script>
     <script src="js/preview-camera.js"></script>
     <script src="js/globe-view.js"></script>
     <script src="js/pass-preview.js"></script>

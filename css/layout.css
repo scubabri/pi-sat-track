@@ -146,6 +146,8 @@
 /* Pass alert bell (css/pass-alerts.css look: outline off, yellow on) */
 .pass-preview-badge .ppb-alert { width: 22px; height: 22px; margin: 0 -4px 0 0; }
 .pass-preview-badge .ppb-alert[hidden] { display: none; }
+.pass-preview-badge .ppb-engage { width: 22px; height: 22px; margin: 0 -4px 0 0; }
+.pass-preview-badge .ppb-engage[hidden] { display: none; }
 .pass-preview-badge .ppb-back {
   margin-left: 4px; padding: 3px 9px; border-radius: 4px; background: #e3b341;
   color: #0d1117; font-weight: bold; text-decoration: none;

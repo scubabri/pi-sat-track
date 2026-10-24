@@ -179,6 +179,60 @@ function sendAutoSelect(on) {
   ws.send(JSON.stringify(m));
 }
 
+/**
+ * Top-bar Auto Engage button (per profile, saved on the server, which does the
+ * work with no browser open; lib/auto-engage.js). Radio + Antenna on at T-5
+ * for every pass of the selected sat, off after LOS (only what it turned on).
+ * Separate from the pass alert bells.
+ */
+const AUTO_ENGAGE_TIP_OFF =
+  "Auto Engage: turn Radio and Antenna on 5 min before AOS of the selected sat's next pass and back off after LOS " +
+  "(only what it turned on; anything you turn off stays off for that pass). Works with no browser open. " +
+  "Separate from the pass alert bells; mark single passes with the antenna icon in Next Passes.";
+let autoEngageOn = false;
+let autoEngageStatus = null;
+function autoEngageTitle() {
+  const st = autoEngageStatus;
+  let tip = autoEngageOn ? "Auto Engage ON \u2014 click to turn off.\n" + AUTO_ENGAGE_TIP_OFF : AUTO_ENGAGE_TIP_OFF;
+  if (st && st.engaged) {
+    const parts = [];
+    if (st.engaged.radio) parts.push("Radio");
+    if (st.engaged.antenna) parts.push("Antenna");
+    tip += "\nEngaged for " + st.engaged.sat + (parts.length ? " (turned on: " + parts.join(" + ") + ")" : "");
+  } else if (st && st.selecting) {
+    tip += "\nSelecting " + st.selecting + " for a marked pass";
+  }
+  return tip;
+}
+function updateAutoEngageUi(on) {
+  autoEngageOn = !!on;
+  const btn = document.getElementById("btn-auto-engage");
+  if (!btn) return;
+  btn.classList.toggle("active", autoEngageOn);
+  btn.classList.toggle("engaged", !!(autoEngageStatus && autoEngageStatus.engaged));
+  btn.textContent = autoEngageOn ? "Auto Engage ON" : "Auto Engage";
+  const tip = autoEngageTitle();
+  if (btn.title !== tip) btn.title = tip;
+}
+let lastServerAutoEngage = null;
+const autoEngageGuard = typeof createSetGuard === "function"
+  ? createSetGuard({ onRelease: () => { if (lastServerAutoEngage != null) updateAutoEngageUi(lastServerAutoEngage); } })
+  : null;
+/** Auto Engage as reported by the server (profiles payload / state.autoEngage). */
+function applyServerAutoEngage(on, status) {
+  if (status !== undefined) autoEngageStatus = status || null;
+  lastServerAutoEngage = !!on;
+  if (autoEngageGuard && autoEngageGuard.held("autoEngage")) { updateAutoEngageUi(autoEngageOn); return; }
+  updateAutoEngageUi(on);
+}
+function sendAutoEngage(on) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  updateAutoEngageUi(on); // optimistic; server broadcast confirms
+  const m = { type: "auto-engage-set", on: !!on };
+  if (autoEngageGuard) m.seq = autoEngageGuard.begin(["autoEngage"]);
+  ws.send(JSON.stringify(m));
+}
+
 function updateAntennaUi(on, azConnected, elConnected) {
   antennaOn = !!on;
   if (!antennaOn) parking = false;
@@ -545,13 +599,17 @@ function connectTracker() {
           applyProfilesMessage(msg);
         }
         applyServerAutoSelect(msg.autoSelect === true);
+        applyServerAutoEngage(msg.autoEngage === true);
         if (window.PassAlerts) window.PassAlerts.onProfiles(msg);
+        if (window.AutoEngage) window.AutoEngage.onProfiles(msg);
         return;
       }
 
       if (msg.type === "set-ack") {
         // Toggle save acknowledged (js/set-guard.js); fav-overlay.js has its own listener.
         if (autoSelectGuard) autoSelectGuard.ack(msg.seq);
+        if (autoEngageGuard) autoEngageGuard.ack(msg.seq);
+        if (window.AutoEngage && window.AutoEngage.onAck) window.AutoEngage.onAck(msg.seq);
         if (window.PassAlerts && window.PassAlerts.onAck) window.PassAlerts.onAck(msg.seq);
         return;
       }
@@ -652,6 +710,7 @@ function connectTracker() {
 
       // Pass alerts: next passes of alerted sats (fires AOS−5 / AOS).
       if (window.PassAlerts) window.PassAlerts.onState(msg);
+      if (msg.autoEngage) applyServerAutoEngage(msg.autoEngage.on === true, msg.autoEngage);
 
       // After a local switch, drop in-flight state for any other sat (it would
       // draw the old sat's position under the new name). Expires after 15 s
@@ -881,6 +940,15 @@ function initRadioControls() {
     autoBtn.addEventListener("click", () => {
       console.log("btn-auto-select click, currently", autoSelectOn);
       sendAutoSelect(!autoSelectOn);
+    });
+  }
+
+  const engageBtn = document.getElementById("btn-auto-engage");
+  if (engageBtn) {
+    updateAutoEngageUi(autoEngageOn); // tooltip before the first server message
+    engageBtn.addEventListener("click", () => {
+      console.log("btn-auto-engage click, currently", autoEngageOn);
+      sendAutoEngage(!autoEngageOn);
     });
   }
 

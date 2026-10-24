@@ -120,6 +120,7 @@
   // is never lost to the 1 s refresh replacing it mid-click.
   let infoEl = null;
   let bellEl = null;
+  let engageEl = null;
   let infoHtml = "";
   let bellSig = "";
   function buildBadge(host) {
@@ -138,6 +139,13 @@
     bellEl.className = "sat-alert ppb-alert";
     bellEl.setAttribute("data-alert", "pass");
     bellEl.hidden = true;
+    // Auto Engage icon for the same pass (js/auto-engage-ui.js paints it and
+    // handles its click); independent of the bell.
+    engageEl = document.createElement("button");
+    engageEl.type = "button";
+    engageEl.className = "pass-engage ppb-engage";
+    engageEl.setAttribute("data-engage", "pass");
+    engageEl.hidden = true;
     const back = document.createElement("a");
     back.href = "#";
     back.className = "ppb-back";
@@ -145,6 +153,7 @@
     back.textContent = "Back to now";
     badge.appendChild(infoEl);
     badge.appendChild(bellEl);
+    badge.appendChild(engageEl);
     badge.appendChild(back);
     host.appendChild(badge);
   }
@@ -155,6 +164,7 @@
     const sig = p ? p.key + "|" + p.aosMs + "|" + (p.losMs != null ? p.losMs : "") : "";
     if (sig === bellSig) return;
     bellSig = sig;
+    renderEngage(p);
     bellEl.hidden = !p;
     if (!p) return;
     bellEl.setAttribute("data-sat", p.key);
@@ -162,6 +172,19 @@
     bellEl.setAttribute("data-los", p.losMs != null ? String(p.losMs) : "");
     bellEl.setAttribute("data-aos-label", fmt(p.aosMs));
     if (window.PassAlerts && window.PassAlerts.paint) window.PassAlerts.paint(badge);
+  }
+
+  function renderEngage(p) {
+    if (!engageEl) return;
+    const core = window.AutoEngageCore;
+    const moon = p && (core ? core.isMoonKey(p.key) : String(p.key).toUpperCase() === "MOON");
+    engageEl.hidden = !p || moon;
+    if (!p || moon) return;
+    engageEl.setAttribute("data-sat", p.key);
+    engageEl.setAttribute("data-aos", String(p.aosMs));
+    engageEl.setAttribute("data-los", p.losMs != null ? String(p.losMs) : "");
+    engageEl.setAttribute("data-aos-label", fmt(p.aosMs));
+    if (window.AutoEngage && window.AutoEngage.paint) window.AutoEngage.paint(badge);
   }
 
   function renderBadge() {
