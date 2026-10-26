@@ -201,3 +201,7 @@ body.globe-mode #map .leaflet-control-attribution { display: none; }
 .globe-station { width: 0; height: 0; overflow: visible; pointer-events: none; }
 .globe-station-mark { position: absolute; left: -7px; top: -9px; width: 14px; height: 18px; line-height: 18px; text-align: center; color: #58a6ff; font: 700 18px/18px sans-serif; text-shadow: 0 0 4px #000; pointer-events: none; }
 .globe-label.globe-label-station { position: absolute; left: 10px; top: 0; transform: translateY(-50%); }
+
+/* WSJT-X decode kinds (js/decode-overlay.js KIND_COLOR): label accent on the map chip. */
+.leaflet-tooltip.decode-label.k-me { border-left: 2px solid #ff5c5c; color: #ffd6d6; }
+.leaflet-tooltip.decode-label.k-cq { border-left: 2px solid #3fb950; color: #d7f5dc; }

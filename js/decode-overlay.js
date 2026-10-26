@@ -15,6 +15,17 @@
   let skewMs = 0; // server now - client now
   const markers = new Map();
   let btn = null;
+  /**
+   * Station colors by the server's decode kind (lib/wsjtx-decodes.js), WSJT-X style:
+   * red = calling you (message addressed to your callsign), green = CQ / QRZ or
+   * a 73 / RR73 sign-off, yellow = any other decode.
+   */
+  const KIND_COLOR = { me: "#ff5c5c", cq: "#3fb950", other: "#ffd34d" };
+  const KIND_TEXT = { me: "calling you", cq: "CQ / 73" };
+  const LEGEND_TEXT = "Colors: red = calling you · green = CQ / 73 · yellow = other decodes";
+  function colorOf(s) {
+    return KIND_COLOR[s && s.kind] || KIND_COLOR.other;
+  }
 
   function getMap() {
     return typeof map !== "undefined" && map ? map : null;
@@ -76,7 +87,7 @@
   function syncBtn() {
     if (!btn) return;
     btn.classList.toggle("active", on);
-    btn.title = (on ? "Hide" : "Show") + " WSJT-X decoded stations";
+    btn.title = (on ? "Hide" : "Show") + " WSJT-X decoded stations\n" + LEGEND_TEXT;
     btn.setAttribute("aria-pressed", on ? "true" : "false");
   }
   function ageOpacity(ageMs) {
@@ -87,7 +98,9 @@
     return (
       s.call + " " + s.grid + (s.mode ? " " + s.mode : "") +
       (Number.isFinite(s.snr) ? " " + (s.snr > 0 ? "+" : "") + s.snr + " dB" : "") +
-      " · " + Math.max(0, Math.round(age / 60000)) + " min ago"
+      " · " + Math.max(0, Math.round(age / 60000)) + " min ago" +
+      (KIND_TEXT[s.kind] ? " · " + KIND_TEXT[s.kind] : "") +
+      (s.message && s.kind ? "\n" + s.message : "")
     );
   }
   /** Stations to draw now (empty when toggled off): {call, grid, lat, lon, opacity, tip}. */
@@ -99,7 +112,7 @@
       if (!s || !Number.isFinite(s.lat) || !Number.isFinite(s.lon)) continue;
       const age = now - s.lastHeard;
       if (age > expireMs) continue;
-      out.push({ call: s.call, grid: s.grid, lat: s.lat, lon: s.lon, opacity: ageOpacity(age), tip: tipText(s, age) });
+      out.push({ call: s.call, grid: s.grid, lat: s.lat, lon: s.lon, opacity: ageOpacity(age), tip: tipText(s, age), kind: s.kind || "other", color: colorOf(s) });
     }
     return out;
   }
@@ -114,7 +127,7 @@
     const seen = new Set();
     for (const s of stations) {
       const age = now - s.lastHeard;
-      if (age > expireMs) continue;
+      if (age > expireMs || !Number.isFinite(s.lat) || !Number.isFinite(s.lon)) continue;
       seen.add(s.call);
       const op = ageOpacity(age);
       let mk = markers.get(s.call);
@@ -126,7 +139,7 @@
           radius: 3,
           weight: 1,
           color: "#0b1e2d",
-          fillColor: "#ffd34d",
+          fillColor: colorOf(s),
           fillOpacity: op,
           opacity: op,
           className: "decode-dot",
@@ -135,17 +148,21 @@
           permanent: true,
           direction: "right",
           offset: [4, 0],
-          className: "decode-label",
+          className: "decode-label k-" + (s.kind || "other"),
           opacity: op,
         });
         mk.addTo(lg);
         markers.set(s.call, mk);
       } else {
         mk.setLatLng([s.lat, s.lon]);
-        mk.setStyle({ fillOpacity: op, opacity: op });
+        mk.setStyle({ fillOpacity: op, opacity: op, fillColor: colorOf(s) });
         mk.setTooltipContent(html);
         const t = mk.getTooltip();
-        if (t) t.setOpacity(op);
+        if (t) {
+          t.setOpacity(op);
+          const te = t.getElement && t.getElement();
+          if (te) te.className = te.className.replace(/\bk-(me|cq|other)\b/, "k-" + (s.kind || "other"));
+        }
       }
       const el = mk.getElement && mk.getElement();
       if (el) el.setAttribute("aria-label", tip);
@@ -169,6 +186,8 @@
   window.decodeOverlay = {
     isOn: () => on,
     items: visibleItems,
+    colors: KIND_COLOR,
+    legend: LEGEND_TEXT,
     ageOpacity: (ageMs) => ageOpacity(ageMs),
   };
 

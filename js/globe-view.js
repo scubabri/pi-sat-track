@@ -836,6 +836,7 @@
     const inner = e.firstChild;
     if (!inner) return;
     inner.style.opacity = String(d.opacity);
+    if (!d.src && inner.firstChild && d._col !== (d.color || "")) { d._col = d.color || ""; inner.firstChild.style.background = d._col; }
     if (d.src === "aprs") {
       e.classList.toggle("aprs-approx", d.posSource === "grid" || d.posSource === "last");
       e.classList.toggle("aprs-self", d.posSource === "self");
@@ -864,6 +865,7 @@
       let d = heard.get(s.call);
       if (!d) { d = { kind: "heard", key: "__heard:" + s.call, alt: 0.006 }; heard.set(s.call, d); }
       d.call = s.call; d.grid = s.grid; d.lat = s.lat; d.lng = s.lon; d.opacity = s.opacity; d.tip = s.tip;
+      d.color = s.color || ""; // WSJT-X kind color (calling you / CQ-73 / other)
       seen.add(s.call);
       paintHeard(d);
     }

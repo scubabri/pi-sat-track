@@ -128,6 +128,8 @@ function stationFromProfile(fallback) {
  */
 const decodeStore = wsjtxDecodes.createStore({
   onChange: () => broadcast(decodeStore.payload()),
+  // "Calling us" = addressed to the configured station callsign (never hardcoded).
+  getMyCall: () => stationFromProfile().callsign || "",
 });
 
 /** Auto AMSAT "Heard" when a QSO is logged (Configure → Logging; default on). */
