@@ -430,6 +430,34 @@ let favProfileHover = null; // sat key highlighted (legend / arc hover)
 let favProfileHits = { legend: [], arcs: [], labels: [] };
 let favHitAt = null; // (mouse event) -> { key, display, legend? } | null
 
+/*
+ * Legend visibility (this browser only): sats unchecked in the chart legend.
+ * A hidden sat loses its curves, peak labels, hit boxes and hover readout;
+ * its legend row stays (dimmed, empty box) so it can be checked again.
+ * Per sat: unchecking the selected sat hides only that sat.
+ */
+const FAV_CHART_HIDDEN_LS = "favChartHidden";
+let favChartHidden = loadFavChartHidden();
+function loadFavChartHidden() {
+  try {
+    const a = JSON.parse((typeof localStorage !== "undefined" && localStorage.getItem(FAV_CHART_HIDDEN_LS)) || "[]");
+    return new Set(Array.isArray(a) ? a.filter((k) => typeof k === "string") : []);
+  } catch (_) {
+    return new Set();
+  }
+}
+function isFavChartHidden(key) {
+  return favChartHidden.has(key);
+}
+function toggleFavChartHidden(key) {
+  if (!key) return;
+  if (favChartHidden.has(key)) favChartHidden.delete(key);
+  else favChartHidden.add(key);
+  try { localStorage.setItem(FAV_CHART_HIDDEN_LS, JSON.stringify([...favChartHidden])); } catch (_) {}
+  if (favProfileHover === key) favProfileHover = null;
+  if (favProfileMode()) drawFavProfile();
+}
+
 /**
  * Selected sat for chart clicks / drawing: the client's selection (set at
  * once by selectSatellite), not favProfileData.current, which is the
@@ -483,7 +511,8 @@ function initFavProfileEvents() {
     const x = e.clientX - r.left;
     const y = e.clientY - r.top;
     for (const l of favProfileHits.legend)
-      if (x >= l.x && x <= l.x + l.w && y >= l.y && y <= l.y + l.h) return { key: l.key, display: l.display, legend: true };
+      if (x >= l.x && x <= l.x + l.w && y >= l.y && y <= l.y + l.h)
+        return { key: l.key, display: l.display, legend: true, box: x <= l.boxX1, hidden: isFavChartHidden(l.key) };
     // Nearest arc line (distance to segments, so steep spikes between 60 s samples still hit).
     let best = null;
     let bd = 64; // 8 px radius
@@ -524,7 +553,9 @@ function initFavProfileEvents() {
   cv.addEventListener("mousemove", (e) => {
     if (!favProfileMode()) return;
     const h = hitAt(e);
-    const k = h ? h.key : null;
+    // No highlight from a legend checkbox or a hidden sat's row: highlighting
+    // dims every other sat, which read as "unchecking hid all the others".
+    const k = h && !(h.legend && (h.box || h.hidden)) ? h.key : null;
     cv.style.cursor = h ? "pointer" : "";
     if (k !== favProfileHover) { favProfileHover = k; drawFavProfile(); }
   });
@@ -537,6 +568,11 @@ function initFavProfileEvents() {
     const h = hitAt(e);
     if (!h) { if (favProfileHover) { favProfileHover = null; drawFavProfile(); } return; }
     // Legend name: select that sat (if not already) and spin the globe to it.
+    if (h.legend && (h.box || h.hidden)) {
+      // Legend checkbox (or a hidden sat's name): show / hide just that sat.
+      toggleFavChartHidden(h.key);
+      return;
+    }
     if (h.legend) {
       // Ending a preview restores the pre-preview camera mode (QTH / follow / free);
       // with no preview the legend spins the globe to that sat and follows it.
@@ -575,12 +611,13 @@ function drawFavProfile() {
   const curKey = chartSelectedKey();
   const sats = data.sats.slice().sort((a, b) => (a.key === curKey) - (b.key === curKey));
   const colorOf = (s) => (s.key === curKey ? SAT_SELECTED_COLOR : favColor(s.key));
+  const shownSats = sats.filter((s) => !isFavChartHidden(s.key)); // legend-checked only
 
   // Legend width: longest name.
   ctx.font = "10px sans-serif";
   let legW = 0;
   sats.forEach((s) => { legW = Math.max(legW, ctx.measureText(s.display || s.key).width); });
-  legW = Math.min(170, Math.ceil(legW) + 22);
+  legW = Math.min(184, Math.ceil(legW) + 36); // checkbox + swatch + name
   const padL = 34;
   const padR = legW + 10;
   const padT = 12;
@@ -631,13 +668,13 @@ function drawFavProfile() {
 
   // Arcs: favorites first (thin), selected last (thick, on top).
   const labels = [];
-  const hk = favProfileHover;
+  const hk = favProfileHover && !isFavChartHidden(favProfileHover) ? favProfileHover : null;
   ctx.save();
   ctx.beginPath();
   ctx.rect(padL, 0, plotW, padT + plotH + 1);
   ctx.clip();
   ctx.lineJoin = "round";
-  for (const s of sats) {
+  for (const s of shownSats) {
     const sel = s.key === curKey;
     const col = colorOf(s);
     const hi = hk === s.key;
@@ -661,8 +698,10 @@ function drawFavProfile() {
       favProfileHits.arcs.push({ key: s.key, display: s.display, pts: xy, x0: xy[0][0], x1: xy[xy.length - 1][0],
         ts: p.pts.map((q) => Math.max(t0, q[0])), aos: p.aos, los: p.los }); // times for click → preview T
       if (p.maxEl >= 20 && !dim) {
+        // Server-refined peak (tca / maxEl) so the label doesn't jump between recomputes.
         let pk = p.pts[0];
-        p.pts.forEach((q) => { if (q[1] > pk[1]) pk = q; });
+        if (Number.isFinite(p.tca)) pk = [p.tca, p.maxEl];
+        else p.pts.forEach((q) => { if (q[1] > pk[1]) pk = q; });
         if (pk[0] >= t0)
           labels.push({ key: s.key, display: s.display, t: pk[0], x: X(pk[0]), y: Y(pk[1]), text: (s.display || s.key) + " " + Math.round(p.maxEl) + "\u00B0", col, pri: sel || hi ? 0 : 1, maxEl: p.maxEl });
       }
@@ -718,7 +757,7 @@ function drawFavProfile() {
   ctx.textBaseline = "top";
   ctx.fillText("now", xn + 3, 1);
 
-  // Legend: swatch + sat name (hover highlights, click selects).
+  // Legend: checkbox (show / hide) + swatch + sat name (hover highlights, name click selects).
   const lx = padL + plotW + 10;
   const rowH = Math.max(9, Math.min(13, (h - 4) / Math.max(1, sats.length)));
   const legend = sats.slice().sort((a, b) => (b.key === curKey) - (a.key === curKey));
@@ -728,13 +767,24 @@ function drawFavProfile() {
     const y = 2 + i * rowH + rowH / 2;
     if (y > h) return;
     const sel = s.key === curKey;
-    const dim = hk && hk !== s.key;
+    const off = isFavChartHidden(s.key);
+    const dim = off || (hk && hk !== s.key);
+    // checkbox
+    const bs = Math.max(6, Math.min(9, rowH - 3));
+    ctx.globalAlpha = off ? 0.6 : 1;
+    ctx.strokeStyle = off ? "#8b949e" : colorOf(s);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(lx + 0.5, Math.round(y - bs / 2) + 0.5, bs, bs);
+    if (!off) {
+      ctx.fillStyle = colorOf(s);
+      ctx.fillRect(lx + 2.5, Math.round(y - bs / 2) + 2.5, bs - 4, bs - 4);
+    }
     ctx.globalAlpha = dim ? 0.4 : 1;
     ctx.fillStyle = colorOf(s);
-    ctx.fillRect(lx, y - (sel ? 1.5 : 1), 12, sel ? 3 : 2);
-    ctx.fillStyle = hk === s.key ? "#e6edf3" : colorOf(s);
-    ctx.fillText(s.display || s.key, lx + 16, y);
-    favProfileHits.legend.push({ key: s.key, display: s.display, x: lx, y: y - rowH / 2, w: legW, h: rowH });
+    ctx.fillRect(lx + 14, y - (sel ? 1.5 : 1), 12, sel ? 3 : 2);
+    ctx.fillStyle = hk === s.key ? "#e6edf3" : off ? "#6e7681" : colorOf(s);
+    ctx.fillText(s.display || s.key, lx + 30, y);
+    favProfileHits.legend.push({ key: s.key, display: s.display, x: lx, y: y - rowH / 2, w: legW, h: rowH, boxX1: lx + 12 });
   });
   ctx.globalAlpha = 1;
 
@@ -742,7 +792,7 @@ function drawFavProfile() {
   chartGeom = { mode: "fav", padL, padT, plotW, plotH, T: (x) => t0 + ((x - padL) / plotW) * (t1 - t0), X, tMin: t0, tMax: t1, nowX: xn };
   const sample = (t) => {
     const out = [];
-    for (const s of sats) {
+    for (const s of shownSats) {
       for (const p of s.passes || []) {
         if (!p.pts || p.pts.length < 2 || t < p.pts[0][0] || t > p.pts[p.pts.length - 1][0]) continue;
         let i = 1;

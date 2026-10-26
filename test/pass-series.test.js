@@ -91,3 +91,26 @@ test("samples carry azimuth (0..359) agreeing with lookAngles; horizon points ha
     assert.strictEqual(p.pts[0].length, 2, "interpolated AOS point has no az");
   }
 });
+
+test("peak (maxEl / tca) is refined: same value whatever the 60 s grid phase", () => {
+  const a = computePassSeries(ISS, obs, start, 24, 60);
+  for (const off of [7000, 23000, 41000, 59000]) {
+    const b = computePassSeries(ISS, obs, start + off, 24, 60);
+    for (const p of a) {
+      const q = b.find((x) => Math.abs(x.aos - p.aos) < 120000);
+      if (!q) continue;
+      assert(Math.abs(q.maxEl - p.maxEl) <= 0.2, "maxEl stable: " + p.maxEl + " vs " + q.maxEl);
+      assert(Math.abs(q.tca - p.tca) < 5000, "tca stable");
+    }
+  }
+  for (const p of a) {
+    assert(p.tca >= p.aos && p.tca <= p.los);
+    const pk = p.pts.find((q) => q[0] === p.tca);
+    assert(pk && pk[1] === p.maxEl, "peak point is on the curve");
+    for (let i = 1; i < p.pts.length; i++) assert(p.pts[i][0] > p.pts[i - 1][0], "pts sorted");
+    // fine scan agrees with the refined peak
+    let fine = -90;
+    for (let t = p.aos; t <= p.los; t += 1000) fine = Math.max(fine, lookAngles(ISS, obs, new Date(t)).el);
+    assert(Math.abs(fine - p.maxEl) <= 0.15, "refined " + p.maxEl + " vs 1 s scan " + fine);
+  }
+});

@@ -165,3 +165,44 @@ test("a peak label drawn over another sat's pass does not steal clicks on that p
   clickAt(hit[0], hit[1]);
   assert.deepStrictEqual(calls.select, ["SO-50"], "the pass under the click wins over the label");
 });
+
+test("legend checkbox hides one sat: its curves + peak labels go, others stay (also for the selected sat)", () => {
+  const { sb, calls, clickAt, fire } = makeSandbox();
+  const now = Date.now();
+  sb.__fp = series(now);
+  vm.runInContext("favProfileData = __fp; drawFavProfile();", sb);
+  const keysOf = (what) => JSON.parse(JSON.stringify(vm.runInContext("favProfileHits." + what, sb))).map((a) => a.key);
+  assert.deepStrictEqual(keysOf("labels").sort(), ["ISS", "SO-50"]);
+  const box = (k) => JSON.parse(JSON.stringify(vm.runInContext("favProfileHits.legend", sb).find((l) => l.key === k)));
+  // Uncheck SO-50 (not selected)
+  let l = box("SO-50");
+  fire("mousemove", l.x + 4, l.y + l.h / 2);
+  clickAt(l.x + 4, l.y + l.h / 2);
+  assert.ok(!keysOf("arcs").includes("SO-50") && !keysOf("labels").includes("SO-50"), "SO-50 curve + label gone");
+  assert.ok(keysOf("arcs").includes("ISS") && keysOf("labels").includes("ISS"));
+  assert.deepStrictEqual(keysOf("legend").sort(), ["ISS", "SO-50"], "hidden sat keeps its legend row");
+  // Re-check SO-50, then uncheck the selected sat (ISS): only ISS goes
+  l = box("SO-50");
+  clickAt(l.x + 4, l.y + l.h / 2);
+  l = box("ISS");
+  fire("mousemove", l.x + 4, l.y + l.h / 2);
+  clickAt(l.x + 4, l.y + l.h / 2);
+  assert.strictEqual(vm.runInContext("favProfileHover", sb), null, "checkbox hover doesn't dim the others");
+  assert.deepStrictEqual(keysOf("arcs"), ["SO-50"]);
+  assert.deepStrictEqual(keysOf("labels"), ["SO-50"], "SO-50 label still drawn (not dimmed away)");
+  assert.deepStrictEqual(calls.select, [], "checkbox clicks never select");
+  assert.deepStrictEqual(calls.snap, []);
+});
+
+test("peak label uses the server's refined peak (tca / maxEl)", () => {
+  const { sb } = makeSandbox();
+  const now = Date.now();
+  const fp = series(now);
+  const p = fp.sats[0].passes[0];
+  p.maxEl = 61.3;
+  p.tca = p.aos + 290000;
+  sb.__fp = fp;
+  vm.runInContext("favProfileData = __fp; drawFavProfile();", sb);
+  const lab = JSON.parse(JSON.stringify(vm.runInContext("favProfileHits.labels", sb))).find((x) => x.key === "ISS");
+  assert.strictEqual(lab.t, p.tca);
+});
