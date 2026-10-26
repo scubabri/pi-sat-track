@@ -192,6 +192,22 @@
     }
     return out;
   }
+  /**
+   * Station list (js/wsjtx-list.js): every unexpired station, with or without a
+   * grid, calling you first, then CQ / 73, then others; newest first in each.
+   */
+  const KIND_RANK = { me: 0, cq: 1, other: 2 };
+  function listItems(nowMs) {
+    const now = (nowMs != null ? nowMs : Date.now()) + skewMs;
+    const out = [];
+    for (const s of stations) {
+      if (!s || !s.call) continue;
+      const age = now - s.lastHeard;
+      if (age > expireMs) continue;
+      out.push(Object.assign({}, s, { kind: s.kind || "other", age, opacity: ageOpacity(age), color: colorOf(s), tip: tipText(s, age) }));
+    }
+    return out.sort((a, b) => (KIND_RANK[a.kind] - KIND_RANK[b.kind]) || b.lastHeard - a.lastHeard);
+  }
   function notify() {
     try { document.dispatchEvent(new Event("decode-overlay-change")); } catch (_) {}
   }
@@ -271,6 +287,8 @@
     items: visibleItems,
     colors: KIND_COLOR,
     canReply,
+    list: listItems,
+    client: () => wsjtxClient,
     reply,
     legend: LEGEND_TEXT,
     ageOpacity: (ageMs) => ageOpacity(ageMs),

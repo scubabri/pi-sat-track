@@ -43,7 +43,11 @@ test("store: kind per station; a report from a known-grid station still plots at
   assert.strictEqual(e.kind, "me");
   assert.strictEqual(e.grid, "FN42");
   assert.strictEqual(e.message, "N0CALL K1ABC -12");
-  assert.ok(!s.add({ message: "N0CALL W2UNK -12" }, t), "unknown grid, no position");
+  assert.ok(s.add({ message: "N0CALL W2UNK -12" }, t), "unknown grid: kept for the station list");
+  const u = s.list().find((x) => x.call === "W2UNK");
+  assert.strictEqual(u.grid, "");
+  assert.strictEqual(u.lat, null, "no map position");
+  assert.strictEqual(u.kind, "me");
 });
 
 test("map overlay colors stations by kind and explains the colors", () => {
@@ -73,4 +77,29 @@ test("map overlay colors stations by kind and explains the colors", () => {
   assert.ok(new Set([C.me, C.cq, C.other]).size === 3);
   assert.match(it[0].tip, /calling you/);
   assert.match(ctx.decodeOverlay.legend, /calling you/);
+});
+
+test("station list: calling you first, then CQ / 73, then others, newest first; gridless kept; expired dropped", () => {
+  const ctx = {
+    console, Date, Math, Number, JSON, Set, Map, String, Array, Object,
+    Event: class { constructor(t) { this.type = t; } },
+    localStorage: { getItem: () => null, setItem() {} },
+    document: { readyState: "complete", dispatchEvent() {}, addEventListener() {} },
+    setInterval: () => 0, clearInterval() {},
+  };
+  ctx.window = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "../js/decode-overlay.js"), "utf8"), ctx);
+  const now = Date.now();
+  const st = (call, kind, ago, grid) => ({ call, kind, grid: grid || "", lat: grid ? 40 : null, lon: grid ? -100 : null, lastHeard: now - ago * 1000 });
+  ctx.applyDecodeOverlay({ type: "wsjtx-decodes", expireMs: 900000, now, stations: [
+    st("O1", "other", 5, "FN42"), st("C1", "cq", 60, "FN31"), st("M1", "me", 300), st("C2", "cq", 10, "EM12"), st("M2", "me", 20, "DM79"), st("OLD", "me", 1000, "FN42"),
+  ] });
+  const l = ctx.decodeOverlay.list(now);
+  assert.strictEqual(l.map((x) => x.call).join(","), "M2,M1,C2,C1,O1");
+  assert.ok(l[0].opacity > l[1].opacity, "fades with age");
+  assert.strictEqual(ctx.decodeOverlay.items(now).map((x) => x.call).includes("M1"), false, "gridless not on the map");
+  const src = fs.readFileSync(path.join(__dirname, "../js/wsjtx-list.js"), "utf8");
+  assert.match(src, /D\(\)\.reply\(row\.dataset\.call\)/, "row click = same Reply as the map");
+  assert.match(src, /mode\(\) === "list"/, "window follows the green state");
 });
