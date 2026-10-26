@@ -78,3 +78,17 @@ test("globe-view draws decodeOverlay stations as 'heard' html markers", () => {
   const css = fs.readFileSync(path.join(__dirname, "../css/decode-overlay.css"), "utf8");
   assert.match(css, /\.globe-heard-dot/);
 });
+
+test("WSJT Heard button: 3 states off -> map -> list -> off, persisted; old on/off migrates", () => {
+  assert.strictEqual(loadOverlay({}).ctx.decodeOverlay.mode(), "map", "default = map (old default on)");
+  assert.strictEqual(loadOverlay({ decodeOverlayOn: "0" }).ctx.decodeOverlay.mode(), "off");
+  const { ctx } = loadOverlay({ decodeOverlayMode: "list" });
+  assert.strictEqual(ctx.decodeOverlay.mode(), "list");
+  assert.strictEqual(ctx.decodeOverlay.isOn(), true, "list includes the map");
+  ctx.decodeOverlay.setMode("off");
+  assert.strictEqual(ctx.decodeOverlay.isOn(), false);
+  assert.strictEqual(ctx.localStorage.getItem("decodeOverlayMode"), "off");
+  assert.strictEqual(loadOverlay({ decodeOverlayMode: "off", decodeOverlayOn: "0" }).ctx.decodeOverlay.mode(), "off");
+  const src = fs.readFileSync(path.join(__dirname, "../js/decode-overlay.js"), "utf8");
+  assert.match(src, /MODES\[\(MODES\.indexOf\(mode\) \+ 1\) % MODES\.length\]/, "click cycles");
+});

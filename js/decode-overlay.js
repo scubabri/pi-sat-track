@@ -7,8 +7,21 @@
  * and redraws on the "decode-overlay-change" document event.
  */
 (function () {
-  const LS_KEY = "decodeOverlayOn";
-  let on = localStorage.getItem(LS_KEY) !== "0";
+  const LS_KEY = "decodeOverlayOn"; // legacy on/off (still written for older code)
+  const LS_MODE = "decodeOverlayMode";
+  /**
+   * "WSJT Heard" button, 3 states cycled by click (persisted in localStorage):
+   *   off  (grey)          nothing drawn
+   *   map  (orange/yellow) stations on the map + globe, colored, click-to-answer
+   *   list (green)         map + the WSJT-X station list window (js/wsjtx-list.js)
+   */
+  const MODES = ["off", "map", "list"];
+  let mode = (() => {
+    const m = localStorage.getItem(LS_MODE);
+    if (MODES.includes(m)) return m;
+    return localStorage.getItem(LS_KEY) === "0" ? "off" : "map"; // migrate the old toggle
+  })();
+  let on = mode !== "off";
   let layer = null;
   let stations = [];
   let expireMs = 15 * 60 * 1000;
@@ -95,17 +108,14 @@
       options: { position: "topright" },
       onAdd: function () {
         const c = L.DomUtil.create("div", "leaflet-bar leaflet-control decode-toggle-control");
-        btn = L.DomUtil.create("a", "decode-toggle-btn", c);
+        btn = L.DomUtil.create("a", "decode-toggle-btn wsjt-heard-btn", c);
         btn.href = "#";
         btn.setAttribute("role", "button");
         btn.textContent = "WSJT Heard";
         L.DomEvent.disableClickPropagation(c);
         L.DomEvent.on(btn, "click", (e) => {
           L.DomEvent.preventDefault(e);
-          on = !on;
-          localStorage.setItem(LS_KEY, on ? "1" : "0");
-          render();
-          notify();
+          setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]);
         });
         const clr = L.DomUtil.create("a", "decode-clear-btn", c);
         clr.href = "#";
@@ -130,10 +140,29 @@
     });
     new Ctl().addTo(m);
   }
+  function setMode(m) {
+    if (!MODES.includes(m) || m === mode) return;
+    mode = m;
+    on = mode !== "off";
+    try {
+      localStorage.setItem(LS_MODE, mode);
+      localStorage.setItem(LS_KEY, on ? "1" : "0");
+    } catch (_) {}
+    render();
+    notify();
+    try { document.dispatchEvent(new CustomEvent("decode-overlay-mode", { detail: { mode } })); } catch (_) {}
+  }
+  const MODE_TEXT = {
+    off: "WSJT Heard: off. Click: stations on the map",
+    map: "WSJT Heard: map. Click: map + station list",
+    list: "WSJT Heard: map + station list. Click: off",
+  };
   function syncBtn() {
     if (!btn) return;
     btn.classList.toggle("active", on);
-    btn.title = (on ? "Hide" : "Show") + " WSJT-X decoded stations\n" + LEGEND_TEXT +
+    btn.classList.toggle("wsjt-list", mode === "list");
+    btn.dataset.mode = mode;
+    btn.title = MODE_TEXT[mode] + "\n" + LEGEND_TEXT +
       (wsjtxConnected ? "\nClick a station to answer it in WSJT-X" + (wsjtxClient ? " (" + wsjtxClient + ")" : "") : "\nWSJT-X not connected (click-to-answer needs its UDP packets)");
     btn.setAttribute("aria-pressed", on ? "true" : "false");
   }
@@ -237,6 +266,8 @@
   window.applyWsjtxListenerStatus = onListenerStatus;
   window.decodeOverlay = {
     isOn: () => on,
+    mode: () => mode,
+    setMode,
     items: visibleItems,
     colors: KIND_COLOR,
     canReply,

@@ -209,3 +209,5 @@ body.globe-mode #map .leaflet-control-attribution { display: none; }
 .wsjtx-can-reply path.decode-dot.leaflet-interactive { cursor: pointer; }
 .wsjtx-can-reply path.decode-dot.leaflet-interactive:hover { stroke: #fff; stroke-width: 2px; }
 .wsjtx-can-reply .globe-heard:not(.globe-aprs) .globe-heard-dot { cursor: pointer; }
+/* WSJT Heard 3-state: off grey, map orange (.active), map + list green. */
+.decode-toggle-control .decode-toggle-btn.wsjt-heard-btn.active.wsjt-list { color: #3fb950 !important; }
