@@ -144,7 +144,7 @@ function tickCountdown() {
     }
 
     if (secToLos > 0) {
-      if (labelEl) labelEl.textContent = "LOS";
+      if (labelEl) labelEl.textContent = "LOS in";
       countdownEl.textContent = formatCountdown(secToLos);
       if (dot) dot.className = "status-dot green";
       return;
