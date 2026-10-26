@@ -94,7 +94,8 @@ function updateModeSelect(modes, modeIndex) {
       sel.appendChild(opt);
       sel.disabled = true;
     } else {
-      sel.disabled = modes.length < 2;
+      // A single mode stays enabled (not greyed): it's still the active mode.
+      sel.disabled = false;
       modes.forEach((m, i) => {
         const opt = document.createElement("option");
         opt.value = String(m.index != null ? m.index : i);
@@ -105,6 +106,7 @@ function updateModeSelect(modes, modeIndex) {
         opt.textContent = freqs.length
           ? label + "  ·  " + freqs.join(" / ")
           : label;
+        opt.title = opt.textContent;
         sel.appendChild(opt);
       });
     }
@@ -113,6 +115,14 @@ function updateModeSelect(modes, modeIndex) {
   if (modeIndex != null && sel.options.length) {
     sel.value = String(modeIndex);
   }
+  syncModeSelectTitle(sel);
+}
+
+/** Hover shows the full selected mode text (the select truncates it). */
+function syncModeSelectTitle(sel) {
+  const opt = sel.options[sel.selectedIndex];
+  const txt = opt && opt.value !== "" && opt.textContent !== "—" ? opt.textContent : "";
+  sel.title = txt ? "Mode: " + txt : "Transponder / mode";
 }
 
 function updateFineOffsetDisplay() {
@@ -903,6 +913,7 @@ function initModeSelect() {
   const sel = document.getElementById("mode-select");
   if (!sel) return;
   sel.addEventListener("change", () => {
+    syncModeSelectTitle(sel);
     const idx = parseInt(sel.value, 10);
     if (!Number.isFinite(idx)) return;
     if (ws && ws.readyState === WebSocket.OPEN) {
