@@ -38,7 +38,22 @@
     set("cfg-sum-log", txt(document.getElementById("cfg-log-method")));
   }
 
+  /** Station → Version: build label from the server (/api/version). */
+  function loadVersion() {
+    const el = document.getElementById("cfg-sum-version");
+    if (!el || typeof fetch !== "function") return;
+    fetch("/api/version", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!j || !j.version) return;
+        el.textContent = j.version;
+        el.title = j.version + (j.source === "build" || j.source === "installed" ? " (installer build)" : j.source === "git" ? " (git checkout: branch+commit)" : "");
+      })
+      .catch(() => {});
+  }
+
   function init() {
+    loadVersion();
     const panel = document.getElementById("config-panel");
     const backdrop = document.getElementById("config-backdrop");
     const cfgBtn = document.getElementById("btn-config");

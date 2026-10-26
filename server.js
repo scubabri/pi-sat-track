@@ -3,34 +3,9 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 
-/** Build label: VERSION file (SFX stamp) → ~/.rpitrack/version → package.json + git sha. */
-function appVersion() {
-  const tryRead = (f) => {
-    try {
-      const v = fs.readFileSync(f, "utf8").trim();
-      return v || null;
-    } catch (_) {
-      return null;
-    }
-  };
-  let v =
-    tryRead(path.join(__dirname, "VERSION")) ||
-    tryRead(path.join(require("os").homedir(), ".rpitrack", "version"));
-  if (v) return v;
-  let pkg = "?";
-  try {
-    pkg = require("./package.json").version;
-  } catch (_) {}
-  try {
-    const sha = require("child_process")
-      .execSync("git rev-parse --short HEAD", { cwd: __dirname, stdio: ["ignore", "pipe", "ignore"] })
-      .toString()
-      .trim();
-    if (sha) return pkg + "+" + sha;
-  } catch (_) {}
-  return pkg;
-}
-const APP_VERSION = appVersion();
+/** Build label (lib/version.js): VERSION file (SFX stamp) → git branch+sha → ~/.rpitrack/version → package.json. */
+const APP_VERSION_INFO = require("./lib/version").resolveVersion({ dir: __dirname });
+const APP_VERSION = APP_VERSION_INFO.version;
 console.log("Sat Tracker starting version " + APP_VERSION);
 
 let shuttingDown = false;
@@ -439,6 +414,12 @@ const server = http.createServer((req, res) => {
       "Cache-Control": "no-store",
     });
     return res.end(aprsService.digipeatsCsv());
+  }
+
+  if (urlPath === "/api/version") {
+    // Station → Version row: installer build label ("UAT-alpha.43") or branch+sha.
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    return res.end(JSON.stringify({ version: APP_VERSION, source: APP_VERSION_INFO.source }));
   }
 
   if (urlPath === "/api/host") {
