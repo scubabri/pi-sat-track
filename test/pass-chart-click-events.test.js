@@ -131,15 +131,19 @@ test("drag along the selected sat's pass scrubs the preview (no select)", () => 
   assert.ok(Math.abs(ts[ts.length - 1] - a.ts[4]) < 20000);
 });
 
-test("legend still selects + follows; blank chart previews the time under x", () => {
+test("legend name click only toggles visibility (no select / follow); blank chart previews the time under x", () => {
   const { sb, calls, clickAt } = makeSandbox();
   const now = Date.now();
   sb.__fp = series(now);
   vm.runInContext("favProfileData = __fp; drawFavProfile();", sb);
   const leg = JSON.parse(JSON.stringify(vm.runInContext("favProfileHits.legend", sb).find((l) => l.key === "SO-50")));
-  clickAt(leg.x + 20, leg.y + leg.h / 2);
-  assert.deepStrictEqual(calls.select, ["SO-50"]);
-  assert.deepStrictEqual(calls.snap, ["SO-50"]);
+  clickAt(leg.x + 40, leg.y + leg.h / 2);
+  assert.deepStrictEqual(calls.select, []);
+  assert.deepStrictEqual(calls.snap, []);
+  assert.ok(!vm.runInContext("favProfileHits.arcs", sb).some((a) => a.key === "SO-50"), "name click hid SO-50");
+  clickAt(leg.x + 40, leg.y + leg.h / 2);
+  assert.ok(vm.runInContext("favProfileHits.arcs", sb).some((a) => a.key === "SO-50"), "second click shows it again");
+  assert.deepStrictEqual(calls.select, []);
   calls.preview.length = 0;
   const g = vm.runInContext("chartGeom", sb);
   const x = g.X(now + 15 * 3600000);

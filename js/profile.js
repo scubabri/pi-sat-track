@@ -568,18 +568,10 @@ function initFavProfileEvents() {
     const h = hitAt(e);
     if (!h) { if (favProfileHover) { favProfileHover = null; drawFavProfile(); } return; }
     // Legend name: select that sat (if not already) and spin the globe to it.
-    if (h.legend && (h.box || h.hidden)) {
-      // Legend checkbox (or a hidden sat's name): show / hide just that sat.
-      toggleFavChartHidden(h.key);
-      return;
-    }
     if (h.legend) {
-      // Ending a preview restores the pre-preview camera mode (QTH / follow / free);
-      // with no preview the legend spins the globe to that sat and follows it.
-      const hadPreview = !!(window.passPreview && window.passPreview.get() != null);
-      if (h.key !== chartSelectedKey() && typeof selectSatellite === "function") selectSatellite(h.key, h.display);
-      if (window.passPreview) window.passPreview.clear();
-      if (!hadPreview && typeof window.globeSnapTo === "function") window.globeSnapTo(h.key);
+      // Legend row (checkbox or name): show / hide just that sat. It never
+      // selects or follows the sat (pick a pass on the chart for that).
+      toggleFavChartHidden(h.key);
       return;
     }
     // Any pass arc / peak label (selected sat or not): initChartPreviewEvents
@@ -757,7 +749,7 @@ function drawFavProfile() {
   ctx.textBaseline = "top";
   ctx.fillText("now", xn + 3, 1);
 
-  // Legend: checkbox (show / hide) + swatch + sat name (hover highlights, name click selects).
+  // Legend: checkbox + swatch + sat name (hover highlights, click shows / hides).
   const lx = padL + plotW + 10;
   const rowH = Math.max(9, Math.min(13, (h - 4) / Math.max(1, sats.length)));
   const legend = sats.slice().sort((a, b) => (b.key === curKey) - (a.key === curKey));
@@ -1023,7 +1015,7 @@ function initChartPreviewEvents() {
     // Fav mode: legend rows and other sats' arcs keep their own click (select + snap).
     if (chartGeom.mode === "fav" && favHitAt) {
       const h = favHitAt(e);
-      if (h && h.legend) return; // legend: select + follow (initFavProfileEvents)
+      if (h && h.legend) return; // legend: show / hide (initFavProfileEvents)
       // Any sat's pass: preview it at the clicked point along the curve. Another
       // sat is selected once first (same action); the selected one is never re-selected.
       const t = previewTimeForHit(h, p.x, p.y);

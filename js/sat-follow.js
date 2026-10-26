@@ -2,8 +2,7 @@
  * Follow satellite: ONE shared on/off state for "keep the selected sat
  * centered", used by
  *  - the map's top-right "Follow satellite" button (js/map.js), lit while on;
- *  - the 3D globe follow (js/globe-view.js; also started by clicking a sat
- *    name in the elevation chart's Favorites legend), which listens here and
+ *  - the 3D globe follow (js/globe-view.js), which listens here and
  *    reports its own starts / stops (drag of the globe, center buttons);
  *  - the 2D map follower below (same rAF integrator idea as the globe:
  *    velocity from the last two 1 s server positions, sample error bled in

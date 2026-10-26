@@ -248,11 +248,12 @@ test("pure helper: saves on start, restores once on end, chained starts keep the
   assert.ok(!nh({ lat: 10, lng: 0 }, { lat: 12, lng: 0 }, 0.5));
 });
 
-test("wiring: station button marks home; legend restores instead of snapping during a preview", () => {
+test("wiring: station button marks home; chart legend no longer selects / snaps the globe", () => {
   const mp = fs.readFileSync(path.join(__dirname, "../js/map.js"), "utf8");
   assert.match(mp, /globeCenterOn\(ll\.lat, ll\.lon, \{ home: true \}\)/);
   const pr = fs.readFileSync(path.join(__dirname, "../js/profile.js"), "utf8");
-  assert.match(pr, /if \(!hadPreview && typeof window\.globeSnapTo === "function"\) window\.globeSnapTo\(h\.key\);/);
+  // Legend clicks only show / hide a sat on the chart (no follow / snap).
+  assert.ok(!/globeSnapTo/.test(pr), "profile.js never snaps the globe");
   const ix = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
   assert.ok(ix.indexOf("js/preview-camera.js") > 0 && ix.indexOf("js/preview-camera.js") < ix.indexOf("js/globe-view.js"));
 });
