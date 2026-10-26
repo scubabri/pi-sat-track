@@ -133,6 +133,24 @@ const decodeStore = wsjtxDecodes.createStore({
   getMyCall: () => stationFromProfile().callsign || (typeof wsjtx !== "undefined" && wsjtx ? wsjtx.getStatus().deCall : "") || "",
 });
 
+/**
+ * Worked stations (map / globe "Worked" layer): every QSO logged successfully
+ * from the Log box or WSJT-X, kept in ~/.rpitrack/worked.json (lib/worked.js).
+ * Display only; the ADIF / UDP output is unchanged.
+ */
+const worked = require("./lib/worked");
+const workedStore = worked.createWorked({
+  file: path.join(config.CACHE_DIR, "worked.json"),
+  onChange: (p) => broadcast(p),
+});
+function noteWorked(summary, grid, source, time) {
+  try {
+    workedStore.add(worked.fromRecord(summary, grid, source, time, logbook.adifDateTime));
+  } catch (e) {
+    console.warn("Worked list:", e.message);
+  }
+}
+
 /** Auto AMSAT "Heard" when a QSO is logged (Configure → Logging; default on). */
 const amsatAuto = require("./lib/amsat-auto").createAutoHeard({
   amsat: amsatReport,
@@ -188,6 +206,7 @@ const wsjtx = wsjtxListener.createListener({
         broadcastWsjtxStatus(); // refresh forwarded count in config
         // Only sat QSOs (enriched with the selected sat) get an AMSAT Heard.
         if (r.ok && e.enriched) autoAmsatHeard(ctx, stationFromProfile(), rec.time, "wsjtx");
+        if (r.ok) noteWorked(r.record, e.fields.GRIDSQUARE || "", "wsjtx", rec.time);
       })
       .catch((err) => console.warn("WSJT-X forward:", err.message));
   },
@@ -654,6 +673,7 @@ wss.on("connection", (ws, req) => {
     }),
   );
   ws.send(JSON.stringify(decodeStore.payload()));
+  ws.send(JSON.stringify(workedStore.payload()));
   ws.send(JSON.stringify(aprsService.statusPayload()));
   ws.send(JSON.stringify(aprsService.packetsPayload()));
   ws.send(JSON.stringify(aprsService.heardPayload()));
@@ -982,6 +1002,15 @@ wss.on("connection", (ws, req) => {
         return;
       }
 
+      if (msg.type === "worked-clear") {
+        workedStore.clear();
+        console.log("Worked stations cleared");
+        return;
+      }
+      if (msg.type === "worked-get") {
+        ws.send(JSON.stringify(workedStore.payload()));
+        return;
+      }
       if (msg.type === "wsjtx-reply") {
         // Map / station-list click on a decoded station: answer it in WSJT-X
         // (UDP Reply 4 = double-clicking that decode), sent back to the WSJT-X
@@ -1128,16 +1157,17 @@ wss.on("connection", (ws, req) => {
         });
         const qsoTime = new Date();
         const logCtx = state.getLogContext();
+        const dxGrid = (() => {
+          if (schedule.isGrid(String(msg.dxGrid || ""))) return String(msg.dxGrid);
+          const cs = String(msg.call || "").trim().toUpperCase();
+          const h = decodeStore.list().find((s) => s.call === cs);
+          return h && h.grid ? h.grid : "";
+        })();
         logbook
           .logQso({
             now: qsoTime,
             call: msg.call,
-            dxGrid: (() => {
-              if (schedule.isGrid(String(msg.dxGrid || ""))) return String(msg.dxGrid);
-              const cs = String(msg.call || "").trim().toUpperCase();
-              const h = decodeStore.list().find((s) => s.call === cs);
-              return h && h.grid ? h.grid : "";
-            })(),
+            dxGrid,
             ctx: logCtx,
             station,
             cfg: logOutputCfg(),
@@ -1164,6 +1194,7 @@ wss.on("connection", (ws, req) => {
               ),
             );
             if (r.ok) autoAmsatHeard(logCtx, station, qsoTime, "log");
+            if (r.ok) noteWorked(r.record, dxGrid, "log", qsoTime);
           })
           .catch((e) => {
             ws.send(
