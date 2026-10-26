@@ -133,7 +133,7 @@ function tickCountdown() {
     const secToLos = (losMs - now) / 1000;
 
     if (secToAos > 0) {
-      if (labelEl) labelEl.textContent = "Next AOS";
+      if (labelEl) labelEl.textContent = "Next AOS in";
       countdownEl.textContent = formatCountdown(secToAos);
       if (dot) {
         if (secToAos <= 5 * 60) dot.className = "status-dot red";
@@ -160,7 +160,7 @@ function tickCountdown() {
     return;
   }
 
-  if (labelEl) labelEl.textContent = "Next AOS";
+  if (labelEl) labelEl.textContent = "Next AOS in";
   countdownEl.textContent = "-";
   if (dot) dot.className = "status-dot";
 }
