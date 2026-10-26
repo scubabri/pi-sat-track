@@ -286,6 +286,12 @@
   flex-shrink: 0;
 }
 
+.passband-center-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
 .passband-value {
   text-align: right;
   color: #c9d1d9;

@@ -222,6 +222,9 @@
       });
       stepEl.addEventListener("dblclick", sendCenter);
     }
+    // Center button under the DL passband: same action as double-clicking Step.
+    const centerBtn = document.getElementById("btn-passband-center");
+    if (centerBtn) centerBtn.addEventListener("click", sendCenter);
 
 
     const acc = document.getElementById("btn-ctcss-access");
