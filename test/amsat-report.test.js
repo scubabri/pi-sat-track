@@ -29,6 +29,9 @@ assert.strictEqual(best({ satKey: "ISS", satName: "ISS", mode: "1k2 AFSK APRS", 
 assert.strictEqual(best({ satKey: "ISS", satName: "ISS", mode: "1k2 AFSK APRS", ulHz: 437825000, dlHz: 437825000 }), "ISS_[UHF_Digi]");
 assert.strictEqual(best({ satKey: "ISS", satName: "ISS", mode: "1k2 AFSK", ulHz: 145825000, dlHz: 145825000 }), "ISS_[VHF_Digi]");
 assert.strictEqual(best({ satKey: "ISS", satName: "ISS", mode: "Voice(Reg 1)", uplink: "145.200", downlink: "145.800" }), "ISS_[FM]");
+// ISS crossband FM repeater whose catalog label also names a data rate: FM, not VHF Digi
+assert.strictEqual(best({ satKey: "ISS", satName: "ISS", mode: "9k6 GFSK FM", uplink: "145.990", downlink: "437.800" }), "ISS_[FM]");
+assert.strictEqual(best({ satKey: "ISS", satName: "ISS", mode: "9k6 GFSK FM", ulHz: 145990000, dlHz: 437800000 }), "ISS_[FM]");
 assert.strictEqual(best({ satKey: "AO-7", satName: "AO-7", mode: "A", uplink: "145.850-145.950", downlink: "29.400- 29.500" }), "AO-7_[V/a]");
 assert.strictEqual(best({ satKey: "AO-7", satName: "AO-7", mode: "B C", uplink: "432.125-432.175", downlink: "145.975-145.925" }), "AO-7_[U/v]");
 assert.strictEqual(best({ satKey: "RS-44", satName: "RS-44", mode: "SSB/CW" }), "RS-44_[V/u]");

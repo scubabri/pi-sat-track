@@ -472,9 +472,11 @@ const server = http.createServer((req, res) => {
         json(200, {
           names: list.names,
           source: list.source,
-          sat: ctx ? { key: ctx.satKey, name: ctx.satName, mode: ctx.mode } : null,
+          sat: ctx ? { key: ctx.satKey, name: ctx.satName, mode: ctx.mode, uplink: ctx.uplink, downlink: ctx.downlink } : null,
           suggestions: matches.map((m) => m.value),
           best: matches.length ? matches[0].value : null,
+          // AMSAT mode tag the buttons submit (the "[FM]" in ISS_[FM]): same match as /submit.
+          reportMode: matches.length ? amsatReport.splitName(matches[0].value).tag : null,
           reports: amsatReport.REPORTS.map((v) => ({ value: v, label: amsatReport.REPORT_LABELS[v] })),
           utc: amsatReport.utcParts(new Date()),
           station: stationFromProfile(),

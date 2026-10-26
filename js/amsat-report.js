@@ -48,6 +48,16 @@
     // AO-91_[FM] → "AO-91 [FM]"; ISS_[VHF_Digi] → "ISS [VHF Digi]"
     return String(v || "").replace(/_/g, " ");
   }
+  /**
+   * Tooltip mode line: the AMSAT mode actually submitted (tag of the matched
+   * row, e.g. "FM" in ISS_[FM]) and the selected tracker mode it came from.
+   */
+  function modeLine(i) {
+    const tag = i.reportMode || (String(i.best || "").match(/_\[(.*)\]$/) || [])[1] || "";
+    const sel = i.sat && i.sat.mode ? i.sat.mode : "";
+    if (!tag && !sel) return "";
+    return "\nAMSAT mode: " + (tag ? amsatLabel(tag) : "(none)") + (sel ? " \u2014 for selected mode \u201C" + sel + "\u201D" : "");
+  }
   function render() {
     const local = cfgStation();
     const call = (info && info.station && info.station.callsign) || local.callsign;
@@ -65,9 +75,7 @@
         b.title = why;
         return;
       }
-      // Match AMSAT row (includes mode tag) + report type; mention tracker mode when present
-      const satMode = info.sat && info.sat.mode ? "; tracker mode " + info.sat.mode : "";
-      b.title = "Report " + amsatLabel(info.best) + " as " + reportLabel(b.dataset.v) + " (" + call + ")" + satMode;
+      b.title = "Report " + amsatLabel(info.best) + " as " + reportLabel(b.dataset.v) + " (" + call + ")" + modeLine(info);
       if (isHeard && heard) {
         b.title +=
           "\nHeard already reported this pass at " + utcHm(heard.at) +
@@ -102,8 +110,32 @@
     busy = false;
     refresh();
   }
+  // Re-fetch as soon as the selected sat / mode changes, so the tooltip never
+  // shows the previous mode for up to the 10 s poll (submit always uses the current one).
+  let lastSelKey = null;
+  function noteSelection(sat, modeIndex) {
+    const k = String(sat || "") + "|" + String(modeIndex != null ? modeIndex : "");
+    if (k === lastSelKey) return;
+    const first = lastSelKey == null;
+    lastSelKey = k;
+    if (!first && !busy) refresh();
+  }
+  function patchWs() {
+    if (typeof ws === "undefined" || !ws || ws.__amsatReportPatched) return;
+    ws.__amsatReportPatched = true;
+    ws.addEventListener("message", (ev) => {
+      if (typeof ev.data !== "string" || ev.data.indexOf('"modeIndex"') < 0) return;
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg && msg.sat !== undefined && msg.modeIndex !== undefined) noteSelection(msg.sat, msg.modeIndex);
+      } catch (_) {}
+    });
+  }
   function init() {
     btns().forEach((b) => (b.onclick = () => submit(b.dataset.v)));
+    const sel = document.getElementById("mode-select");
+    if (sel) sel.addEventListener("change", () => setTimeout(() => { if (!busy) refresh(); }, 300));
+    setInterval(patchWs, 500);
     refresh();
     setInterval(() => { if (!busy) refresh(); }, 10000);
   }
