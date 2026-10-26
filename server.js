@@ -129,7 +129,8 @@ function stationFromProfile(fallback) {
 const decodeStore = wsjtxDecodes.createStore({
   onChange: () => broadcast(decodeStore.payload()),
   // "Calling us" = addressed to the configured station callsign (never hardcoded).
-  getMyCall: () => stationFromProfile().callsign || "",
+  // Falls back to WSJT-X's own DE call (Status) when no callsign is configured.
+  getMyCall: () => stationFromProfile().callsign || (typeof wsjtx !== "undefined" && wsjtx ? wsjtx.getStatus().deCall : "") || "",
 });
 
 /** Auto AMSAT "Heard" when a QSO is logged (Configure → Logging; default on). */
@@ -191,7 +192,7 @@ const wsjtx = wsjtxListener.createListener({
       .catch((err) => console.warn("WSJT-X forward:", err.message));
   },
   onStatus: () => broadcastWsjtxStatus(),
-  onDecode: (d) => decodeStore.add(d),
+  onDecode: (d, id, from) => decodeStore.add(d, Date.now(), from ? Object.assign({ id }, from) : null),
 });
 
 function wsjtxStatusPayload() {
@@ -981,6 +982,25 @@ wss.on("connection", (ws, req) => {
         return;
       }
 
+      if (msg.type === "wsjtx-reply") {
+        // Map / station-list click on a decoded station: answer it in WSJT-X
+        // (UDP Reply 4 = double-clicking that decode), sent back to the WSJT-X
+        // instance + address the decode came from.
+        const call = String(msg.call || "").trim().toUpperCase();
+        const out = (o) => ws.send(JSON.stringify(Object.assign({ type: "wsjtx-reply-result", call, reqId: msg.reqId || null }, o)));
+        const st = wsjtx.getStatus();
+        if (!st.connected) return out({ ok: false, error: "WSJT-X is not connected" });
+        const r = decodeStore.replyFor(call);
+        if (!r) return out({ ok: false, error: "No recent decode from " + (call || "that station") });
+        wsjtx
+          .sendReply(r.target, r.id, r.decode)
+          .then(() => {
+            console.log("WSJT-X Reply →", r.id, r.target.address + ":" + r.target.port, JSON.stringify(r.decode.message));
+            out({ ok: true, message: r.decode.message, to: r.target.address + ":" + r.target.port, client: r.id });
+          })
+          .catch((e) => out({ ok: false, error: e.message }));
+        return;
+      }
       if (msg.type === "clear-decodes") {
         decodeStore.clear();
         console.log("WSJT-X spots cleared");

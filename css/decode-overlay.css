@@ -205,3 +205,7 @@ body.globe-mode #map .leaflet-control-attribution { display: none; }
 /* WSJT-X decode kinds (js/decode-overlay.js KIND_COLOR): label accent on the map chip. */
 .leaflet-tooltip.decode-label.k-me { border-left: 2px solid #ff5c5c; color: #ffd6d6; }
 .leaflet-tooltip.decode-label.k-cq { border-left: 2px solid #3fb950; color: #d7f5dc; }
+/* Click-to-answer (WSJT-X Reply) only while WSJT-X is connected. */
+.wsjtx-can-reply path.decode-dot.leaflet-interactive { cursor: pointer; }
+.wsjtx-can-reply path.decode-dot.leaflet-interactive:hover { stroke: #fff; stroke-width: 2px; }
+.wsjtx-can-reply .globe-heard:not(.globe-aprs) .globe-heard-dot { cursor: pointer; }

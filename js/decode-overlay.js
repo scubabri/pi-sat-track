@@ -23,6 +23,52 @@
   const KIND_COLOR = { me: "#ff5c5c", cq: "#3fb950", other: "#ffd34d" };
   const KIND_TEXT = { me: "calling you", cq: "CQ / 73" };
   const LEGEND_TEXT = "Colors: red = calling you · green = CQ / 73 · yellow = other decodes";
+  /* ---------- Reply: click a station = double-click its decode in WSJT-X ---------- */
+  let wsjtxConnected = false;
+  let wsjtxClient = "";
+  let replySeq = 0;
+  function canReply() {
+    return wsjtxConnected;
+  }
+  function toast(text, isErr) {
+    const old = document.getElementById("wsjtx-reply-toast");
+    if (old) old.remove();
+    const t = document.createElement("div");
+    t.id = "wsjtx-reply-toast";
+    t.className = "app-toast" + (isErr ? " app-toast-err" : "");
+    t.setAttribute("role", "status");
+    t.textContent = text;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), isErr ? 6000 : 3500);
+  }
+  /** Ask the server to send WSJT-X a Reply for this station's latest decode. */
+  function reply(call) {
+    if (!call) return false;
+    if (!wsjtxConnected) return false; // only offered while WSJT-X is connected
+    try {
+      if (typeof ws === "undefined" || !ws || ws.readyState !== 1) throw new Error("no server connection");
+      ws.send(JSON.stringify({ type: "wsjtx-reply", call, reqId: "wr" + ++replySeq }));
+      toast("WSJT-X: answering " + call + "\u2026");
+      return true;
+    } catch (e) {
+      toast("WSJT-X reply failed: " + e.message, true);
+      return false;
+    }
+  }
+  function onReplyResult(msg) {
+    if (msg.ok) toast("Sent to WSJT-X" + (msg.client ? " (" + msg.client + ")" : "") + ": answer " + msg.call + (msg.message ? " \u2014 \u201C" + msg.message + "\u201D" : ""));
+    else toast("WSJT-X reply to " + msg.call + " failed: " + (msg.error || "error"), true);
+    try { document.dispatchEvent(new CustomEvent("wsjtx-reply-result", { detail: msg })); } catch (_) {}
+  }
+  function onListenerStatus(msg) {
+    const c = !!(msg.connected && msg.state === "listening");
+    wsjtxClient = msg.lastClient || "";
+    if (c === wsjtxConnected) return;
+    wsjtxConnected = c;
+    if (document.body && document.body.classList) document.body.classList.toggle("wsjtx-can-reply", c); // map + globe cursors
+    syncBtn();
+    notify();
+  }
   function colorOf(s) {
     return KIND_COLOR[s && s.kind] || KIND_COLOR.other;
   }
@@ -87,7 +133,8 @@
   function syncBtn() {
     if (!btn) return;
     btn.classList.toggle("active", on);
-    btn.title = (on ? "Hide" : "Show") + " WSJT-X decoded stations\n" + LEGEND_TEXT;
+    btn.title = (on ? "Hide" : "Show") + " WSJT-X decoded stations\n" + LEGEND_TEXT +
+      (wsjtxConnected ? "\nClick a station to answer it in WSJT-X" + (wsjtxClient ? " (" + wsjtxClient + ")" : "") : "\nWSJT-X not connected (click-to-answer needs its UDP packets)");
     btn.setAttribute("aria-pressed", on ? "true" : "false");
   }
   function ageOpacity(ageMs) {
@@ -151,6 +198,10 @@
           className: "decode-label k-" + (s.kind || "other"),
           opacity: op,
         });
+        mk.on("click", (e) => {
+          if (e && e.originalEvent && L.DomEvent) L.DomEvent.stop(e.originalEvent);
+          reply(s.call);
+        });
         mk.addTo(lg);
         markers.set(s.call, mk);
       } else {
@@ -183,10 +234,13 @@
     notify();
   }
   window.applyDecodeOverlay = apply;
+  window.applyWsjtxListenerStatus = onListenerStatus;
   window.decodeOverlay = {
     isOn: () => on,
     items: visibleItems,
     colors: KIND_COLOR,
+    canReply,
+    reply,
     legend: LEGEND_TEXT,
     ageOpacity: (ageMs) => ageOpacity(ageMs),
   };
@@ -197,6 +251,8 @@
       try {
         const msg = JSON.parse(ev.data);
         if (msg.type === "wsjtx-decodes") apply(msg);
+        else if (msg.type === "wsjtx-listener") onListenerStatus(msg);
+        else if (msg.type === "wsjtx-reply-result") onReplyResult(msg);
       } catch (_) {}
     });
     ws.__decodeOverlayPatched = true;
