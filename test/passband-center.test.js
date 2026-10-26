@@ -14,9 +14,25 @@ test("index.html has a Center button right after the DL passband row", () => {
   assert.ok(html.indexOf("</section>", dl) > btn, "same section");
 });
 
-test("Center button click is wired to the same sendCenter as Step double-click", () => {
+test("Center button is the only way to center (no double-click on the Step box)", () => {
   const src = fs.readFileSync(path.join(__dirname, "../js/fine-ctcss.js"), "utf8");
-  assert.match(src, /stepEl\.addEventListener\("dblclick", sendCenter\)/);
+  assert.doesNotMatch(src, /dblclick/, "no double-click handler in fine-ctcss.js");
+  const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+  assert.doesNotMatch(html, /double-click(ing)? (Step|to center)/i, "no help text promising double-click center");
   assert.match(src, /getElementById\("btn-passband-center"\)[\s\S]{0,120}addEventListener\("click", sendCenter\)/);
   assert.match(src, /function sendCenter\(\)[\s\S]{0,300}type: "center"/);
+});
+
+test("no double-click on an editable input / textarea / select anywhere sends a center", () => {
+  const dir = path.join(__dirname, "../js");
+  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".js"))) {
+    const src = fs.readFileSync(path.join(dir, f), "utf8");
+    // any dblclick handler that centers tuning
+    const re = /addEventListener\(\s*"dblclick"\s*,\s*([^)]*)\)/g;
+    let m;
+    while ((m = re.exec(src))) assert.doesNotMatch(m[1], /center/i, f + ": dblclick -> " + m[1]);
+    assert.doesNotMatch(src, /ondblclick/i, f);
+  }
+  const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+  assert.doesNotMatch(html, /ondblclick/i);
 });

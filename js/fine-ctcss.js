@@ -220,9 +220,9 @@
           );
         }
       });
-      stepEl.addEventListener("dblclick", sendCenter);
     }
-    // Center button under the DL passband: same action as double-clicking Step.
+    // Center button under the DL passband is the only way to center (the Step
+    // box has no double-click action, so double-click just selects its digits).
     const centerBtn = document.getElementById("btn-passband-center");
     if (centerBtn) centerBtn.addEventListener("click", sendCenter);
 

@@ -999,7 +999,7 @@ function initRadioControls() {
     });
   }
 
-  // Offset-step input (change/▲▼/dblclick-center) is wired once in fine-ctcss.js.
+  // Offset-step input (change/▲▼) is wired once in fine-ctcss.js.
 
   updateFineOffsetDisplay();
 }
