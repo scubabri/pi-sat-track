@@ -216,6 +216,29 @@
               </p>
             </div>
 
+            <div class="form-row backup-row" id="cfg-backup">
+              <label>Backup &amp; restore</label>
+              <div class="backup-controls">
+                <button type="button" class="btn btn-small" id="btn-backup-download"
+                  title="Save every profile and setting on this server (plus this browser's display preferences) to a JSON file on this computer">Download backup</button>
+                <button type="button" class="btn btn-small" id="btn-backup-restore"
+                  title="Replace all settings on this server with a backup file (the current settings are kept in ~/.rpitrack/backups first)">Restore from backup</button>
+                <input type="file" id="backup-file" accept=".json,application/json" hidden />
+              </div>
+              <p class="form-hint" id="backup-hint">
+                Saves all station profiles (radios, rotor, logging, WSJT-X,
+                KISS / APRS, favorites, bells), per-sat offsets and TLE
+                sources, plus this browser's display preferences, to
+                <code>pi-sat-track-backup-&lt;date&gt;.json</code>. The file is
+                plain text and includes everything in your settings, including
+                any passwords or passcodes you have entered: keep it private.
+                Restore replaces the server's settings (the current ones are
+                saved to <code>~/.rpitrack/backups/</code> first), then reloads
+                the page.
+              </p>
+              <p class="form-hint backup-status" id="backup-status" role="status" aria-live="polite"></p>
+            </div>
+
             </section>
             <section class="cfg-tab-pane" data-tab="radio" role="tabpanel" hidden>
             <div class="cfg-radio-opts">
@@ -1632,6 +1655,7 @@
     <script src="js/config-form.js"></script>
     <script src="js/config-test-ui.js"></script>
     <script src="js/config.js"></script>
+    <script src="js/settings-backup.js"></script>
     <script src="js/config-modal.js"></script>
     <script src="js/freq-utils.js"></script>
     <script src="js/sat-menu.js"></script>
