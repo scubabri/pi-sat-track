@@ -11,6 +11,7 @@ This wiki is the operator guide. Source and installers live in the [repository](
 1. [Overview](#1-overview)
 2. [What you need](#2-what-you-need)
 3. [Install](#3-install)
+   - [One installer for Pi, Linux and Mac (.run)](#30-one-installer-for-pi-linux-and-mac-run)
    - [Raspberry Pi / Linux](#31-raspberry-pi--linux)
    - [Windows 11](#32-windows-11)
    - [macOS](#33-macos)
@@ -70,6 +71,30 @@ Internet is used for AMSAT catalog / Celestrak TLE refresh; after that, tracking
 
 ## 3. Install
 
+### 3.0 One installer for Pi, Linux and Mac (`.run`)
+
+Release builds are a single file, `pi-sat-track-<branch>-alpha.<N>.run`, that
+works out where it is running and installs accordingly:
+
+| Detected | How | What it does |
+|----------|-----|--------------|
+| Raspberry Pi | Linux + `/proc/device-tree/model` contains "Raspberry Pi" | extracts to `pi-sat-track/` next to the `.run`, runs `install-pi.sh` (unchanged) |
+| Other Linux | Linux, not a Pi | same as the Pi (Debian / Ubuntu with apt; other distros get a clear message) |
+| macOS | `uname -s` = Darwin | extracts to `~/pi-sat-track` (updated in place, `~/.rpitrack` kept), runs `install-mac.sh` |
+| Windows | – | not supported by the `.run`: use `install-win.bat` (3.2) |
+
+```bash
+chmod +x pi-sat-track-<branch>-alpha.<N>.run
+./pi-sat-track-<branch>-alpha.<N>.run                  # install
+./pi-sat-track-<branch>-alpha.<N>.run --update         # update (options go to the platform installer)
+./pi-sat-track-<branch>-alpha.<N>.run --print-platform # only show what it detected / would do
+```
+
+On a Mac, a `~/pi-sat-track` that is a git checkout is never overwritten: update
+that with `./install-mac.sh --update`. `PST_MAC_DEST=<dir>` picks another parent
+folder. For testing, `PST_FORCE_PLATFORM=pi|linux|mac|other` and
+`PST_FORCE_MODEL="..."` override the detection.
+
 ### 3.1 Raspberry Pi / Linux
 
 Distribution is a **zip / self-extracting archive** (not a git clone requirement for alpha testers).
@@ -99,8 +124,9 @@ If port 80 is already in use, the installer leaves it alone; use **http://127.0.
 
 ### 3.3 macOS
 
-macOS 12 or newer, Apple Silicon or Intel. Put the app in a folder (git
-clone, or extract the zip), e.g. `~/pi-sat-track`, then in Terminal:
+macOS 12 or newer, Apple Silicon or Intel. Easiest: run the `.run` (3.0); it
+puts the app in `~/pi-sat-track` and runs `install-mac.sh` for you. From a git
+checkout or an extracted zip instead, e.g. in `~/pi-sat-track`, in Terminal:
 
 ```bash
 git clone https://github.com/scubabri/pi-sat-track.git ~/pi-sat-track   # or extract the zip there

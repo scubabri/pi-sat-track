@@ -77,55 +77,115 @@ tar -czf "${PAYLOAD}" \
   -C "${PARENT}" "${BASE}"
 
 echo "==> Writing extractor + installer header"
+# Build-time values first (expanded now), then the stub body (quoted heredoc,
+# copied as is). The stub must run on macOS too: bash 3.2 + BSD tools only.
 cat > "${HEADER}" << EOF
 #!/usr/bin/env bash
-# Self-extracting pi-sat-track archive — extract then run install-pi.sh
+# Self-extracting pi-sat-track archive: detect the platform, extract, install.
+#   Raspberry Pi / Linux: extract next to this .run, run install-pi.sh
+#   macOS:                extract to ~/pi-sat-track, run install-mac.sh
 # Build: ${VERSION_LABEL}
-set -euo pipefail
-
 PI_SAT_TRACK_VERSION="${VERSION_LABEL}"
 PI_SAT_TRACK_BRANCH="${BRANCH}"
-DEST="\$(cd "\$(dirname "\$0")" && pwd)"
-APP="\${DEST}/pi-sat-track"
-ARCHIVE_LINE="\$(awk '/^__ARCHIVE__\$/{print NR + 1; exit 0;}' "\$0")"
-if [[ -z "\${ARCHIVE_LINE}" ]]; then
+EOF
+cat >> "${HEADER}" << 'EOF'
+# Options (all others go to the platform installer, e.g. --update, --no-nginx):
+#   --print-platform   show what was detected and where it would install; no changes
+# Test overrides: PST_FORCE_PLATFORM=pi|linux|mac|other  PST_FORCE_MODEL="..."
+#                 PST_MAC_DEST=<dir>  (macOS app folder parent, default $HOME)
+set -euo pipefail
+
+PRINT_ONLY=0
+if [ "${1:-}" = "--print-platform" ]; then PRINT_ONLY=1; shift; fi
+
+# ---- platform detection ----
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+MODEL=""
+for f in /proc/device-tree/model /sys/firmware/devicetree/base/model; do
+  if [ -r "$f" ]; then MODEL="$(tr -d '\000' < "$f")"; break; fi
+done
+MODEL="${PST_FORCE_MODEL:-$MODEL}"
+PLATFORM="${PST_FORCE_PLATFORM:-}"
+if [ -z "$PLATFORM" ]; then
+  case "$OS" in
+    Darwin) PLATFORM=mac ;;
+    Linux)  case "$MODEL" in *"Raspberry Pi"*) PLATFORM=pi ;; *) PLATFORM=linux ;; esac ;;
+    *)      PLATFORM=other ;;
+  esac
+fi
+case "$PLATFORM" in
+  pi)    echo "Detected Raspberry Pi (${MODEL:-unknown model})" ;;
+  linux) DISTRO="$( (. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-$ID}") || echo unknown distro)"
+         echo "Detected Linux ($ARCH, $DISTRO)" ;;
+  mac)   echo "Detected macOS ($ARCH)" ;;
+  *)     echo "ERROR: unsupported system: $OS $ARCH." >&2
+         echo "This installer is for Raspberry Pi, Linux and macOS. On Windows use install-win.bat (docs/Home.md)." >&2
+         exit 1 ;;
+esac
+
+if [ "$PLATFORM" = mac ]; then
+  DEST="${PST_MAC_DEST:-$HOME}"
+  INSTALLER=install-mac.sh
+else
+  # Pi / Linux: next to this .run, as always
+  DEST="$(cd "$(dirname "$0")" && pwd)"
+  INSTALLER=install-pi.sh
+fi
+APP="${DEST}/pi-sat-track"
+
+echo "pi-sat-track ${PI_SAT_TRACK_VERSION}"
+if [ "$PLATFORM" = mac ] && [ -e "${APP}/.git" ]; then
+  echo "ERROR: ${APP} is a git checkout; not extracting a release over it." >&2
+  echo "Update it with: cd ${APP} && ./install-mac.sh --update   (or set PST_MAC_DEST=<other folder>)" >&2
+  exit 1
+fi
+if [ "$PRINT_ONLY" -eq 1 ]; then
+  echo "Would extract to ${APP} and run ${INSTALLER}${1:+ $*}"
+  [ -d "$APP" ] && echo "(existing install there: updated in place; ~/.rpitrack is kept)"
+  exit 0
+fi
+
+ARCHIVE_LINE="$(awk '/^__ARCHIVE__$/{print NR + 1; exit 0;}' "$0")"
+if [ -z "${ARCHIVE_LINE}" ]; then
   echo "ERROR: archive marker not found" >&2
   exit 1
 fi
 
-echo "pi-sat-track \${PI_SAT_TRACK_VERSION}"
-echo "Extracting to \${APP} ..."
-tail -n +"\${ARCHIVE_LINE}" "\$0" | tar -xzf - -C "\${DEST}"
-if [[ ! -d "\${APP}" ]]; then
-  echo "ERROR: \${APP} missing after extract" >&2
+mkdir -p "${DEST}"
+echo "Extracting to ${APP} ..."
+tail -n +"${ARCHIVE_LINE}" "$0" | tar -xzf - -C "${DEST}"
+if [ ! -d "${APP}" ]; then
+  echo "ERROR: ${APP} missing after extract" >&2
   exit 1
 fi
-if [[ ! -f "\${APP}/install-pi.sh" ]]; then
-  echo "ERROR: install-pi.sh not found in \${APP}" >&2
+if [ ! -f "${APP}/${INSTALLER}" ]; then
+  echo "ERROR: ${INSTALLER} not found in ${APP}" >&2
   exit 1
 fi
-chmod +x "\${APP}/install-pi.sh"
+chmod +x "${APP}/${INSTALLER}"
+[ -f "${APP}/uninstall-mac.sh" ] && chmod +x "${APP}/uninstall-mac.sh"
 
-# Record installed version in ~/.rpitrack (and app tree)
-RPITRACK="\${HOME}/.rpitrack"
-mkdir -p "\${RPITRACK}"
-echo "\${PI_SAT_TRACK_VERSION}" > "\${RPITRACK}/version"
-echo "\${PI_SAT_TRACK_BRANCH}" > "\${RPITRACK}/branch"
-echo "\${PI_SAT_TRACK_VERSION}" > "\${APP}/VERSION"
-echo "\${PI_SAT_TRACK_VERSION}" > "\${APP}/version.txt"
-echo "Recorded version \${PI_SAT_TRACK_VERSION} → \${RPITRACK}/version"
+# Record installed version in ~/.rpitrack (and app tree): /api/version label
+RPITRACK="${HOME}/.rpitrack"
+mkdir -p "${RPITRACK}"
+echo "${PI_SAT_TRACK_VERSION}" > "${RPITRACK}/version"
+echo "${PI_SAT_TRACK_BRANCH}" > "${RPITRACK}/branch"
+echo "${PI_SAT_TRACK_VERSION}" > "${APP}/VERSION"
+echo "${PI_SAT_TRACK_VERSION}" > "${APP}/version.txt"
+echo "Recorded version ${PI_SAT_TRACK_VERSION} → ${RPITRACK}/version"
 
 echo
 echo "Running installer ..."
 echo "============================================================"
-cd "\${APP}"
-./install-pi.sh "\$@"
+cd "${APP}"
+./"${INSTALLER}" ${1+"$@"}
 echo
 echo "============================================================"
 echo "Extract + install finished."
-echo "App:     \${APP}"
-echo "Version: \${PI_SAT_TRACK_VERSION}"
-echo "Branch:  \${PI_SAT_TRACK_BRANCH}"
+echo "App:     ${APP}"
+echo "Version: ${PI_SAT_TRACK_VERSION}"
+echo "Branch:  ${PI_SAT_TRACK_BRANCH}"
 exit 0
 __ARCHIVE__
 EOF
@@ -145,6 +205,6 @@ echo "Created: ${RUN_VER}"
 echo "Label:   ${VERSION_LABEL}"
 echo "Size:    $(du -h "${RUN_VER}" | awk '{print $1}')"
 echo
-echo "On the Pi:"
+echo "On a Pi, Linux or Mac (detects which):"
 echo "  chmod +x pi-sat-track-${BRANCH}-alpha.${VERSION}.run"
 echo "  ./pi-sat-track-${BRANCH}-alpha.${VERSION}.run"
