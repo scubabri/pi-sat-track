@@ -31,16 +31,16 @@ function loadOverlay(lsInit) {
   return { ctx, events };
 }
 
-const MIN = 60000;
+const SEC = 1000;
 function payload(now) {
   return {
     type: "wsjtx-decodes",
-    expireMs: 15 * MIN,
+    expireMs: 60 * SEC,
     now,
     stations: [
-      { call: "K1ABC", grid: "FN42", lat: 42.5, lon: -71, lastHeard: now - 1 * MIN, snr: -7, mode: "~" },
-      { call: "JA1ABC", grid: "PM95", lat: 35.5, lon: 139, lastHeard: now - 10 * MIN, snr: 3, mode: "~" },
-      { call: "OLD1", grid: "EN34", lat: 44.5, lon: -93, lastHeard: now - 16 * MIN },
+      { call: "K1ABC", grid: "FN42", lat: 42.5, lon: -71, lastHeard: now - 15 * SEC, snr: -7, mode: "~" },
+      { call: "JA1ABC", grid: "PM95", lat: 35.5, lon: 139, lastHeard: now - 45 * SEC, snr: 3, mode: "~" },
+      { call: "OLD1", grid: "EN34", lat: 44.5, lon: -93, lastHeard: now - 61 * SEC },
     ],
   };
 }
@@ -56,10 +56,10 @@ test("decodeOverlay.items: same stations, fading and expiry as the map", () => {
   assert.strictEqual(k.grid, "FN42");
   assert.strictEqual(k.lat, 42.5);
   assert.strictEqual(k.lon, -71);
-  assert.ok(Math.abs(k.opacity - (1 - 0.75 * (1 / 15))) < 1e-3, "opacity " + k.opacity);
+  assert.ok(Math.abs(k.opacity - (1 - 0.75 * (15 / 60))) < 1e-3, "opacity " + k.opacity);
   assert.ok(items[1].opacity < k.opacity, "older is fainter");
-  assert.match(k.tip, /^K1ABC FN42 ~ -7 dB · 1 min ago$/);
-  assert.match(items[1].tip, /\+3 dB · 10 min ago$/);
+  assert.match(k.tip, /^K1ABC FN42 ~ -7 dB · 15 s ago$/);
+  assert.match(items[1].tip, /\+3 dB · 45 s ago$/);
 });
 
 test("decodeOverlay.items is empty while the WSJT Heard toggle is off", () => {
@@ -77,4 +77,18 @@ test("globe-view draws decodeOverlay stations as 'heard' html markers", () => {
   assert.match(src, /addEventListener\("decode-overlay-change"/, "globe redraws on decode changes");
   const css = fs.readFileSync(path.join(__dirname, "../css/decode-overlay.css"), "utf8");
   assert.match(css, /\.globe-heard-dot/);
+});
+
+test("WSJT Heard button: 3 states off -> map -> list -> off, persisted; old on/off migrates", () => {
+  assert.strictEqual(loadOverlay({}).ctx.decodeOverlay.mode(), "map", "default = map (old default on)");
+  assert.strictEqual(loadOverlay({ decodeOverlayOn: "0" }).ctx.decodeOverlay.mode(), "off");
+  const { ctx } = loadOverlay({ decodeOverlayMode: "list" });
+  assert.strictEqual(ctx.decodeOverlay.mode(), "list");
+  assert.strictEqual(ctx.decodeOverlay.isOn(), true, "list includes the map");
+  ctx.decodeOverlay.setMode("off");
+  assert.strictEqual(ctx.decodeOverlay.isOn(), false);
+  assert.strictEqual(ctx.localStorage.getItem("decodeOverlayMode"), "off");
+  assert.strictEqual(loadOverlay({ decodeOverlayMode: "off", decodeOverlayOn: "0" }).ctx.decodeOverlay.mode(), "off");
+  const src = fs.readFileSync(path.join(__dirname, "../js/decode-overlay.js"), "utf8");
+  assert.match(src, /MODES\[\(MODES\.indexOf\(mode\) \+ 1\) % MODES\.length\]/, "click cycles");
 });

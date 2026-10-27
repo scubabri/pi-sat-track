@@ -155,12 +155,21 @@
           } else if (d.kind === "heard") {
             // WSJT-X heard station: same yellow dot + "CALL grid" chip as the map overlay.
             // APRS heard stations (js/aprs-overlay.js) reuse it with .globe-aprs styling.
-            e.className = "globe-heard" + (d.src === "aprs" ? " globe-aprs" : "");
+            e.className = "globe-heard" + (d.src === "aprs" ? " globe-aprs" : d.src === "worked" ? " globe-worked" : "");
             e.innerHTML = '<div class="globe-heard-in"><span class="globe-heard-dot"></span><span class="globe-heard-label"><span class="dc-call"></span><span class="dc-grid"></span></span></div>';
             d.el = e;
             paintHeard(d);
+            const dot = e.querySelector(".globe-heard-dot");
+            if (!d.src) {
+              // WSJT-X station: click on the dot or the "CALL grid" label answers it in WSJT-X (Reply), like the map.
+              const answer = (ev) => {
+                ev.stopPropagation();
+                if (window.decodeOverlay && window.decodeOverlay.reply) window.decodeOverlay.reply(d.call);
+              };
+              dot.addEventListener("click", answer);
+              e.querySelector(".globe-heard-label").addEventListener("click", answer);
+            }
             if (d.src === "aprs") {
-              const dot = e.querySelector(".globe-heard-dot");
               dot.style.cursor = "pointer";
               dot.addEventListener("click", (ev) => {
                 ev.stopPropagation();
@@ -836,6 +845,7 @@
     const inner = e.firstChild;
     if (!inner) return;
     inner.style.opacity = String(d.opacity);
+    if (!d.src && inner.firstChild && d._col !== (d.color || "")) { d._col = d.color || ""; inner.firstChild.style.background = d._col; }
     if (d.src === "aprs") {
       e.classList.toggle("aprs-approx", d.posSource === "grid" || d.posSource === "last");
       e.classList.toggle("aprs-self", d.posSource === "self");
@@ -864,6 +874,7 @@
       let d = heard.get(s.call);
       if (!d) { d = { kind: "heard", key: "__heard:" + s.call, alt: 0.006 }; heard.set(s.call, d); }
       d.call = s.call; d.grid = s.grid; d.lat = s.lat; d.lng = s.lon; d.opacity = s.opacity; d.tip = s.tip;
+      d.color = s.color || ""; // WSJT-X kind color (calling you / CQ-73 / other)
       seen.add(s.call);
       paintHeard(d);
     }
@@ -876,6 +887,17 @@
       if (!d) { d = { kind: "heard", src: "aprs", key: "__aprs:" + s.call, alt: 0.006 }; heard.set(k, d); }
       d.call = s.call; d.grid = s.grid; d.lat = s.lat; d.lng = s.lon; d.opacity = s.opacity; d.tip = s.tip;
       d.posSource = s.posSource; d.viaSat = s.viaSat; d.symbol = s.symbol || "";
+      seen.add(k);
+      paintHeard(d);
+    }
+    // Worked stations (window.workedLayer from js/worked-layer.js): dot only, details on hover.
+    const wl = window.workedLayer;
+    const wlist = wl && typeof wl.items === "function" ? wl.items() : [];
+    for (const s of wlist) {
+      const k = "worked:" + s.call;
+      let d = heard.get(k);
+      if (!d) { d = { kind: "heard", src: "worked", key: "__worked:" + s.call, alt: 0.005 }; heard.set(k, d); }
+      d.call = s.call; d.grid = s.grid; d.lat = s.lat; d.lng = s.lon; d.opacity = 1; d.tip = s.tip;
       seen.add(k);
       paintHeard(d);
     }
@@ -1018,6 +1040,7 @@
   document.addEventListener("qso-dx-change", () => applyState(true));
   document.addEventListener("units-change", () => { applyState(true); if (hoverDot) paintHover(); });
   document.addEventListener("decode-overlay-change", () => applyState(true));
+  document.addEventListener("worked-layer-change", () => applyState(true));
   document.addEventListener("aprs-overlay-change", () => applyState(true));
 
   /** Live positions (moved in place), footprint and labels. */

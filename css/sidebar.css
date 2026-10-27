@@ -339,8 +339,15 @@
 }
 
 .map-center-btn.active {
+  color: #58a6ff !important;
   background: #1f2a37 !important;
-  box-shadow: inset 0 0 0 1px #58a6ff55;
+  box-shadow: inset 0 0 0 1px #58a6ff;
+}
+/* While following, the satellite is the center: only Follow is lit. */
+.map-center-control:has(.map-follow-btn.on) .map-center-btn.active:not(.map-follow-btn) {
+  color: #e6edf3 !important;
+  background: #161b22 !important;
+  box-shadow: none;
 }
 
 /* Follow satellite toggle: lit like other active toggles while following */

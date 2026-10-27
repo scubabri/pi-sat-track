@@ -201,3 +201,53 @@ body.globe-mode #map .leaflet-control-attribution { display: none; }
 .globe-station { width: 0; height: 0; overflow: visible; pointer-events: none; }
 .globe-station-mark { position: absolute; left: -7px; top: -9px; width: 14px; height: 18px; line-height: 18px; text-align: center; color: #58a6ff; font: 700 18px/18px sans-serif; text-shadow: 0 0 4px #000; pointer-events: none; }
 .globe-label.globe-label-station { position: absolute; left: 10px; top: 0; transform: translateY(-50%); }
+
+/* WSJT-X decode kinds (js/decode-overlay.js KIND_COLOR): label accent on the map chip. */
+.leaflet-tooltip.decode-label.k-me { border-left: 2px solid #ff5c5c; color: #ffd6d6; }
+.leaflet-tooltip.decode-label.k-cq { border-left: 2px solid #3fb950; color: #d7f5dc; }
+/* Click-to-answer (WSJT-X Reply) only while WSJT-X is connected. */
+.wsjtx-can-reply path.decode-dot.leaflet-interactive { cursor: pointer; }
+.wsjtx-can-reply path.decode-dot.leaflet-interactive:hover { stroke: #fff; stroke-width: 2px; }
+.wsjtx-can-reply .globe-heard:not(.globe-aprs) .globe-heard-dot { cursor: pointer; }
+.wsjtx-can-reply .globe-heard:not(.globe-aprs):not(.globe-worked) .globe-heard-label { pointer-events: auto; cursor: pointer; }
+/* WSJT Heard 3-state: off grey, map orange (.active), map + list green. */
+.decode-toggle-control .decode-toggle-btn.wsjt-heard-btn.active.wsjt-list { color: #3fb950 !important; }
+
+/* WSJT-X station list window (js/wsjtx-list.js), aprs-float chrome */
+.aprs-window.wsjtx-list-win { width: 300px; }
+.wsjtx-st { font-size: 10.5px; padding: 2px 0 4px; color: #8b949e; }
+.wsjtx-st.ok { color: #3fb950; }
+.wsjtx-legend { display: flex; gap: 10px; font-size: 10px; color: #8b949e; padding-bottom: 4px; border-bottom: 1px solid #30363d; margin-bottom: 3px; }
+.wsjtx-lg { display: inline-flex; align-items: center; gap: 4px; }
+.wsjtx-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1px solid #0b1e2d; background: #ffd34d; flex: none; }
+.wsjtx-dot.k-me { background: #ff5c5c; }
+.wsjtx-dot.k-cq { background: #3fb950; }
+.wsjtx-rows { overflow-y: auto; max-height: 360px; }
+.aprs-window.sized .wsjtx-rows { flex: 1; min-height: 0; max-height: none; }
+.wsjtx-row { display: flex; align-items: center; gap: 6px; padding: 1px 2px; border-radius: 3px; font-size: 11px; white-space: nowrap; }
+.wsjtx-rows.can-reply .wsjtx-row { cursor: pointer; }
+.wsjtx-rows.can-reply .wsjtx-row:hover { background: #21262d; }
+.wsjtx-row.sent { background: rgba(63, 185, 80, 0.18); }
+.wsjtx-call { font: 600 11.5px ui-monospace, Menlo, Consolas, monospace; color: #e6edf3; min-width: 64px; }
+.wsjtx-row.k-me .wsjtx-call { color: #ff8a8a; }
+.wsjtx-row.k-cq .wsjtx-call { color: #7ee08f; }
+.wsjtx-grid { color: #8b949e; font-size: 10px; min-width: 30px; }
+.wsjtx-snr { color: #8b949e; font-size: 10px; min-width: 22px; text-align: right; }
+.wsjtx-msg { color: #c9d1d9; font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.wsjtx-age { color: #8b949e; font-size: 10px; margin-left: auto; }
+
+/* Worked stations layer (js/worked-layer.js): purple dot, white ring; details on hover. */
+.decode-toggle-control a[hidden] { display: none !important; }
+.decode-toggle-control .decode-toggle-btn.worked-btn.active { color: #bc8cff !important; }
+.leaflet-tooltip.worked-tip { font: 600 11px/1.35 system-ui, sans-serif; background: rgba(10, 18, 28, 0.92); color: #e6edf3; border: 1px solid #bc8cff; white-space: nowrap; }
+.globe-heard.globe-worked .globe-heard-dot { background: #bc8cff; border: 1.5px solid #fff; cursor: default; }
+.globe-heard.globe-worked .globe-heard-label { display: none; }
+
+/* Station list legend = category filters (js/wsjtx-list.js). */
+.wsjtx-legend .wsjtx-lg { background: none; border: 0; padding: 1px 3px; margin: 0; font: inherit; color: inherit; cursor: pointer; border-radius: 3px; display: inline-flex; align-items: center; gap: 4px; }
+.wsjtx-legend .wsjtx-lg:hover { background: rgba(255, 255, 255, 0.06); color: #c9d1d9; }
+.wsjtx-legend .wsjtx-lg.off { opacity: 0.4; text-decoration: line-through; }
+.wsjtx-legend .wsjtx-lg.off .wsjtx-dot { filter: grayscale(1); }
+/* Map station label: clickable like its dot (pointer only when WSJT-X can be answered) */
+.leaflet-tooltip.decode-label.leaflet-interactive:not(.fav-label) { cursor: default; }
+.wsjtx-can-reply .leaflet-tooltip.decode-label.leaflet-interactive:not(.fav-label) { cursor: pointer; }

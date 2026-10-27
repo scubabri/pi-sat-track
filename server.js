@@ -99,11 +99,33 @@ function stationFromProfile(fallback) {
 /**
  * Heard stations from WSJT-X Decode (type 2) for the map overlay. Decodes
  * only arrive while the listener gate is open; when it closes the list is
- * kept (not cleared) and simply ages out after DECODE_EXPIRE_MS.
+ * kept (not cleared) and simply ages out after DECODE_EXPIRE_MS (60 s, purged
+ * every 5 s, so map dots and list rows go ~60 s after the last decode).
  */
 const decodeStore = wsjtxDecodes.createStore({
   onChange: () => broadcast(decodeStore.payload()),
+  // "Calling us" = addressed to the configured station callsign (never hardcoded).
+  // Falls back to WSJT-X's own DE call (Status) when no callsign is configured.
+  getMyCall: () => stationFromProfile().callsign || (typeof wsjtx !== "undefined" && wsjtx ? wsjtx.getStatus().deCall : "") || "",
 });
+
+/**
+ * Worked stations (map / globe "Worked" layer): every QSO logged successfully
+ * from the Log box or WSJT-X, kept in ~/.rpitrack/worked.json (lib/worked.js).
+ * Display only; the ADIF / UDP output is unchanged.
+ */
+const worked = require("./lib/worked");
+const workedStore = worked.createWorked({
+  file: path.join(config.CACHE_DIR, "worked.json"),
+  onChange: (p) => broadcast(p),
+});
+function noteWorked(summary, grid, source, time) {
+  try {
+    workedStore.add(worked.fromRecord(summary, grid, source, time, logbook.adifDateTime));
+  } catch (e) {
+    console.warn("Worked list:", e.message);
+  }
+}
 
 /** Auto AMSAT "Heard" when a QSO is logged (Configure → Logging; default on). */
 const amsatAuto = require("./lib/amsat-auto").createAutoHeard({
@@ -160,11 +182,12 @@ const wsjtx = wsjtxListener.createListener({
         broadcastWsjtxStatus(); // refresh forwarded count in config
         // Only sat QSOs (enriched with the selected sat) get an AMSAT Heard.
         if (r.ok && e.enriched) autoAmsatHeard(ctx, stationFromProfile(), rec.time, "wsjtx");
+        if (r.ok) noteWorked(r.record, e.fields.GRIDSQUARE || "", "wsjtx", rec.time);
       })
       .catch((err) => console.warn("WSJT-X forward:", err.message));
   },
   onStatus: () => broadcastWsjtxStatus(),
-  onDecode: (d) => decodeStore.add(d),
+  onDecode: (d, id, from) => decodeStore.add(d, Date.now(), from ? Object.assign({ id }, from) : null),
 });
 
 function wsjtxStatusPayload() {
@@ -182,7 +205,7 @@ function broadcastWsjtxStatus() {
   broadcast(wsjtxStatusPayload());
 }
 
-/** Gate: the listener only runs while Radio AND Antenna are both on. */
+/** Gate: the listener runs while Radio is on (Antenna doesn't matter). */
 function wsjtxGateState() {
   let radioOn = false;
   let antennaOn = false;
@@ -199,17 +222,9 @@ function wsjtxGateState() {
 
 function syncWsjtxGate() {
   const g = wsjtxGateState();
-  const missing = [];
-  if (!g.radioOn) missing.push("Radio");
-  if (!g.antennaOn) missing.push("Antenna");
-  const reason =
-    (missing.length === 2 ? "Radio and Antenna" : missing[0] || "Radio and Antenna") +
-    " must be on";
-  if (wsjtx.setGate(g.radioOn && g.antennaOn, reason)) {
-    console.log(
-      "WSJT-X listener gate " +
-        (g.radioOn && g.antennaOn ? "open" : "closed (" + reason + ")"),
-    );
+  const reason = "Radio must be on";
+  if (wsjtx.setGate(g.radioOn, reason)) {
+    console.log("WSJT-X listener gate " + (g.radioOn ? "open" : "closed (" + reason + ")"));
   }
 }
 // Radio/antenna state can also change inside drivers (errors, endpoint
@@ -634,6 +649,7 @@ wss.on("connection", (ws, req) => {
     }),
   );
   ws.send(JSON.stringify(decodeStore.payload()));
+  ws.send(JSON.stringify(workedStore.payload()));
   ws.send(JSON.stringify(aprsService.statusPayload()));
   ws.send(JSON.stringify(aprsService.packetsPayload()));
   ws.send(JSON.stringify(aprsService.heardPayload()));
@@ -962,6 +978,34 @@ wss.on("connection", (ws, req) => {
         return;
       }
 
+      if (msg.type === "worked-clear") {
+        workedStore.clear();
+        console.log("Worked stations cleared");
+        return;
+      }
+      if (msg.type === "worked-get") {
+        ws.send(JSON.stringify(workedStore.payload()));
+        return;
+      }
+      if (msg.type === "wsjtx-reply") {
+        // Map / station-list click on a decoded station: answer it in WSJT-X
+        // (UDP Reply 4 = double-clicking that decode), sent back to the WSJT-X
+        // instance + address the decode came from.
+        const call = String(msg.call || "").trim().toUpperCase();
+        const out = (o) => ws.send(JSON.stringify(Object.assign({ type: "wsjtx-reply-result", call, reqId: msg.reqId || null }, o)));
+        const st = wsjtx.getStatus();
+        if (!st.connected) return out({ ok: false, error: "WSJT-X is not connected" });
+        const r = decodeStore.replyFor(call);
+        if (!r) return out({ ok: false, error: "No recent decode from " + (call || "that station") });
+        wsjtx
+          .sendReply(r.target, r.id, r.decode)
+          .then(() => {
+            console.log("WSJT-X Reply →", r.id, r.target.address + ":" + r.target.port, JSON.stringify(r.decode.message));
+            out({ ok: true, message: r.decode.message, to: r.target.address + ":" + r.target.port, client: r.id });
+          })
+          .catch((e) => out({ ok: false, error: e.message }));
+        return;
+      }
       if (msg.type === "clear-decodes") {
         decodeStore.clear();
         console.log("WSJT-X spots cleared");
@@ -1089,16 +1133,17 @@ wss.on("connection", (ws, req) => {
         });
         const qsoTime = new Date();
         const logCtx = state.getLogContext();
+        const dxGrid = (() => {
+          if (schedule.isGrid(String(msg.dxGrid || ""))) return String(msg.dxGrid);
+          const cs = String(msg.call || "").trim().toUpperCase();
+          const h = decodeStore.list().find((s) => s.call === cs);
+          return h && h.grid ? h.grid : "";
+        })();
         logbook
           .logQso({
             now: qsoTime,
             call: msg.call,
-            dxGrid: (() => {
-              if (schedule.isGrid(String(msg.dxGrid || ""))) return String(msg.dxGrid);
-              const cs = String(msg.call || "").trim().toUpperCase();
-              const h = decodeStore.list().find((s) => s.call === cs);
-              return h && h.grid ? h.grid : "";
-            })(),
+            dxGrid,
             ctx: logCtx,
             station,
             cfg: logOutputCfg(),
@@ -1125,6 +1170,7 @@ wss.on("connection", (ws, req) => {
               ),
             );
             if (r.ok) autoAmsatHeard(logCtx, station, qsoTime, "log");
+            if (r.ok) noteWorked(r.record, dxGrid, "log", qsoTime);
           })
           .catch((e) => {
             ws.send(
