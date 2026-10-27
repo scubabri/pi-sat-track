@@ -3,10 +3,13 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 REM =============================================================================
 REM Pi Sat Track - Windows uninstall (single file)
-REM Run as Administrator.
+REM Double-click (asks for administrator rights) or run as Administrator.
 REM
-REM   uninstall-win.bat                 remove app + port80 (+ Node if marked)
-REM   uninstall-win.bat --cache         also delete %USERPROFILE%\.rpitrack
+REM   uninstall-win.bat                 stop server, remove port 80 proxy, firewall
+REM                                     rules, app folder (+ Node if marked); asks
+REM                                     before deleting your settings
+REM   uninstall-win.bat --data          also delete %USERPROFILE%\.rpitrack
+REM                                     (same: --cache, --all, /data)
 REM   uninstall-win.bat --remove-node   force offer Node.js uninstall
 REM   uninstall-win.bat --keep-app      leave the app folder (runtime cleanup only)
 REM
@@ -17,6 +20,7 @@ REM ============================================================================
 set "REMOVE_CACHE=0"
 set "KEEP_APP=0"
 set "FORCE_NODE=0"
+set "ALL_ARGS=%*"
 
 if /I "%~1"=="-h" goto :help
 if /I "%~1"=="--help" goto :help
@@ -24,6 +28,8 @@ if /I "%~1"=="--help" goto :help
 :parse
 if "%~1"=="" goto :parsed
 if /I "%~1"=="--cache" set "REMOVE_CACHE=1"
+if /I "%~1"=="--data" set "REMOVE_CACHE=1"
+if /I "%~1"=="/data" set "REMOVE_CACHE=1"
 if /I "%~1"=="--all" set "REMOVE_CACHE=1"
 if /I "%~1"=="--keep-app" set "KEEP_APP=1"
 if /I "%~1"=="--remove-node" set "FORCE_NODE=1"
@@ -52,10 +58,19 @@ if not defined APP_DIR (
 
 net session >nul 2>&1
 if errorlevel 1 (
-  echo ERROR: Run as Administrator.
-  echo Right-click uninstall-win.bat - Run as administrator
-  pause
-  exit /b 1
+  echo Administrator rights are needed to remove the port 80 proxy and firewall rules.
+  echo Asking Windows for them ...
+  if defined ALL_ARGS (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -ArgumentList '!ALL_ARGS!' -Verb RunAs"
+  ) else (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+  )
+  if errorlevel 1 (
+    echo ERROR: not elevated. Right-click uninstall-win.bat - Run as administrator
+    pause
+    exit /b 1
+  )
+  exit /b 0
 )
 
 set "CACHE_DIR=%USERPROFILE%\.rpitrack"
@@ -67,7 +82,7 @@ echo ===========================================================================
 echo  Pi Sat Track - Windows uninstall
 echo =============================================================================
 echo  App:    %APP_DIR%
-echo  Remove: port 80 proxy, node_modules, launcher
+echo  Remove: running server, port 80 proxy, firewall rules, node_modules, launcher
 if "%KEEP_APP%"=="0" (
   echo          entire app folder %APP_DIR%
 ) else (
@@ -75,7 +90,8 @@ if "%KEEP_APP%"=="0" (
 )
 if exist "%NODE_MARKER%" echo          Node.js via Windows installer - will ask
 if not exist "%NODE_MARKER%" if "%FORCE_NODE%"=="1" echo          Node.js --remove-node - will ask
-if "%REMOVE_CACHE%"=="1" echo          cache %CACHE_DIR%
+if "%REMOVE_CACHE%"=="1" echo          settings %CACHE_DIR%
+if "%REMOVE_CACHE%"=="0" echo  Keep:   settings %CACHE_DIR% (you will be asked)
 echo =============================================================================
 echo.
 set /p "CONFIRM=Type YES to continue: "
@@ -86,15 +102,18 @@ if /I not "%CONFIRM%"=="YES" (
 )
 echo.
 
-echo Stopping node.exe if running...
-taskkill /F /IM node.exe >nul 2>&1
+if exist "%APP_DIR%\win-network.ps1" (
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%APP_DIR%\win-network.ps1" -Action Uninstall -AppDir "%APP_DIR%"
+) else (
+  echo Removing port 80 proxy and firewall rules ...
+  netsh interface portproxy delete v4tov4 listenaddress=127.0.0.1 listenport=80 >nul 2>&1
+  netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=80 >nul 2>&1
+  netsh advfirewall firewall delete rule name="Pi Sat Track HTTP 80" >nul 2>&1
+  netsh advfirewall firewall delete rule name="Pi Sat Track (TCP 80)" >nul 2>&1
+  netsh advfirewall firewall delete rule name="Pi Sat Track (TCP 3000)" >nul 2>&1
+  echo   done. Stop the server window yourself if it is still open.
+)
 timeout /t 1 /nobreak >nul
-
-echo Removing port 80 proxy...
-netsh interface portproxy delete v4tov4 listenaddress=127.0.0.1 listenport=80 >nul 2>&1
-netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=80 >nul 2>&1
-netsh advfirewall firewall delete rule name="Pi Sat Track HTTP 80" >nul 2>&1
-echo   done.
 echo.
 
 if exist "%APP_DIR%\node_modules\" (
@@ -128,6 +147,14 @@ call :uninstall_node_windows
 
 :after_node
 if exist "%NODE_MARKER%" del /f /q "%NODE_MARKER%" >nul 2>&1
+
+if "%REMOVE_CACHE%"=="0" if exist "%CACHE_DIR%\" (
+  echo.
+  echo Your settings and profiles are in %CACHE_DIR%
+  set /p "YN_DATA=Delete them too? Type YES to delete, Enter to keep: "
+  if /I "!YN_DATA!"=="YES" set "REMOVE_CACHE=1"
+)
+if "%REMOVE_CACHE%"=="0" echo Settings kept: %CACHE_DIR%
 
 if "%REMOVE_CACHE%"=="1" (
   if exist "%CACHE_DIR%\" (
@@ -252,7 +279,8 @@ echo.
 exit /b 0
 
 :help
-echo Usage: uninstall-win.bat [--cache] [--remove-node] [--keep-app]
-echo Run as Administrator.
-echo Default: removes the pi-sat-track app folder after cleanup.
+echo Usage: uninstall-win.bat [--data] [--remove-node] [--keep-app]
+echo Asks for administrator rights.
+echo Default: stops the server, removes the port 80 proxy, firewall rules and
+echo the pi-sat-track app folder; asks before deleting %%USERPROFILE%%\.rpitrack.
 exit /b 0

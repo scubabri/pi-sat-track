@@ -2,16 +2,23 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 REM =============================================================================
-REM Pi Sat Track - Windows install
-REM Run as Administrator.
+REM Pi Sat Track - Windows install / update
+REM Double-click (asks for administrator rights) or run as Administrator.
 REM
-REM   install-win.bat
-REM   install-win.bat --no-start
-REM   install-win.bat --skip-node
+REM   install-win.bat               install / update, open port 80, start server
+REM   install-win.bat --no-start    do not start the server at the end
+REM   install-win.bat --skip-node   never install Node.js
+REM   install-win.bat --no-port80   no port 80 proxy (use http://localhost:3000)
+REM
+REM Re-run any time (update): safe, settings in %USERPROFILE%\.rpitrack kept.
+REM No service / auto start: start-sat-tracker.bat starts the server.
 REM =============================================================================
 
 set "DO_START=1"
 set "SKIP_NODE_INSTALL=0"
+set "NO_PORT80=0"
+set "NODE_MAJOR_MIN=22"
+set "ALL_ARGS=%*"
 if /I "%~1"=="-h" goto :help
 if /I "%~1"=="--help" goto :help
 
@@ -20,6 +27,7 @@ if "%~1"=="" goto :args_done
 if /I "%~1"=="--no-start" set "DO_START=0"
 if /I "%~1"=="--start" set "DO_START=1"
 if /I "%~1"=="--skip-node" set "SKIP_NODE_INSTALL=1"
+if /I "%~1"=="--no-port80" set "NO_PORT80=1"
 shift
 goto :parse_args
 :args_done
@@ -44,10 +52,19 @@ if not defined APP_DIR (
 
 net session >nul 2>&1
 if errorlevel 1 (
-  echo ERROR: Run as Administrator.
-  echo Right-click install-win.bat - Run as administrator
-  pause
-  exit /b 1
+  echo Administrator rights are needed for the port 80 proxy and firewall rules.
+  echo Asking Windows for them ...
+  if defined ALL_ARGS (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -ArgumentList '!ALL_ARGS!' -Verb RunAs"
+  ) else (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+  )
+  if errorlevel 1 (
+    echo ERROR: not elevated. Right-click install-win.bat - Run as administrator
+    pause
+    exit /b 1
+  )
+  exit /b 0
 )
 
 echo.
@@ -60,6 +77,7 @@ echo ===========================================================================
 echo.
 
 call :find_node
+if defined NODE_EXE call :check_node_version
 if defined NODE_EXE goto have_node
 
 if "%SKIP_NODE_INSTALL%"=="1" (
@@ -68,7 +86,7 @@ if "%SKIP_NODE_INSTALL%"=="1" (
   exit /b 1
 )
 
-echo Node.js was not found.
+echo Node.js %NODE_MAJOR_MIN% or newer was not found.
 echo This installer can download and install Node.js LTS.
 echo.
 set /p "YN=Install Node.js LTS now? [Y/N]: "
@@ -115,6 +133,12 @@ if not exist "%CACHE_DIR%" mkdir "%CACHE_DIR%"
 echo Cache: %CACHE_DIR%
 echo.
 
+if exist "%APP_DIR%\win-network.ps1" (
+  echo Stopping a running Pi Sat Track server, if any ...
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%APP_DIR%\win-network.ps1" -Action Stop -AppDir "%APP_DIR%"
+  echo.
+)
+
 echo Running npm install...
 pushd "%APP_DIR%"
 if exist "package-lock.json" (
@@ -146,7 +170,7 @@ set "START_BAT=%APP_DIR%\start-sat-tracker.bat"
   echo   exit /b 1
   echo ^)
   echo echo Starting Pi Sat Track...
-  echo echo Open http://127.0.0.1:3000
+  echo echo Open http://localhost/  ^(or http://localhost:3000/^)
   echo echo Press Ctrl+C to stop
   echo node server.js
   echo pause
@@ -154,12 +178,17 @@ set "START_BAT=%APP_DIR%\start-sat-tracker.bat"
 echo Wrote launcher: %START_BAT%
 echo.
 
-call :setup_port80
+set "NET_ARGS=-Action Install -AppDir "%APP_DIR%""
+if "%NO_PORT80%"=="1" set "NET_ARGS=%NET_ARGS% -NoPort80"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%APP_DIR%\win-network.ps1" %NET_ARGS%
+echo.
 
 echo =============================================================================
-echo  Install complete.
-echo  Open:  http://127.0.0.1:3000
-echo         http://127.0.0.1/     (if port 80 proxy enabled)
+echo  Install complete. Settings / data: %CACHE_DIR%
+echo  Start:     start-sat-tracker.bat  (or: cd "%APP_DIR%" ^& node server.js)
+echo  Stop:      Ctrl+C in the server window (or close it)
+echo  Update:    run install-win.bat again
+echo  Uninstall: uninstall-win.bat   (--data also deletes %CACHE_DIR%)
 echo =============================================================================
 echo.
 
@@ -238,53 +267,19 @@ echo Marked Node as installed by this installer.
 exit /b 0
 
 REM =============================================================================
-:setup_port80
-echo Checking TCP port 80...
-sc config iphlpsvc start= auto >nul 2>&1
-net start iphlpsvc >nul 2>&1
-
-set "PORT80_BUSY=0"
-netstat -ano 2>nul | findstr /I "LISTENING" | findstr /R /C:":80 " >nul 2>&1
-if not errorlevel 1 set "PORT80_BUSY=1"
-
-if "%PORT80_BUSY%"=="1" (
-  echo Port 80 in use - skip proxy. Use http://127.0.0.1:3000
-  echo.
-  exit /b 0
+:check_node_version
+set "NODE_MAJOR="
+for /f "tokens=1 delims=." %%V in ('"%NODE_EXE%" -v') do set "NODE_MAJOR=%%V"
+set "NODE_MAJOR=%NODE_MAJOR:v=%"
+if not defined NODE_MAJOR exit /b 0
+if %NODE_MAJOR% LSS %NODE_MAJOR_MIN% (
+  echo Node.js v%NODE_MAJOR% found - Pi Sat Track needs %NODE_MAJOR_MIN% or newer.
+  set "NODE_EXE="
 )
-
-echo Adding portproxy 80 to 127.0.0.1:3000 ...
-netsh interface portproxy delete v4tov4 listenaddress=127.0.0.1 listenport=80 >nul 2>&1
-netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=80 >nul 2>&1
-netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=80 connectaddress=127.0.0.1 connectport=3000
-if errorlevel 1 (
-  echo WARNING: portproxy add for 127.0.0.1 failed
-) else (
-  echo   127.0.0.1:80 OK
-)
-netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=80 connectaddress=127.0.0.1 connectport=3000 >nul 2>&1
-
-for /f "tokens=2 delims=:" %%I in ('ipconfig ^| findstr /R /C:"IPv4 Address"') do (
-  set "IP=%%I"
-  set "IP=!IP: =!"
-  if defined IP (
-    if not "!IP!"=="127.0.0.1" (
-      netsh interface portproxy delete v4tov4 listenaddress=!IP! listenport=80 >nul 2>&1
-      netsh interface portproxy add v4tov4 listenaddress=!IP! listenport=80 connectaddress=127.0.0.1 connectport=3000 >nul 2>&1
-    )
-  )
-)
-
-netsh advfirewall firewall delete rule name="Pi Sat Track HTTP 80" >nul 2>&1
-netsh advfirewall firewall add rule name="Pi Sat Track HTTP 80" dir=in action=allow protocol=TCP localport=80 >nul 2>&1
-
-echo Portproxy status:
-netsh interface portproxy show all
-echo.
 exit /b 0
 
 REM =============================================================================
 :help
-echo Usage: install-win.bat [--no-start] [--skip-node]
-echo Run as Administrator.
+echo Usage: install-win.bat [--no-start] [--skip-node] [--no-port80]
+echo Asks for administrator rights (port 80 proxy + firewall rules).
 exit /b 0

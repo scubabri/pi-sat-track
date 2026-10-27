@@ -85,17 +85,22 @@ The Pi installer sets up Node dependencies, cache under `~/.rpitrack`, and optio
 
 ### 3.2 Windows 11
 
-1. Unzip the release into e.g. `%USERPROFILE%\\pi-sat-track`
-2. **Right-click `install-win.bat` → Run as administrator**
-3. If Node.js is missing, accept the prompt to install **Node.js LTS**
-4. When finished, start with `start-sat-tracker.bat` or `node server.js`
+1. Download and unzip the app (e.g. into `%USERPROFILE%\\pi-sat-track`)
+2. **Double-click `install-win.bat`** and accept the Windows administrator (UAC) prompt
+3. If Node.js 22+ is missing, accept the prompt to install **Node.js LTS**
+4. The server starts once in a minimized window. The installer prints the URLs:
+   `http://localhost` on this PC and `http://<LAN IP>` from a phone or tablet
 
-**Administrator is required** for:
+There is no service and no auto start. Later, start with `start-sat-tracker.bat`.
+Re-run `install-win.bat` to update; it stops the running server first and keeps your settings.
 
-- Optional Node MSI / winget install  
-- Port **80** proxy + firewall rule (if port 80 is free)
+| Flag | Effect |
+|------|--------|
+| `--no-start` | Do not start the server at the end |
+| `--skip-node` | Never install Node.js |
+| `--no-port80` | No port 80 proxy; use `http://localhost:3000` |
 
-If port 80 is already in use, the installer leaves it alone; use **http://127.0.0.1:3000**.
+**Administrator is required** for the optional Node install, the port 80 proxy and the firewall rules (see [section 10](#10-port-80-windows)).
 
 ### 3.3 macOS
 
@@ -271,17 +276,17 @@ Under `~/.rpitrack` (or `%USERPROFILE%\\.rpitrack` on Windows):
 
 ## 10. Port 80 (Windows)
 
-When `install-win.bat` runs as Administrator and port 80 is free, it adds:
+The server always listens on port 3000. `install-win.bat` (through `win-network.ps1`) also sets up:
 
-- **netsh portproxy**: `0.0.0.0:80` → `127.0.0.1:3000`  
-- Firewall rule: **Pi Sat Track HTTP 80**
+- **netsh portproxy** `0.0.0.0:80` → `127.0.0.1:3000` (if port 80 is free), with the **IP Helper** service set to Automatic so it survives reboots
+- Firewall rule **Pi Sat Track (TCP 80)**: inbound TCP 80, all profiles, local subnet only
+- Firewall rule **Pi Sat Track (TCP 3000)**: inbound TCP 3000, all profiles, local subnet only
 
-Then both work:
+All profiles are used because home networks are often classified as *Public*; `remoteip=localsubnet` keeps it to your LAN. Rules are deleted and re-added by name, so re-running is safe.
 
-- http://127.0.0.1:3000  
-- http://127.0.0.1/  
+If something else (IIS, Skype, another web server) owns port 80, the installer says so and skips the proxy; use `http://localhost:3000` and `http://<LAN IP>:3000`.
 
-Uninstall (as Administrator) removes the proxy and firewall rule.
+The WSJT-X UDP port (2237) is not opened; WSJT-X normally runs on the same PC.
 
 ---
 
@@ -291,15 +296,15 @@ Uninstall (as Administrator) removes the proxy and firewall rule.
 uninstall-win.bat
 ```
 
-Always removes `node_modules` and the start launcher (after confirmation).
+Double-click and accept the UAC prompt, then type `YES`. It stops the Pi Sat Track server (only that one; other Node apps keep running), removes the port 80 proxy, both firewall rules, `node_modules`, the launcher and the app folder. It **asks** before deleting your settings in `%USERPROFILE%\\.rpitrack` (Enter keeps them).
 
 | Flag | Effect |
 |------|--------|
-| `--cache` / `--all` | Also delete `%USERPROFILE%\\.rpitrack` |
+| `--data` / `/data` (also `--cache`, `--all`) | Also delete `%USERPROFILE%\\.rpitrack` without asking |
+| `--keep-app` | Keep the app folder |
 | `--remove-node` | Offer to uninstall Node.js |
-| `--purge` | Also delete the app folder |
 
-If the installer auto-installed Node, uninstall **offers** to remove Node (type `YES`). Node is never removed silently.
+Node.js stays installed. Only if the installer installed it does uninstall **offer** to remove it (type `YES`).
 
 ---
 
@@ -324,7 +329,7 @@ Placeholder index for pages to expand with screenshots:
 | Page | Content |
 |------|---------|
 | [Install — Raspberry Pi](Install-Raspberry-Pi) | Full `install-pi.sh` walkthrough |
-| [Install — Windows](Install-Windows) | Admin install, Node, port 80 |
+| [Install — Windows](Install-Windows) | Install, Node, port 80, firewall |
 | [Finding your serial port](Serial-Ports) | Device Manager / `dmesg` / plug-unplug |
 | [Radio setup](Radio-Setup) | Serial CAT, TCI, dual radio, split |
 | [Rotator setup](Rotator-Setup) | RT-21 dual port, GS-232, AZ only, 180° |
