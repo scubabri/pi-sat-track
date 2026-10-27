@@ -46,10 +46,15 @@
     win.body.innerHTML =
       '<div class="wsjtx-st" id="wsjtx-st"></div>' +
       '<div class="wsjtx-legend">' +
-      ["me", "cq", "other"].map((k) => '<span class="wsjtx-lg"><i class="wsjtx-dot k-' + k + '"></i>' + KIND_LABEL[k] + "</span>").join("") +
+      ["me", "cq", "other"].map((k) => '<button type="button" class="wsjtx-lg" data-kind="' + k + '"><i class="wsjtx-dot k-' + k + '"></i>' + KIND_LABEL[k] + "</button>").join("") +
       "</div>" +
       '<div class="wsjtx-rows" id="wsjtx-rows" aria-live="polite"></div>';
     win.body.addEventListener("click", (e) => {
+      const lg = e.target.closest && e.target.closest(".wsjtx-lg");
+      if (lg) {
+        if (D() && D().toggleKind) D().toggleKind(lg.dataset.kind);
+        return;
+      }
       const row = e.target.closest && e.target.closest(".wsjtx-row");
       if (!row || !D()) return;
       if (!D().canReply()) return;
@@ -65,8 +70,21 @@
     return win;
   }
 
+  /** Legend = category filters: dimmed + struck when hidden (map, globe and list). */
+  function syncLegend() {
+    if (!win || !D() || !D().kindShown) return;
+    win.body.querySelectorAll(".wsjtx-lg").forEach((b) => {
+      const k = b.dataset.kind;
+      const on = D().kindShown(k);
+      b.classList.toggle("off", !on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+      b.title = (on ? "Showing" : "Hiding") + " " + KIND_LABEL[k] + " stations (list + map). Click to " + (on ? "hide" : "show") + ".";
+    });
+  }
+
   function render() {
     if (!win || !win.isOpen() || !D()) return;
+    syncLegend();
     const can = D().canReply();
     const st = win.body.querySelector("#wsjtx-st");
     const client = D().client ? D().client() : "";
@@ -93,7 +111,9 @@
             );
           })
           .join("")
-      : '<div class="aprs-hl-empty">No WSJT-X decodes yet</div>';
+      : '<div class="aprs-hl-empty">' +
+        (D().hiddenCount && D().hiddenCount() ? D().hiddenCount() + " station(s) hidden by the filter above" : "No WSJT-X decodes yet") +
+        "</div>";
   }
 
   function sync() {
@@ -111,6 +131,7 @@
   function init() {
     document.addEventListener("decode-overlay-mode", sync);
     document.addEventListener("decode-overlay-change", render);
+    document.addEventListener("decode-overlay-filter", render);
     setInterval(render, 5000); // ages / fading / 60 s expiry between updates
     const t = setInterval(() => {
       if (window.aprsFloat && D()) {

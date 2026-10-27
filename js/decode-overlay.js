@@ -25,6 +25,20 @@
   let layer = null;
   let stations = [];
   let expireMs = 60 * 1000;
+  /**
+   * Category filter (legend of the station list): hidden kinds are dropped from
+   * the list AND the map / globe dots. localStorage "wsjtxKindFilter" =
+   * {"me":bool,"cq":bool,"other":bool}; missing / bad = all shown.
+   */
+  const KINDS = ["me", "cq", "other"];
+  const FILTER_LS = "wsjtxKindFilter";
+  const shown = { me: true, cq: true, other: true };
+  try {
+    const f = JSON.parse(localStorage.getItem(FILTER_LS) || "null");
+    if (f && typeof f === "object") for (const k of KINDS) if (f[k] === false) shown[k] = false;
+  } catch (_) {}
+  const kindOf = (s) => (s && KINDS.includes(s.kind) ? s.kind : "other");
+  const kindShown = (k) => shown[KINDS.includes(k) ? k : "other"] !== false;
   let skewMs = 0; // server now - client now
   const markers = new Map();
   let btn = null;
@@ -190,7 +204,7 @@
     const now = (nowMs != null ? nowMs : Date.now()) + skewMs;
     const out = [];
     for (const s of stations) {
-      if (!s || !Number.isFinite(s.lat) || !Number.isFinite(s.lon)) continue;
+      if (!s || !Number.isFinite(s.lat) || !Number.isFinite(s.lon) || !kindShown(kindOf(s))) continue;
       const age = now - s.lastHeard;
       if (age > expireMs) continue;
       out.push({ call: s.call, grid: s.grid, lat: s.lat, lon: s.lon, opacity: ageOpacity(age), tip: tipText(s, age), kind: s.kind || "other", color: colorOf(s) });
@@ -206,7 +220,7 @@
     const now = (nowMs != null ? nowMs : Date.now()) + skewMs;
     const out = [];
     for (const s of stations) {
-      if (!s || !s.call) continue;
+      if (!s || !s.call || !kindShown(kindOf(s))) continue;
       const age = now - s.lastHeard;
       if (age > expireMs) continue;
       out.push(Object.assign({}, s, { kind: s.kind || "other", age, opacity: ageOpacity(age), color: colorOf(s), tip: tipText(s, age) }));
@@ -224,7 +238,7 @@
     const seen = new Set();
     for (const s of stations) {
       const age = now - s.lastHeard;
-      if (age > expireMs || !Number.isFinite(s.lat) || !Number.isFinite(s.lon)) continue;
+      if (age > expireMs || !Number.isFinite(s.lat) || !Number.isFinite(s.lon) || !kindShown(kindOf(s))) continue;
       seen.add(s.call);
       const op = ageOpacity(age);
       let mk = markers.get(s.call);
@@ -283,6 +297,21 @@
     render();
     notify();
   }
+  function setKindShown(k, v) {
+    if (!KINDS.includes(k) || shown[k] === !!v) return;
+    shown[k] = !!v;
+    try { localStorage.setItem(FILTER_LS, JSON.stringify(shown)); } catch (_) {}
+    render();
+    notify();
+    try { document.dispatchEvent(new Event("decode-overlay-filter")); } catch (_) {}
+  }
+  /** Stations heard (unexpired) but hidden by the filter, for the list's empty text. */
+  function hiddenCount(nowMs) {
+    const now = (nowMs != null ? nowMs : Date.now()) + skewMs;
+    let n = 0;
+    for (const s of stations) if (s && s.call && now - s.lastHeard <= expireMs && !kindShown(kindOf(s))) n++;
+    return n;
+  }
   window.applyDecodeOverlay = apply;
   window.applyWsjtxListenerStatus = onListenerStatus;
   window.decodeOverlay = {
@@ -297,6 +326,11 @@
     reply,
     legend: LEGEND_TEXT,
     ageOpacity: (ageMs) => ageOpacity(ageMs),
+    kinds: KINDS.slice(),
+    kindShown,
+    setKindShown,
+    toggleKind: (k) => setKindShown(k, !kindShown(k)),
+    hiddenCount,
   };
 
   function patchWs() {

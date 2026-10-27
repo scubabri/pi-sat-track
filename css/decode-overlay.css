@@ -241,3 +241,9 @@ body.globe-mode #map .leaflet-control-attribution { display: none; }
 .leaflet-tooltip.worked-tip { font: 600 11px/1.35 system-ui, sans-serif; background: rgba(10, 18, 28, 0.92); color: #e6edf3; border: 1px solid #bc8cff; white-space: nowrap; }
 .globe-heard.globe-worked .globe-heard-dot { background: #bc8cff; border: 1.5px solid #fff; cursor: default; }
 .globe-heard.globe-worked .globe-heard-label { display: none; }
+
+/* Station list legend = category filters (js/wsjtx-list.js). */
+.wsjtx-legend .wsjtx-lg { background: none; border: 0; padding: 1px 3px; margin: 0; font: inherit; color: inherit; cursor: pointer; border-radius: 3px; display: inline-flex; align-items: center; gap: 4px; }
+.wsjtx-legend .wsjtx-lg:hover { background: rgba(255, 255, 255, 0.06); color: #c9d1d9; }
+.wsjtx-legend .wsjtx-lg.off { opacity: 0.4; text-decoration: line-through; }
+.wsjtx-legend .wsjtx-lg.off .wsjtx-dot { filter: grayscale(1); }
