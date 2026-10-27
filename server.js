@@ -47,6 +47,7 @@ const rotors = require("./lib/rotors");
 const config = require("./lib/config");
 const platform = require("./lib/platform");
 const profiles = require("./lib/profiles");
+const backup = require("./lib/backup");
 const connectionTest = require("./lib/connection-test");
 const logbook = require("./lib/logbook");
 const wsjtxListener = require("./lib/wsjtx-listener");
@@ -406,6 +407,75 @@ function fetchSatnogsByNorad(norad) {
 
 const staticCache = require("./lib/static-cache");
 
+/**
+ * POST /api/restore (?check=1 = validate + summary only). JSON body = the
+ * backup file. Requires Content-Type: application/json (a cross-site form post
+ * cannot send that without a CORS preflight this server never answers).
+ * Writes a safety copy to ~/.rpitrack/backups/pre-restore-<ts>.json, rewrites
+ * the config files, then reloads the running config like a profile switch.
+ */
+function handleRestore(req, res, checkOnly) {
+  const json = (code, o) => {
+    res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    res.end(JSON.stringify(o));
+  };
+  if (req.method !== "POST") return json(405, { ok: false, error: "POST required" });
+  if (!/^application\/json\b/i.test(String(req.headers["content-type"] || "")))
+    return json(415, { ok: false, error: "Content-Type must be application/json" });
+  let body = "";
+  let tooBig = false;
+  req.on("data", (c) => {
+    if (tooBig) return;
+    body += c;
+    if (body.length > backup.MAX_BYTES) tooBig = true;
+  });
+  req.on("end", () => {
+    if (tooBig) return json(413, { ok: false, error: "File is too large to be a pi-sat-track backup." });
+    if (checkOnly) {
+      const v = backup.validate(body);
+      return json(v.ok ? 200 : 400, v.ok ? { ok: true, summary: v.summary } : { ok: false, error: v.error });
+    }
+    const satOffsets = require("./lib/sat-offsets");
+    satOffsets.flush(); // so the safety copy has every pending offset edit
+    let r;
+    try {
+      r = backup.restore(body, { dir: config.CACHE_DIR, appVersion: APP_VERSION });
+    } catch (e) {
+      return json(500, { ok: false, error: "Restore failed: " + e.message });
+    }
+    if (!r.ok) return json(400, { ok: false, error: r.error });
+    console.log(
+      "Settings restored: " + r.summary.profileNames.length + " profile(s), active " +
+        JSON.stringify(r.summary.activeProfile) + "; previous settings saved to " + r.safetyCopy,
+    );
+    try {
+      reloadConfigAfterRestore();
+    } catch (e) {
+      console.warn("Restore: reload failed:", e.message);
+      return json(500, { ok: false, error: "Settings were written but the reload failed (" + e.message + "); restart pi-sat-track.", safetyCopy: r.safetyCopy });
+    }
+    json(200, { ok: true, summary: r.summary, safetyCopy: r.safetyCopy });
+  });
+}
+
+/** Re-read every restored file and re-apply the active profile live (no restart). */
+function reloadConfigAfterRestore() {
+  require("./lib/sat-offsets").reload();
+  tle.reloadTleSourcesPref();
+  profiles.load();
+  try { profiles.backfillConfigKey("aprs"); } catch (_) {}
+  applyProfileToRuntime(profiles.getActive());
+  if (typeof state.reloadSavedSettings === "function") state.reloadSavedSettings();
+  broadcastProfiles();
+  const st = state.computeState();
+  if (st) broadcast(st);
+  const tk = state.computeTick();
+  if (tk) broadcast(tk);
+  broadcastSats();
+  broadcast({ type: "endpoints", ...config.getEndpoints(), rotorCatalog: rotors.catalog() });
+  broadcast({ type: "settings-restored" });
+}
+
 const server = http.createServer((req, res) => {
   let urlPath = req.url === "/" ? "/index.html" : req.url;
   const q = urlPath.includes("?") ? urlPath.split("?")[1] : "";
@@ -435,6 +505,22 @@ const server = http.createServer((req, res) => {
     // Station → Version row: installer build label ("UAT-alpha.43") or branch+sha.
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
     return res.end(JSON.stringify({ version: APP_VERSION, source: APP_VERSION_INFO.source }));
+  }
+
+  // Configure → Station → Backup & restore (lib/backup.js, js/settings-backup.js).
+  if (urlPath === "/api/backup" && req.method === "GET") {
+    try {
+      require("./lib/sat-offsets").flush(); // pending fine-tune edits into the file first
+      const b = backup.buildBackup({ dir: config.CACHE_DIR, appVersion: APP_VERSION });
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      return res.end(JSON.stringify(b));
+    } catch (e) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ error: e.message }));
+    }
+  }
+  if (urlPath === "/api/restore") {
+    return handleRestore(req, res, new URLSearchParams(q).get("check") === "1");
   }
 
   if (urlPath === "/api/host") {

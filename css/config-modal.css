@@ -230,3 +230,9 @@
 .band-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
 .band-chip { font-size: .78rem; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-panel); color: var(--text-dim); cursor: pointer; }
 .band-chip.on { border-color: var(--accent); color: #fff; background: rgba(88, 166, 255, .22); }
+
+/* Configure → Station → Backup & restore (js/settings-backup.js) */
+.backup-controls { display: flex; gap: 6px; flex-wrap: wrap; }
+.backup-status:empty { display: none; }
+.backup-status.ok { color: #3fb950; }
+.backup-status.err { color: #ff7b72; }
