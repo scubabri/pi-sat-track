@@ -261,7 +261,10 @@
           offset: [4, 0],
           className: "decode-label k-" + (s.kind || "other"),
           opacity: op,
+          interactive: true,
         });
+        // Click on the dot or the "CALL grid" label answers the station in WSJT-X
+        // (an interactive tooltip passes its clicks on to its marker in Leaflet 1.9).
         mk.on("click", (e) => {
           if (e && e.originalEvent && L.DomEvent) L.DomEvent.stop(e.originalEvent);
           reply(s.call);

@@ -159,13 +159,15 @@
             e.innerHTML = '<div class="globe-heard-in"><span class="globe-heard-dot"></span><span class="globe-heard-label"><span class="dc-call"></span><span class="dc-grid"></span></span></div>';
             d.el = e;
             paintHeard(d);
+            const dot = e.querySelector(".globe-heard-dot");
             if (!d.src) {
-              // WSJT-X station: click answers it in WSJT-X (Reply), like the map.
-              const dot = e.querySelector(".globe-heard-dot");
-              dot.addEventListener("click", (ev) => {
+              // WSJT-X station: click on the dot or the "CALL grid" label answers it in WSJT-X (Reply), like the map.
+              const answer = (ev) => {
                 ev.stopPropagation();
                 if (window.decodeOverlay && window.decodeOverlay.reply) window.decodeOverlay.reply(d.call);
-              });
+              };
+              dot.addEventListener("click", answer);
+              e.querySelector(".globe-heard-label").addEventListener("click", answer);
             }
             if (d.src === "aprs") {
               dot.style.cursor = "pointer";
