@@ -85,7 +85,12 @@ The Pi installer sets up Node dependencies, cache under `~/.rpitrack`, and optio
 
 ### 3.2 Windows 11
 
-**Option A: setup.exe (recommended).** Download `pi-sat-track-<branch>-alpha.<N>-setup.exe` from https://pi-sat-track.s3.amazonaws.com/ and run it (UAC prompt). It needs **Node.js 22+** first (https://nodejs.org); if it's missing, setup says so and stops. It installs to `C:\\Program Files\\Pi Sat Track`, runs `npm ci --omit=dev`, and sets up port 80 and the firewall (section 10). It also adds Start Menu shortcuts **Start / Stop / Open / Uninstall Pi Sat Track** and an *Apps → Installed apps* entry. Uninstall keeps `%USERPROFILE%\\.rpitrack` unless you tick **Remove my settings**. There is no service and no auto start.
+**Option A: setup.exe (recommended).** Download `pi-sat-track-<branch>-alpha.<N>-setup.exe` from https://pi-sat-track.s3.amazonaws.com/ and run it (UAC prompt).
+
+- **Node.js:** if Node.js 22+ is missing (or older), the *Ready to Install* page lists **Node.js 22 LTS (will be downloaded and installed)**. Setup downloads the official MSI from nodejs.org, checks its SHA-256, and installs it silently. A newer Node.js is never touched. If the download or the install fails (e.g. *another installation is in progress*), setup stops before changing anything; the Node install log is `%TEMP%\\pi-sat-track-node-install.log`.
+- **Install:** to `C:\\Program Files\\Pi Sat Track`. Node packages are already inside the exe; no `npm` step and no internet needed after Node.js. It also sets up port 80 and the firewall (section 10).
+- **Shortcuts:** Start Menu **Start / Stop / Open / Uninstall Pi Sat Track**, plus an *Apps → Installed apps* entry. There is no service and no auto start.
+- **Uninstall:** keeps `%USERPROFILE%\\.rpitrack` unless you tick **Remove my settings**. If setup installed Node.js, an unticked **Also uninstall Node.js** box appears; by default Node.js stays.
 
 **Option B: batch files (fallback, no setup.exe):**
 

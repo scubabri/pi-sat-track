@@ -1,5 +1,6 @@
-# TO ENABLE: copy to .github/workflows/build-win-setup.yml on main (workflow_dispatch
-# only works for workflows on the default branch), then run it with --ref win/installer.
+# TO ENABLE: copy this file unchanged to .github/workflows/build-win-setup.yml on the
+# win/installer branch. Pushes to win/installer then build + upload automatically
+# (version = run number). Manual workflow_dispatch also needs it on the default branch.
 # Build the Windows setup.exe (Inno Setup) and upload it to S3.
 # Same secrets as build-sfx.yml (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY,
 # optional AWS_REGION / S3_BUCKET / S3_PREFIX).
@@ -9,6 +10,17 @@
 name: Build Windows setup.exe
 
 on:
+  push:
+    branches: [win/installer]
+    paths:
+      - "installer/windows/**"
+      - ".github/workflows/build-win-setup.yml"
+      - "*.bat"
+      - "*.ps1"
+      - "server.js"
+      - "lib/**"
+      - "js/**"
+      - "package*.json"
   workflow_dispatch:
     inputs:
       version:
@@ -26,6 +38,10 @@ permissions:
 concurrency:
   group: build-win-setup-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  # Pinned Node.js MSI that setup.exe downloads when Node 22+ is missing.
+  NODE_MSI_VERSION: "22.23.4"
 
 jobs:
   build:
@@ -54,6 +70,28 @@ jobs:
           echo "exe=pi-sat-track-${L}-setup.exe" >> "$GITHUB_OUTPUT"
           echo "Resolved label=$L"
 
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Bundle node_modules (npm ci --omit=dev, win-x64)
+        run: |
+          npm ci --omit=dev --no-audit --no-fund
+          ls node_modules/@serialport/bindings-cpp/prebuilds | grep win32-x64
+
+      - name: Resolve Node.js MSI SHA-256
+        id: nodemsi
+        run: |
+          set -euo pipefail
+          F="node-v${NODE_MSI_VERSION}-x64.msi"
+          SHA="$(curl -fsSL "https://nodejs.org/dist/v${NODE_MSI_VERSION}/SHASUMS256.txt" | awk -v f="$F" '$2==f{print $1}')"
+          [[ ${#SHA} -eq 64 ]] || { echo "No SHA-256 for $F" >&2; exit 1; }
+          # Verify the MSI itself matches before baking the hash into setup.exe
+          curl -fsSL -o "$RUNNER_TEMP/$F" "https://nodejs.org/dist/v${NODE_MSI_VERSION}/$F"
+          echo "$SHA  $RUNNER_TEMP/$F" | sha256sum -c -
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
       - name: Stamp VERSION
         run: echo "${{ steps.ver.outputs.label }}" > VERSION
 
@@ -76,7 +114,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          & "${{ steps.iscc.outputs.path }}" "/DAppLabel=${{ steps.ver.outputs.label }}" "/O$PWD\dist" installer\windows\pi-sat-track.iss
+          & "${{ steps.iscc.outputs.path }}" "/DAppLabel=${{ steps.ver.outputs.label }}" "/DNodeVer=${{ env.NODE_MSI_VERSION }}" "/DNodeSha=${{ steps.nodemsi.outputs.sha }}" "/O$PWD\dist" installer\windows\pi-sat-track.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
           Get-ChildItem dist
 
@@ -89,7 +127,7 @@ jobs:
           retention-days: 30
 
       - name: Resolve AWS settings
-        if: ${{ github.event.inputs.upload == 'true' }}
+        if: ${{ github.event_name == 'push' || github.event.inputs.upload == 'true' }}
         id: aws
         env:
           SECRET_REGION: ${{ secrets.AWS_REGION }}
@@ -109,7 +147,7 @@ jobs:
           echo "prefix=$PREFIX" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials
-        if: ${{ github.event.inputs.upload == 'true' }}
+        if: ${{ github.event_name == 'push' || github.event.inputs.upload == 'true' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -117,7 +155,7 @@ jobs:
           aws-region: ${{ steps.aws.outputs.region }}
 
       - name: Upload to S3
-        if: ${{ github.event.inputs.upload == 'true' }}
+        if: ${{ github.event_name == 'push' || github.event.inputs.upload == 'true' }}
         env:
           EXE: ${{ steps.ver.outputs.exe }}
           REGION: ${{ steps.aws.outputs.region }}
