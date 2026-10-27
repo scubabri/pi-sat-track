@@ -1,6 +1,6 @@
 # TO ENABLE: copy this file unchanged to .github/workflows/build-win-setup.yml on the
-# win/installer branch. Pushes to win/installer then build + upload automatically
-# (version = run number). Manual workflow_dispatch also needs it on the default branch.
+# default branch. Pushes to main or UAT build + upload automatically; other branches
+# build only by manual workflow_dispatch (version = run number if blank).
 # Build the Windows setup.exe (Inno Setup) and upload it to S3.
 # Same secrets as build-sfx.yml (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY,
 # optional AWS_REGION / S3_BUCKET / S3_PREFIX).
@@ -11,7 +11,7 @@ name: Build Windows setup.exe
 
 on:
   push:
-    branches: [win/installer]
+    branches: [main, UAT]
     paths:
       - "installer/windows/**"
       - ".github/workflows/build-win-setup.yml"
