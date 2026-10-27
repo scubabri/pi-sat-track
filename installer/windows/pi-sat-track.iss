@@ -324,7 +324,7 @@ begin
   RemoveNode := False;
   NodeWasOurs := RegQueryStringValue(HKLM64, OurKey, 'NodeInstalledBySetup', NodeVerOurs);
   if UninstallSilent() then exit;
-  Form := CreateCustomForm();
+  Form := CreateCustomForm(ScaleX(440), ScaleY(180), False, False);
   try
     Form.ClientWidth := ScaleX(440);
     Form.ClientHeight := ScaleY(180);
