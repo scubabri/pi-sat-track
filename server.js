@@ -124,7 +124,8 @@ function stationFromProfile(fallback) {
 /**
  * Heard stations from WSJT-X Decode (type 2) for the map overlay. Decodes
  * only arrive while the listener gate is open; when it closes the list is
- * kept (not cleared) and simply ages out after DECODE_EXPIRE_MS.
+ * kept (not cleared) and simply ages out after DECODE_EXPIRE_MS (60 s, purged
+ * every 5 s, so map dots and list rows go ~60 s after the last decode).
  */
 const decodeStore = wsjtxDecodes.createStore({
   onChange: () => broadcast(decodeStore.payload()),

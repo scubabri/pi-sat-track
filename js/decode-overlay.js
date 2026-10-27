@@ -24,7 +24,7 @@
   let on = mode !== "off";
   let layer = null;
   let stations = [];
-  let expireMs = 15 * 60 * 1000;
+  let expireMs = 60 * 1000;
   let skewMs = 0; // server now - client now
   const markers = new Map();
   let btn = null;
@@ -170,11 +170,16 @@
     const f = Math.min(1, Math.max(0, ageMs / expireMs));
     return 1 - 0.75 * f; // 1.0 fresh -> 0.25 just before expiry
   }
+  /** "25 s ago" under 2 min (normal at 60 s expiry), else "N min ago". */
+  function agoText(age) {
+    const s = Math.max(0, Math.round(age / 1000));
+    return s < 120 ? s + " s ago" : Math.round(s / 60) + " min ago";
+  }
   function tipText(s, age) {
     return (
       s.call + " " + s.grid + (s.mode ? " " + s.mode : "") +
       (Number.isFinite(s.snr) ? " " + (s.snr > 0 ? "+" : "") + s.snr + " dB" : "") +
-      " · " + Math.max(0, Math.round(age / 60000)) + " min ago" +
+      " · " + agoText(age) +
       (KIND_TEXT[s.kind] ? " · " + KIND_TEXT[s.kind] : "") +
       (s.message && s.kind ? "\n" + s.message : "")
     );
@@ -308,7 +313,7 @@
   }
   function init() {
     setInterval(patchWs, 500);
-    setInterval(() => { render(); notify(); }, 20000); // refresh fading / expiry between updates
+    setInterval(() => { render(); notify(); }, 5000); // fading / 60 s expiry between updates (map + globe)
     const t = setInterval(() => {
       if (ensureLayer()) clearInterval(t);
     }, 300);

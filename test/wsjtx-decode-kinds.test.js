@@ -63,7 +63,7 @@ test("map overlay colors stations by kind and explains the colors", () => {
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../js/decode-overlay.js"), "utf8"), ctx);
   const now = Date.now();
-  ctx.applyDecodeOverlay({ type: "wsjtx-decodes", expireMs: 900000, now, stations: [
+  ctx.applyDecodeOverlay({ type: "wsjtx-decodes", expireMs: 60000, now, stations: [
     { call: "K1ABC", grid: "FN42", lat: 42.5, lon: -71, lastHeard: now, kind: "me", message: "N0CALL K1ABC -12" },
     { call: "K2DEF", grid: "FN31", lat: 41.5, lon: -73, lastHeard: now, kind: "cq" },
     { call: "K3GHI", grid: "FM19", lat: 39.5, lon: -77, lastHeard: now, kind: "other" },
@@ -92,8 +92,8 @@ test("station list: calling you first, then CQ / 73, then others, newest first; 
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../js/decode-overlay.js"), "utf8"), ctx);
   const now = Date.now();
   const st = (call, kind, ago, grid) => ({ call, kind, grid: grid || "", lat: grid ? 40 : null, lon: grid ? -100 : null, lastHeard: now - ago * 1000 });
-  ctx.applyDecodeOverlay({ type: "wsjtx-decodes", expireMs: 900000, now, stations: [
-    st("O1", "other", 5, "FN42"), st("C1", "cq", 60, "FN31"), st("M1", "me", 300), st("C2", "cq", 10, "EM12"), st("M2", "me", 20, "DM79"), st("OLD", "me", 1000, "FN42"),
+  ctx.applyDecodeOverlay({ type: "wsjtx-decodes", expireMs: 60000, now, stations: [
+    st("O1", "other", 5, "FN42"), st("C1", "cq", 50, "FN31"), st("M1", "me", 30), st("C2", "cq", 10, "EM12"), st("M2", "me", 20, "DM79"), st("OLD", "me", 61, "FN42"),
   ] });
   const l = ctx.decodeOverlay.list(now);
   assert.strictEqual(l.map((x) => x.call).join(","), "M2,M1,C2,C1,O1");

@@ -3,7 +3,7 @@
  * modelled on the APRS station window (js/aprs-float.js chrome, position /
  * size in localStorage "wsjtxListWin").
  *
- * Rows: every station WSJT-X decoded within the server's expiry (15 min),
+ * Rows: every station WSJT-X decoded within the server's expiry (60 s),
  * colored like the map (red = calling you, green = CQ / 73, yellow = other),
  * sorted calling-you first, then CQ / 73, then the rest, newest first; they
  * fade with age and drop out on expiry like the APRS recent stations.
@@ -18,7 +18,7 @@
   const D = () => window.decodeOverlay || null;
   function ago(ms) {
     const s = Math.max(0, Math.round(ms / 1000));
-    if (s < 60) return s + " s";
+    if (s < 120) return s + " s";
     return Math.round(s / 60) + " min";
   }
   function hhmm(t) {
@@ -111,7 +111,7 @@
   function init() {
     document.addEventListener("decode-overlay-mode", sync);
     document.addEventListener("decode-overlay-change", render);
-    setInterval(render, 10000); // ages / fading / expiry between updates
+    setInterval(render, 5000); // ages / fading / 60 s expiry between updates
     const t = setInterval(() => {
       if (window.aprsFloat && D()) {
         clearInterval(t);
