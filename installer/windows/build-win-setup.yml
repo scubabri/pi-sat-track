@@ -1,0 +1,131 @@
+# TO ENABLE: copy to .github/workflows/build-win-setup.yml on main (workflow_dispatch
+# only works for workflows on the default branch), then run it with --ref win/installer.
+# Build the Windows setup.exe (Inno Setup) and upload it to S3.
+# Same secrets as build-sfx.yml (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY,
+# optional AWS_REGION / S3_BUCKET / S3_PREFIX).
+#
+# Output: pi-sat-track-<branch>-alpha.<N>-setup.exe
+
+name: Build Windows setup.exe
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Alpha version number (blank = use run number)"
+        required: false
+        default: ""
+      upload:
+        description: "Upload to S3"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-win-setup-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version and branch
+        id: ver
+        run: |
+          V="${{ github.event.inputs.version }}"
+          [[ -n "$V" ]] || V="${{ github.run_number }}"
+          V="$(echo "$V" | tr -cd '0-9.')"
+          [[ -n "$V" ]] || V="${{ github.run_number }}"
+          B="${GITHUB_REF_NAME:-unknown}"
+          B="$(echo -n "$B" | sed 's#refs/heads/##' | tr -c 'A-Za-z0-9._-' '-' | sed 's/--*/-/g;s/^-//;s/-$//')"
+          [[ -n "$B" ]] || B="unknown"
+          L="${B}-alpha.${V}"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "branch=$B" >> "$GITHUB_OUTPUT"
+          echo "label=$L" >> "$GITHUB_OUTPUT"
+          echo "exe=pi-sat-track-${L}-setup.exe" >> "$GITHUB_OUTPUT"
+          echo "Resolved label=$L"
+
+      - name: Stamp VERSION
+        run: echo "${{ steps.ver.outputs.label }}" > VERSION
+
+      - name: Find or install Inno Setup
+        id: iscc
+        shell: pwsh
+        run: |
+          $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") |
+            Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            choco install innosetup -y --no-progress
+            $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") |
+              Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          if (-not $iscc) { throw "ISCC.exe not found" }
+          Write-Host "ISCC: $iscc"
+          "path=$iscc" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Build setup.exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          & "${{ steps.iscc.outputs.path }}" "/DAppLabel=${{ steps.ver.outputs.label }}" "/O$PWD\dist" installer\windows\pi-sat-track.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
+          Get-ChildItem dist
+
+      - name: Upload artifact to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-sat-track-${{ steps.ver.outputs.branch }}-alpha-${{ steps.ver.outputs.version }}-setup
+          path: dist/${{ steps.ver.outputs.exe }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Resolve AWS settings
+        if: ${{ github.event.inputs.upload == 'true' }}
+        id: aws
+        env:
+          SECRET_REGION: ${{ secrets.AWS_REGION }}
+          SECRET_BUCKET: ${{ secrets.S3_BUCKET }}
+          SECRET_PREFIX: ${{ secrets.S3_PREFIX }}
+        run: |
+          REGION="$(echo -n "${SECRET_REGION:-}" | tr -d '[:space:]')"
+          BUCKET="$(echo -n "${SECRET_BUCKET:-}" | tr -d '[:space:]')"
+          PREFIX="${SECRET_PREFIX:-}"
+          [[ -n "$REGION" ]] || REGION="us-east-1"
+          [[ -n "$BUCKET" ]] || BUCKET="pi-sat-track"
+          PREFIX="${PREFIX#/}"
+          PREFIX="$(echo -n "$PREFIX" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          if [[ -n "$PREFIX" && "$PREFIX" != */ ]]; then PREFIX="${PREFIX}/"; fi
+          echo "region=$REGION" >> "$GITHUB_OUTPUT"
+          echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
+          echo "prefix=$PREFIX" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        if: ${{ github.event.inputs.upload == 'true' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ steps.aws.outputs.region }}
+
+      - name: Upload to S3
+        if: ${{ github.event.inputs.upload == 'true' }}
+        env:
+          EXE: ${{ steps.ver.outputs.exe }}
+          REGION: ${{ steps.aws.outputs.region }}
+          BUCKET: ${{ steps.aws.outputs.bucket }}
+          PREFIX: ${{ steps.aws.outputs.prefix }}
+        run: |
+          set -euo pipefail
+          DEST="s3://${BUCKET}/${PREFIX}${EXE}"
+          echo "Upload: dist/${EXE} -> ${DEST}"
+          aws s3 cp "dist/${EXE}" "${DEST}" --region "${REGION}" --content-type application/octet-stream
+          echo "URL: https://${BUCKET}.s3.amazonaws.com/${PREFIX}${EXE}"

@@ -85,6 +85,10 @@ The Pi installer sets up Node dependencies, cache under `~/.rpitrack`, and optio
 
 ### 3.2 Windows 11
 
+**Option A: setup.exe (recommended).** Download `pi-sat-track-<branch>-alpha.<N>-setup.exe` from https://pi-sat-track.s3.amazonaws.com/ and run it (UAC prompt). It needs **Node.js 22+** first (https://nodejs.org); if it's missing, setup says so and stops. It installs to `C:\\Program Files\\Pi Sat Track`, runs `npm ci --omit=dev`, and sets up port 80 and the firewall (section 10). It also adds Start Menu shortcuts **Start / Stop / Open / Uninstall Pi Sat Track** and an *Apps → Installed apps* entry. Uninstall keeps `%USERPROFILE%\\.rpitrack` unless you tick **Remove my settings**. There is no service and no auto start.
+
+**Option B: batch files (fallback, no setup.exe):**
+
 1. Download and unzip the app (e.g. into `%USERPROFILE%\\pi-sat-track`)
 2. **Double-click `install-win.bat`** and accept the Windows administrator (UAC) prompt
 3. If Node.js 22+ is missing, accept the prompt to install **Node.js LTS**
