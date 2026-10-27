@@ -34,7 +34,7 @@ This wiki is the operator guide. Source and installers live in the [repository](
 8. [Supported radios and rotors](#8-supported-radios-and-rotors)
 9. [Cache and data files](#9-cache-and-data-files)
 10. [Port 80 (Windows)](#10-port-80-windows)
-11. [Uninstall (Windows)](#11-uninstall-windows)
+11. [Uninstall (Windows, macOS)](#11-uninstall-windows)
 12. [Troubleshooting](#12-troubleshooting)
 13. [Planned wiki pages](#13-planned-wiki-pages)
 
@@ -99,15 +99,40 @@ If port 80 is already in use, the installer leaves it alone; use **http://127.0.
 
 ### 3.3 macOS
 
-No dedicated installer yet. Install [Node.js LTS](https://nodejs.org/), then:
+macOS 12 or newer, Apple Silicon or Intel. Put the app in a folder (git
+clone, or extract the zip), e.g. `~/pi-sat-track`, then in Terminal:
 
 ```bash
-cd /path/to/pi-sat-track
-npm install
-node server.js
+git clone https://github.com/scubabri/pi-sat-track.git ~/pi-sat-track   # or extract the zip there
+cd ~/pi-sat-track
+./install-mac.sh
 ```
 
-Open **http://127.0.0.1:3000**. Serial devices appear as `/dev/cu.usb*` (not Linux `ttyUSB`).
+`install-mac.sh` (no sudo, no background service):
+
+1. Checks for Node.js 22 or newer. If it is missing or too old it runs
+   `brew install node` when Homebrew is installed; otherwise it tells you to
+   install Node.js LTS from [nodejs.org](https://nodejs.org/) and stops.
+2. Creates `~/.rpitrack` (settings / data) if needed.
+3. Runs `npm ci --omit=dev` in the app folder (the app stays where it is).
+4. Prints how to start, open, stop, update and uninstall.
+
+Start / stop (nothing starts automatically):
+
+```bash
+cd ~/pi-sat-track && node server.js     # Ctrl+C stops it
+```
+
+Open **http://127.0.0.1:3000** (the script also prints the Mac's LAN address
+for other devices). Serial devices appear as `/dev/cu.usbserial-*` or
+`/dev/cu.usbmodem*` (not Linux `ttyUSB`); some USB-serial adapters need the
+vendor's macOS driver.
+
+Update: `./install-mac.sh --update` (a git checkout is pulled with
+`git pull --ff-only`; for a zip, extract the new one over the folder first).
+`~/.rpitrack` is kept. `--dry-run` shows what the script would do.
+
+Uninstall: see [11. Uninstall](#11-uninstall-windows).
 
 ---
 
@@ -300,6 +325,18 @@ Always removes `node_modules` and the start launcher (after confirmation).
 | `--purge` | Also delete the app folder |
 
 If the installer auto-installed Node, uninstall **offers** to remove Node (type `YES`). Node is never removed silently.
+
+### macOS
+
+Stop the server first (Ctrl+C), then:
+
+```bash
+cd ~/pi-sat-track && ./uninstall-mac.sh          # removes the app folder, keeps ~/.rpitrack
+./uninstall-mac.sh --data                          # also deletes ~/.rpitrack (all profiles / settings)
+```
+
+It asks you to type `YES` (`--yes` skips that). Node.js is left installed
+(`brew uninstall node`, or the nodejs.org uninstall steps, to remove it).
 
 ---
 
