@@ -25,6 +25,22 @@
 #define AppName "Pi Sat Track"
 #define SrcRoot "..\.."
 
+; Launcher exe with our icon (launcher\PiSatTrack.cs), compiled here at ISCC time with the
+; .NET Framework 4 csc.exe that ships with Windows (no workflow change needed). It owns the
+; server console, so the taskbar shows the Pi Sat Track icon (AppUserModelID + WM_SETICON).
+; If csc is missing, the Start shortcut falls back to start-sat-tracker.bat.
+#define Csc AddBackslash(GetEnv("WINDIR")) + "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+#define LauncherExe AddBackslash(SourcePath) + "PiSatTrack.exe"
+#if FileExists(Csc)
+  #expr Exec(Csc, '/nologo /target:exe /platform:anycpu /optimize+ /r:System.Drawing.dll /win32icon:"' + AddBackslash(SourcePath) + 'pi-sat-track.ico" /out:"' + LauncherExe + '" "' + AddBackslash(SourcePath) + 'launcher\PiSatTrack.cs"', SourcePath, 1, 0)
+#endif
+#if FileExists(LauncherExe)
+  #define HaveLauncher
+  #pragma message "Launcher: " + LauncherExe
+#else
+  #pragma warning "PiSatTrack.exe not built (csc.exe missing?) - Start uses start-sat-tracker.bat"
+#endif
+
 [Setup]
 AppId={{6F1C2B7E-5A3D-4E8B-9C21-7D4A0E3B5F18}
 AppName={#AppName}
@@ -57,6 +73,9 @@ Source: "{#SrcRoot}\*"; DestDir: "{app}"; \
   Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "start-sat-tracker.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "pi-sat-track.ico"; DestDir: "{app}"; Flags: ignoreversion
+#ifdef HaveLauncher
+Source: "PiSatTrack.exe"; DestDir: "{app}"; Flags: ignoreversion
+#endif
 ; This build's stop logic, run from {tmp} before files are replaced (PrepareToInstall).
 Source: "{#SrcRoot}\win-network.ps1"; DestName: "stop-pi-sat-track.ps1"; Flags: dontcopy
 
@@ -66,8 +85,13 @@ Filename: "{app}\Open Pi Sat Track.url"; Section: "InternetShortcut"; Key: "Icon
 Filename: "{app}\Open Pi Sat Track.url"; Section: "InternetShortcut"; Key: "IconIndex"; String: "0"
 
 [Icons]
+#ifdef HaveLauncher
+Name: "{group}\Start Pi Sat Track"; Filename: "{app}\PiSatTrack.exe"; WorkingDir: "{app}"; IconFilename: "{app}\pi-sat-track.ico"; \
+  AppUserModelID: "PiSatTrack.Server"
+#else
 Name: "{group}\Start Pi Sat Track"; Filename: "{app}\start-sat-tracker.bat"; WorkingDir: "{app}"; IconFilename: "{app}\pi-sat-track.ico"; \
   AppUserModelID: "PiSatTrack.Server"
+#endif
 Name: "{group}\Stop Pi Sat Track"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\win-network.ps1"" -Action Stop -AppDir ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\pi-sat-track.ico"
 Name: "{group}\Open Pi Sat Track"; Filename: "{app}\Open Pi Sat Track.url"; IconFilename: "{app}\pi-sat-track.ico"
@@ -76,8 +100,13 @@ Name: "{group}\Uninstall Pi Sat Track"; Filename: "{uninstallexe}"; IconFilename
 [Run]
 ; Started through 64-bit cmd.exe ({sys} in 64-bit mode): a shellexec from 32-bit setup
 ; got a 32-bit cmd where %ProgramFiles% = Program Files (x86), so node was not found.
+#ifdef HaveLauncher
+Filename: "{app}\PiSatTrack.exe"; WorkingDir: "{app}"; \
+  Description: "Start Pi Sat Track now (opens the browser after 10 s)"; Flags: postinstall nowait skipifsilent runasoriginaluser
+#else
 Filename: "{sys}\cmd.exe"; Parameters: "/c ""{app}\start-sat-tracker.bat"""; WorkingDir: "{app}"; \
   Description: "Start Pi Sat Track now (opens the browser after 10 s)"; Flags: postinstall nowait skipifsilent runasoriginaluser
+#endif
 
 [UninstallRun]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \

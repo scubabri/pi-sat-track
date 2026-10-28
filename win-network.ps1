@@ -103,9 +103,11 @@ function Stop-AppServer {
   try { Set-Content -Path (Join-Path $AppDir '.stopping') -Value (Get-Date -Format o) -ErrorAction Stop } catch {}
   $batEsc = [regex]::Escape((Join-Path $AppDir 'start-sat-tracker.bat'))
   $openEsc = [regex]::Escape((Join-Path $AppDir 'open-when-ready.ps1'))
-  foreach ($p in (Get-CimInstance Win32_Process -Filter "Name='cmd.exe' OR Name='powershell.exe'" -ErrorAction SilentlyContinue)) {
+  $exeEsc = [regex]::Escape((Join-Path $AppDir 'PiSatTrack.exe'))
+  foreach ($p in (Get-CimInstance Win32_Process -Filter "Name='cmd.exe' OR Name='powershell.exe' OR Name='PiSatTrack.exe'" -ErrorAction SilentlyContinue)) {
     if ($p.ProcessId -eq $PID) { continue }
-    if (($p.Name -eq 'cmd.exe' -and $p.CommandLine -match $batEsc) -or ($p.Name -eq 'powershell.exe' -and $p.CommandLine -match $openEsc)) {
+    if (($p.Name -eq 'cmd.exe' -and $p.CommandLine -match $batEsc) -or ($p.Name -eq 'powershell.exe' -and $p.CommandLine -match $openEsc) -or
+        ($p.Name -eq 'PiSatTrack.exe' -and $p.ExecutablePath -and $p.ExecutablePath -match ('^' + $exeEsc + '$'))) {
       Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
       Write-Host "  closed $($p.Name) (PID $($p.ProcessId))"
       $stopped += $p.ProcessId
