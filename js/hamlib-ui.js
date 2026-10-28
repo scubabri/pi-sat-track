@@ -258,6 +258,7 @@
   }
 
   let lastLatest = 0;
+  let reloadedJob = null;
   function refreshStatus(latest) {
     const want = latest && Date.now() - lastLatest > 600000;
     if (want) lastLatest = Date.now();
@@ -267,8 +268,8 @@
         renderStatus(st);
         clearTimeout(statusTimer);
         if (st.job && st.job.running) statusTimer = setTimeout(() => refreshStatus(false), 1500);
-        else if (st.job && st.job.result && st.job.result.ok && !st.job.reloaded) {
-          st.job.reloaded = true;
+        else if (st.job && st.job.result && st.job.result.ok && reloadedJob !== st.job.startedAt) {
+          reloadedJob = st.job.startedAt; // once per finished update (st is a fresh object every poll)
           modelsP = null;
           loadModels(true).then(() => SIDES.forEach((s) => fillMfgs(s, $("cfg-" + s + "-hamlib-model").value || pending[s])));
         }
@@ -333,33 +334,33 @@
     const h = $("cfg-hamlib-net-hint");
     if (!h) return;
     const n = readNet();
-    const ips = (lastStatus && lastStatus.net && lastStatus.net.lanIps) || [];
-    const win = lastStatus && lastStatus.net && lastStatus.net.platform === "win32";
-    const where = (port) => (n.share ? (ips.length ? ips : ["<this computer's IP>"]).map((ip) => ip + ":" + port).join(" or ") : "127.0.0.1:" + port + " (this computer only)");
+    const net = (lastStatus && lastStatus.net) || {};
+    const primary = net.primaryIp || (net.lanIps || [])[0] || "<this computer's IP>";
+    const others = (net.allIps || []).filter((ip) => ip !== primary);
+    const win = net.platform === "win32";
+    const addr = (port) => (n.share ? primary : "127.0.0.1") + ":" + port;
     // Ports belong to the configured radio (Radio 1 / Radio 2), not to the per-satellite UL / DL role.
-    const radioTxt = (side) => {
-      const name = ($(side === "ul" ? "cfg-r1-name" : "cfg-r2-name") || {}).value || "";
-      const tr = ($("cfg-" + side + "-transport") || {}).value;
-      if (tr !== "hamlib") return null;
-      const m = byId.get(($("cfg-" + side + "-hamlib-model") || {}).value || "");
-      return (name ? name + " · " : "") + (m ? m.model : "Hamlib");
-    };
     const single = !!($("cfg-single-radio") || {}).checked;
-    const r1 = radioTxt("ul");
-    const r2 = single ? null : radioTxt("dl");
-    const lines = [];
-    if (r1) lines.push("Radio 1 (" + esc(r1) + "): <b>" + esc(where(n.portUl)) + "</b>");
-    if (r2) lines.push("Radio 2 (" + esc(r2) + "): <b>" + esc(where(r1 && devOf("ul") === devOf("dl") ? n.portUl : n.portDl)) + "</b>");
-    if (!lines.length) lines.push("No radio uses Hamlib serial. Radio 1 → " + esc(where(n.portUl)) + ", Radio 2 → " + esc(where(n.portDl)));
+    const isHamlib = (side) => ($("cfg-" + side + "-transport") || {}).value === "hamlib";
+    const h1 = isHamlib("ul");
+    const h2 = !single && isHamlib("dl") && !(h1 && devOf("ul") === devOf("dl"));
+    const show = (side, on) => {
+      const f = $("cfg-hamlib-port-" + side);
+      if (f && f.parentElement) f.parentElement.hidden = !on;
+    };
+    show("ul", h1);
+    show("dl", h2);
+    const line = (k, on, port) => "Radio " + k + ": " + (on ? "<b>" + esc(addr(port)) + "</b>" : "not shared (no rigctld)");
+    const lines = [line(1, h1, n.portUl)];
+    if (!single) lines.push(line(2, h2 || (!single && isHamlib("dl") && h1), h2 ? n.portDl : n.portUl));
     h.innerHTML =
-      lines.join(" · ") + " — the port stays with the radio when a satellite swaps UL / DL.<br>" +
-      (n.share
-        ? "rigctld has <b>no password</b>: use on your local network only. "
-        : "Off: rigctld listens on 127.0.0.1 only. ") +
-      "In WSJT-X set Rig = <b>Hamlib NET rigctl</b>, Network Server = the address above, and turn its Doppler tracking and Split off so it does not fight our Doppler. Saving restarts rigctld." +
-      (win && n.share && (n.portUl < 4534 || n.portUl > 4535 || n.portDl < 4534 || n.portDl > 4535)
+      lines.join(" · ") + (n.share ? "" : " (this computer only)") + "<br>" +
+      (n.share ? "rigctld has <b>no password</b>: use on your local network only. " : "Off: rigctld listens on 127.0.0.1 only. ") +
+      "In WSJT-X set Rig = <b>Hamlib NET rigctl</b>, Network Server = the address above, and turn its Doppler tracking and Split off so it does not fight our Doppler. The port stays with the radio when a satellite swaps UL / DL. Saving restarts rigctld." +
+      (win && n.share && (h1 && (n.portUl < 4534 || n.portUl > 4535) || h2 && (n.portDl < 4534 || n.portDl > 4535))
         ? " <b>Windows Firewall:</b> setup opened TCP 4534–4535 only; allow other ports yourself."
-        : "");
+        : "") +
+      (n.share && others.length ? '<details class="hamlib-ips"><summary>other addresses</summary>' + esc(others.join(", ")) + "</details>" : "");
   }
 
   // ---- Station summary: rigctld state (separate from Radio on/off) ----
@@ -400,6 +401,12 @@
   setInterval(hookWs, 2000);
   setInterval(refreshSummary, 30000);
   setTimeout(() => { hookWs(); refreshSummary(); }, 500);
+
+  // Station hint follows Radio-tab changes (transport, single radio, serial port).
+  document.addEventListener("change", (e) => {
+    const id = (e.target && e.target.id) || "";
+    if (/^cfg-(ul|dl)-(transport|hamlib-device|hamlib-model)$|^cfg-single-radio$/.test(id)) renderNet(null);
+  });
 
   inject();
   injectNet();

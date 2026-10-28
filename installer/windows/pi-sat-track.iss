@@ -26,13 +26,13 @@
 #define SrcRoot "..\.."
 
 ; Launcher exe with our icon (launcher\PiSatTrack.cs), compiled here at ISCC time with the
-; .NET Framework 4 csc.exe that ships with Windows (no workflow change needed). It owns the
-; server console, so the taskbar shows the Pi Sat Track icon (AppUserModelID + WM_SETICON).
+; .NET Framework 4 csc.exe that ships with Windows (no workflow change needed). A small WinForms
+; window (log view, Stop, Open browser) that runs node hidden, so the taskbar shows our icon.
 ; If csc is missing, the Start shortcut falls back to start-sat-tracker.bat.
 #define Csc AddBackslash(GetEnv("WINDIR")) + "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 #define LauncherExe AddBackslash(SourcePath) + "PiSatTrack.exe"
 #if FileExists(Csc)
-  #expr Exec(Csc, '/nologo /target:exe /platform:anycpu /optimize+ /r:System.Drawing.dll /win32icon:"' + AddBackslash(SourcePath) + 'pi-sat-track.ico" /out:"' + LauncherExe + '" "' + AddBackslash(SourcePath) + 'launcher\PiSatTrack.cs"', SourcePath, 1, 0)
+  #expr Exec(Csc, '/nologo /target:winexe /platform:anycpu /optimize+ /r:System.Drawing.dll /r:System.Windows.Forms.dll /win32icon:"' + AddBackslash(SourcePath) + 'pi-sat-track.ico" /out:"' + LauncherExe + '" "' + AddBackslash(SourcePath) + 'launcher\PiSatTrack.cs"', SourcePath, 1, 0)
 #endif
 #if FileExists(LauncherExe)
   #define HaveLauncher
