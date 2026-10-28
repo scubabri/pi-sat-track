@@ -135,3 +135,4 @@ server.log*
 # Build stamp (build-sfx.sh writes these into the tree)
 /VERSION
 /version.txt
+node_modules
