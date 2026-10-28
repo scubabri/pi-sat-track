@@ -55,8 +55,9 @@ test("swap: sides exchanged, flat legacy radio fields dropped, globals derived; 
   const cfg = legacyFlexCfg();
   const eff = roles.effectiveEndpoints(cfg, 2);
   assert.notStrictEqual(eff, cfg);
-  assert.strictEqual(eff.radioUl, cfg.radioDl);
-  assert.strictEqual(eff.radioDl, cfg.radioUl);
+  // same radios, tagged with their configured slot (rigctld ports stay with the radio)
+  assert.deepStrictEqual(eff.radioUl, Object.assign({}, cfg.radioDl, { radioSlot: 2 }));
+  assert.deepStrictEqual(eff.radioDl, Object.assign({}, cfg.radioUl, { radioSlot: 1 }));
   for (const k of roles.FLAT_RADIO_KEYS) assert.ok(!(k in eff), k + " dropped");
   assert.strictEqual(cfg.flexUlPort, 60002, "stored config untouched");
   config.applyEndpoints(eff);
