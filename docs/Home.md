@@ -24,6 +24,7 @@ This wiki is the operator guide. Source and installers live in the [repository](
    - [Serial ports (COM / tty)](#55-serial-ports-com--tty)
    - [Rotator](#56-rotator)
    - [Hamlib (rigctld)](#57-hamlib-rigctld)
+   - [Configure field notes](#58-configure-field-notes)
 6. [Connection tests](#6-connection-tests)
    - [Radio test](#61-radio-test)
    - [Rotator test](#62-rotator-test)
@@ -261,9 +262,8 @@ Turn **Antenna OFF** in the UI before running the rotator connection test so the
 Use **Connection = Hamlib serial (rigctld)** for a radio that has no built-in driver here. Pick the
 **Manufacturer**, then the **Model** (the list comes from the installed Hamlib, `rigctl -l`, with each
 model's Hamlib status: Stable / Beta / Alpha / Untested). The model you pick always runs through Hamlib
-(rigctld). Models we also have a built-in driver for (IC-705, IC-9700, FT-991/991A, FT-847, FT-817/818,
-TS-2000, Flex) are marked **built-in driver available** as a hint only; to use our own driver instead,
-set **Connection = Native serial** (or TCP for Flex SmartSDR CAT).
+(rigctld). For radios with a built-in driver here (IC-705, IC-9700, FT-991/991A, FT-847, FT-817/818,
+TS-2000, Flex) you can instead use **Connection = Native serial** (or TCP for Flex SmartSDR CAT).
 
 Choosing a model fills the serial settings from Hamlib's own defaults (`rigctl --dump-caps`): baud,
 data/stop bits, parity, handshake and, for Icom, the CI-V address. Change them under **Serial options**
@@ -284,14 +284,12 @@ The **Radio** button only engages Pi Sat Track's control: frequency / mode / VFO
 Doppler updates and the tuning controls. With Radio off we send nothing to rigctld (no polling), so another
 program has the radio to itself.
 
-**Share rigctld on network** (Configure → **Station**, off by default): off, rigctld listens on
-`127.0.0.1` only (this computer). On, it listens on all interfaces (`-T 0.0.0.0`) so WSJT-X etc. on another
-computer can use the radio; the two port fields (default 4534 Radio 1, 4535 Radio 2) set the ports, and the
-hint below them shows the address to use (this computer's LAN IP:port). Saving restarts rigctld.
-rigctld has **no authentication** — use it on your local network only.
-Windows: setup.exe adds the firewall rule *Pi Sat Track (rigctld 4534/4535)* (inbound TCP 4534–4535,
-local subnet only; removed on uninstall). Other ports need a rule of your own. Pi / Linux / macOS: no
-firewall changes are made.
+**Localhost only:** the app-managed rigctld always listens on `127.0.0.1` (`-T 127.0.0.1`). Configure →
+**Station** sets the two ports (default 4534 Radio 1, 4535 Radio 2); a radio not on Hamlib serial has its
+field grayed out (*not shared (no rigctld)*). Saving restarts rigctld. rigctld has no authentication, so it
+is never opened to the network; setup.exe no longer adds a rigctld firewall rule and removes
+*Pi Sat Track (rigctld 4534/4535)* left by earlier alphas. To use a radio from another computer, run rigctld
+there yourself (see [Advanced setup](#14-advanced-setup)).
 
 **Install / update Hamlib** (Configure → Radio shows the installed version and whether a newer release exists):
 
@@ -306,11 +304,32 @@ After an update the model list is reloaded. **Reload models** re-reads it by han
 **Sharing the radio with WSJT-X (or another app):** only one program can open the serial port, so let
 Pi Sat Track own it and point the other program at our rigctld. In WSJT-X: *Settings → Radio → Rig =
 **Hamlib NET rigctl***, *Network Server = `127.0.0.1:4534`* on the same computer (4535 if the Hamlib radio is Radio 2 — Station
-shows which radio is on which port), or *`<LAN IP>:port`* from another computer with **Share rigctld on network** on. In WSJT-X turn **Doppler
-tracking off** and set **Split Operation = None** so it does not fight our Doppler. Pi Sat Track's Radio must
-be on so rigctld is running.
+shows which radio is on which port). In WSJT-X turn **Doppler
+tracking off** and set **Split Operation = None** so it does not fight our Doppler. rigctld runs whether Pi Sat Track's Radio is on or off.
 
 **Rotators:** Hamlib rotators (`rotctld`) are not wired up yet; use the built-in rotor drivers.
+
+### 5.8 Configure field notes
+
+Longer explanations behind the short hints in Configure.
+
+- **Desktop notifications:** Pass alerts (the bells) always ding and show an in-page toast. Desktop notifications add a system notification (useful when the tab is in the background). Saved in this browser; applies immediately. Browsers allow them only on https:// or http://localhost.
+- **Backup & restore:** Saves all station profiles (radios, rotor, logging, WSJT-X, KISS / APRS, favorites, bells), per-sat offsets and TLE sources, plus this browser's display preferences, to `pi-sat-track-backup-<date>.json`. The file is plain text and includes any passwords or passcodes you entered: keep it private. Restore saves the current settings to `~/.rpitrack/backups/` first, then reloads the page.
+- **Profiles:** Profiles store favorites and radio settings on the server (e.g. MacBook Pro vs Air).
+- **Units:** Distances, altitudes and speeds on screen (range, altitude, range rate, labels). Saved with this station profile. Logging, Doppler and frequencies are unaffected.
+- **Default uplink radio:** Downlink = the other radio. Used for any sat without a saved choice. Change the radio per sat on the Frequencies panel (saved per profile, per sat).
+- **Running rigctld yourself (rigctl TCP):** `-m` model (3085 IC-705, 3081 IC-9700; `rigctl -l | grep 9700`) · `-r` serial port · `-s` baud = radio CI-V USB baud · `-T 0.0.0.0` listen on network · `-t` port = endpoint port (4532) · `-vvvv` verbose. rigctld has no daemon flag; for start-at-boot use a systemd service (Linux) or launchd agent (Mac).
+- **After LOS:** When the selected sat drops below Min EL: **Do nothing** holds the LOS azimuth; **Park** sends the rotor to Park AZ/EL (if Antenna is on) and re-engages 5 min before the next AOS. Combine with the top-bar **Auto Select** button to also switch to the favorite with the soonest AOS.
+- **AMSAT auto-Heard:** Same report as the sidebar AMSAT **Heard** button (your callsign/grid, UTC time of the QSO), for the logged satellite. Sent at most once per pass, also counting a Heard you already sent with the button. Applies to the Log button and to WSJT-X QSOs logged for the selected satellite. Never delays the log.
+- **Logging UDP targets:** GridTracker2 / Log4OM 2 listen on 2237 (WSJT-X). Unicast IP, x.x.x.255 broadcast, or a multicast group such as 224.0.0.1 or 239.255.0.1 (enable multicast in the receiver with the same group + port). In Log4OM enable "Import QSO from JT Message #12" so SAT_NAME comes through. Plain ADIF: Log4OM ADIF inbound (2333) or GridTracker2 "Receive ADIF UDP Broadcasts".
+- **WSJT-X listener:** In WSJT-X Settings > Reporting set UDP Server to this Pi's IP and this port. QSOs are re-sent with PROP_MODE=SAT, SAT_NAME and tracker UL/DL frequencies through the Logging output above (only while the selected sat is up; otherwise unchanged). The listener only runs while Radio is on.
+- **KISS TX selection:** Satellite sends go out on a TX-capable connection whose speed matches the satellite (Per-satellite speed under Transmit); with no satellite, on the Default TX connection.
+- **KISS connections:** One row per TNC channel: Graywolf binds one channel per KISS TCP port; 9600 G3RUH needs Direwolf (MODEM 9600).
+- **Graywolf setup:** **Graywolf** (remote host or this Pi): Interfaces → KISS TNC → **+ Add Interface**, Type **TCP (server)**, listen `0.0.0.0:6700`, Channel = your sat radio channel, **Mode = Modem** (Graywolf's modem keys the radio). Leave "Allow digipeater/beacon/iGate to transmit" alone (TNC mode only). Turn off Graywolf beacons / digipeater rules for the satellite channel. Graywolf drops a repeat of the same packet within 30 s. Graywolf binds **one channel per KISS TCP port** (e.g. 8001 = FLEX ch1 with TX, 8002 = VHF Dax 3 RX only): add one row per port. Graywolf only has 1200 AFSK / PSK modems.
+- **Direwolf / Bluetooth TNC:** **Direwolf** for 9600 G3RUH sats: `MODEM 9600` on the 9600 channel and e.g. `KISSPORT 8003`; add a row with Speed 9600 G3RUH (see docs/APRS.md). KISS port (Advanced) is only for multi-channel Direwolf / multi-port TNCs. **Bluetooth TNC** (Mobilinkd, TH-D74/D75): pair once with `bluetoothctl`, then `sudo rfcomm bind 0 <MAC>` and pick Serial, `/dev/rfcomm0`.
+- **Per-satellite speed:** Empty = from the AMSAT digipeater list (ISS, IO-86, NO-44, SONATE-2 = 1200; CroCube, GRBBeta, KNACKSAT-2, KOSTKA, LASARsat, Marina = 9600), else the selected mode (9k6 / G3RUH = 9600), else 1200.
+- **APRS To / Via:** Like UISS: To / Via form the header of every packet (CQ VIA ARISS). Change them per send in the APRS windows.
+- **APRS repeat suffix:** Resending the same position / UI text within 30 s appends “ #2”, “ #3”… so Graywolf (drops identical frames within 30 s) and digipeater dupe filters pass it. Messages are not changed.
 
 ## 6. Connection tests
 

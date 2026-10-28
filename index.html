@@ -161,10 +161,7 @@
                 </button>
               </div>
             </div>
-            <p class="form-hint" id="cfg-profile-hint">
-              Profiles store favorites and radio settings on the server (e.g.
-              MacBook Pro vs Air).
-            </p>
+            <p class="form-hint" id="cfg-profile-hint">Favorites and radio settings, stored on the server.</p>
 
             <div class="form-row">
               <label for="cfg-callsign">My callsign</label>
@@ -197,11 +194,7 @@
                 <option value="metric">Metric (km, m/s)</option>
                 <option value="imperial">Imperial (mi, mph)</option>
               </select>
-              <p class="form-hint">
-                Distances, altitudes and speeds on screen (range, altitude,
-                range rate, labels). Saved with this station profile. Logging,
-                Doppler and frequencies are unaffected.
-              </p>
+              <p class="form-hint">Display only; logging and Doppler unaffected.</p>
             </div>
 
             <div class="form-row">
@@ -245,7 +238,7 @@
                 <option value="1">Radio 1</option>
                 <option value="2">Radio 2</option>
               </select>
-              <span class="form-hint">Downlink = the other radio. Used for any sat without a saved choice. Change the radio per sat on the Frequencies panel (saved per profile, per sat).</span>
+              <span class="form-hint">DL = the other radio. Per-sat override: Frequencies panel.</span>
             </div>
             <div class="cfg-radio-cols">
             <div class="form-section" id="cfg-ul-section">
@@ -353,12 +346,7 @@
                     <pre><code>rigctld -m 3085 -r /dev/ttyACM0 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span></code></pre>
                     <p>Background:</p>
                     <pre><code>nohup rigctld -m 3085 -r /dev/ttyACM0 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span> &gt; ~/rigctld.log 2&gt;&amp;1 &amp;</code></pre>
-                    <p class="form-hint">
-                      <code>-m</code> model (3085 IC-705, 3081 IC-9700; <code>rigctl -l | grep 9700</code>) ·
-                      <code>-r</code> serial port · <code>-s</code> baud = radio CI-V USB baud ·
-                      <code>-T 0.0.0.0</code> listen on network · <code>-t</code> port = endpoint port (<span class="rigctld-port">4532</span>) ·
-                      <code>-vvvv</code> verbose. rigctld has no daemon flag; for start-at-boot use a systemd service (Linux) or launchd agent (Mac).
-                    </p>
+                    <p class="form-hint"><code>rigctld -m &lt;model&gt; -r &lt;port&gt; -s &lt;baud&gt; -T 127.0.0.1 -t <span class="rigctld-port">4532</span></code></p>
                   </details>
                 </div>
 
@@ -376,10 +364,7 @@
                       title="SDRconnect WebSocket host:port (default 5454)"
                     />
                   </div>
-                  <p class="form-hint">
-                    SDRplay SDRconnect WebSocket API — run the GUI and connect
-                    here for Doppler control.
-                  </p>
+                  <p class="form-hint">SDRconnect WebSocket API (GUI must be running).</p>
                 </div>
 
                 <div id="cfg-ul-cat-block" hidden>
@@ -569,12 +554,7 @@
                     <pre><code>rigctld -m 3085 -r /dev/ttyACM0 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span></code></pre>
                     <p>Background:</p>
                     <pre><code>nohup rigctld -m 3085 -r /dev/ttyACM0 -s 19200 -T 0.0.0.0 -t <span class="rigctld-port">4532</span> &gt; ~/rigctld.log 2&gt;&amp;1 &amp;</code></pre>
-                    <p class="form-hint">
-                      <code>-m</code> model (3085 IC-705, 3081 IC-9700; <code>rigctl -l | grep 9700</code>) ·
-                      <code>-r</code> serial port · <code>-s</code> baud = radio CI-V USB baud ·
-                      <code>-T 0.0.0.0</code> listen on network · <code>-t</code> port = endpoint port (<span class="rigctld-port">4532</span>) ·
-                      <code>-vvvv</code> verbose. rigctld has no daemon flag; for start-at-boot use a systemd service (Linux) or launchd agent (Mac).
-                    </p>
+                    <p class="form-hint"><code>rigctld -m &lt;model&gt; -r &lt;port&gt; -s &lt;baud&gt; -T 127.0.0.1 -t <span class="rigctld-port">4532</span></code></p>
                   </details>
                 </div>
 
@@ -592,10 +572,7 @@
                       title="SDRconnect WebSocket host:port (default 5454)"
                     />
                   </div>
-                  <p class="form-hint">
-                    SDRplay SDRconnect WebSocket API — run the GUI and connect
-                    here for Doppler control.
-                  </p>
+                  <p class="form-hint">SDRconnect WebSocket API (GUI must be running).</p>
                 </div>
 
                 <div id="cfg-dl-cat-block" hidden>
@@ -752,10 +729,7 @@
                     South (180°)
                   </label>
                 </div>
-                <p class="form-hint">
-                  Never drive across this stop — tracking and rotator test go
-                  the long way instead.
-                </p>
+                <p class="form-hint">Tracking and test never cross this stop.</p>
               </div>
               <div class="form-row" id="cfg-rotor-after-los-wrap">
                 <label for="cfg-rotor-after-los">After LOS</label>
@@ -763,18 +737,9 @@
                   <option value="none">Do nothing</option>
                   <option value="park">Park</option>
                 </select>
-                <p class="form-hint">
-                  When the selected sat drops below Min EL: <b>Do nothing</b>
-                  holds the LOS azimuth; <b>Park</b> sends the rotor to Park
-                  AZ/EL (if Antenna is on) and re-engages 5 min before the
-                  next AOS. Combine with the top-bar <b>Auto Select</b> button
-                  to also switch to the favorite with the soonest AOS.
-                </p>
+                <p class="form-hint">Below Min EL: <b>Do nothing</b> holds LOS AZ; <b>Park</b> parks, re-engages AOS−5 min.</p>
               </div>
-              <p class="form-hint">
-                Min EL applies to tracking and pass AOS/LOS. Antenna on →
-                preposition 5 min before next AOS.
-              </p>
+              <p class="form-hint">Min EL: tracking and AOS/LOS. Antenna on → preposition AOS−5 min.</p>
             </div>
             <div class="form-section cfg-group" id="cfg-rotor-device-group">
               <div class="form-section-title">Device &amp; test</div>
@@ -888,14 +853,7 @@
                   <input type="checkbox" id="cfg-log-amsat-heard" checked />
                   Also send AMSAT 'Heard' report when logging a QSO
                 </label>
-                <p class="form-hint">
-                  Same report as the sidebar AMSAT <b>Heard</b> button (your
-                  callsign/grid, UTC time of the QSO), for the logged
-                  satellite. Sent at most once per pass, also counting a
-                  Heard you already sent with the button. Applies to the Log
-                  button and to WSJT-X QSOs logged for the selected
-                  satellite. Never delays the log.
-                </p>
+                <p class="form-hint">Once per pass; Log button and WSJT-X QSOs for the selected sat.</p>
               </div>
 
               <div id="cfg-log-adif-block" hidden>
@@ -909,10 +867,7 @@
                     spellcheck="false"
                   />
                 </div>
-                <p class="form-hint">
-                  Records are appended; header is written when the file is
-                  new. ~ = home of the user running pi-sat-track.
-                </p>
+                <p class="form-hint">Appended. ~ = home of the user running pi-sat-track.</p>
               </div>
 
               <div id="cfg-log-udp-block" hidden>
@@ -960,10 +915,7 @@
                       </select>
                     </div>
                   </div>
-                  <p class="form-hint">
-                    Multicast group: loopback is on, so apps on this Pi also
-                    receive it. TTL 1 = local subnet (WSJT-X default).
-                  </p>
+                  <p class="form-hint">Multicast: loopback on, TTL 1.</p>
                 </div>
                 <div class="form-row">
                   <label for="cfg-log-udp-format">Message</label>
@@ -976,15 +928,7 @@
                     <option value="adif">Plain ADIF text (ADIF UDP)</option>
                   </select>
                 </div>
-                <p class="form-hint">
-                  GridTracker2 / Log4OM 2 listen on 2237 (WSJT-X). Unicast
-                  IP, x.x.x.255 broadcast, or a multicast group such as
-                  224.0.0.1 or 239.255.0.1 (enable multicast in the receiver
-                  with the same group + port). In Log4OM
-                  enable "Import QSO from JT Message #12" so SAT_NAME comes
-                  through. Plain ADIF: Log4OM ADIF inbound (2333) or
-                  GridTracker2 "Receive ADIF UDP Broadcasts".
-                </p>
+                <p class="form-hint">GridTracker2 / Log4OM 2: 2237. Unicast, broadcast or multicast.</p>
               </div>
             </div>
 
@@ -1020,13 +964,7 @@
                     />
                   </div>
                 </div>
-                <p class="form-hint">
-                  In WSJT-X Settings &gt; Reporting set UDP Server to this Pi's IP
-                  and this port. QSOs are re-sent with PROP_MODE=SAT, SAT_NAME and
-                  tracker UL/DL frequencies through the Logging output above
-                  (only while the selected sat is up; otherwise unchanged). The listener
-                  only runs while Radio is on.
-                </p>
+                <p class="form-hint">WSJT-X Reporting → UDP Server = this host:port. Runs while Radio is on.</p>
               </div>
               <p class="form-hint wsjtx-status" id="cfg-wsjtx-status">Listener off</p>
               <p class="form-hint wsjtx-warning" id="cfg-wsjtx-warning" hidden></p>
@@ -1041,12 +979,12 @@
                   <input type="checkbox" id="cfg-kiss-enabled" />
                   Connect to a KISS TNC (Graywolf, Direwolf, hardware TNC)
                 </label>
-                <p class="form-hint">Only connects (and reconnects) while this is on. Turning it off closes the connection.</p>
+                <p class="form-hint">Connects only while on.</p>
               </div>
               <div class="kiss-conns" id="cfg-kiss-conns" aria-label="KISS connections"></div>
               <div class="kiss-conns-foot">
                 <button type="button" class="btn-test" id="cfg-kiss-add">+ Add connection</button>
-                <span class="form-hint">One row per TNC channel: Graywolf binds one channel per KISS TCP port; 9600 G3RUH needs Direwolf (MODEM 9600).</span>
+                <span class="form-hint">One row per TNC channel / KISS port.</span>
               </div>
               <p class="kiss-test-tip" id="cfg-kiss-test-tip" role="status" hidden></p>
               <div class="form-row-2">
@@ -1059,26 +997,12 @@
                   <input type="number" id="cfg-kiss-expire" placeholder="60" min="5" max="1440" step="1" />
                 </div>
               </div>
-              <p class="form-hint">Satellite sends go out on a TX-capable connection whose speed matches the satellite (Per-satellite speed under Transmit); with no satellite, on the Default TX connection.</p>
+              <p class="form-hint">TX: connection matching the sat's speed, else Default TX.</p>
               <p class="form-hint" id="cfg-kiss-status" aria-live="polite">KISS: off</p>
               <details class="rigctld-help" id="cfg-kiss-help">
                 <summary>Graywolf / Direwolf setup</summary>
-                <p class="form-hint">
-                  <b>Graywolf</b> (remote host or this Pi): Interfaces → KISS TNC → <b>+ Add Interface</b>,
-                  Type <b>TCP (server)</b>, listen <code>0.0.0.0:6700</code>, Channel = your sat radio channel,
-                  <b>Mode = Modem</b> (Graywolf's modem keys the radio). Leave "Allow digipeater/beacon/iGate
-                  to transmit" alone (TNC mode only). Turn off Graywolf beacons / digipeater rules for the
-                  satellite channel. Graywolf drops a repeat of the same packet within 30 s.
-                  Graywolf binds <b>one channel per KISS TCP port</b> (e.g. 8001 = FLEX ch1 with TX,
-                  8002 = VHF Dax 3 RX only): add one row per port. Graywolf only has 1200 AFSK / PSK modems.
-                </p>
-                <p class="form-hint">
-                  <b>Direwolf</b> for 9600 G3RUH sats: <code>MODEM 9600</code> on the 9600 channel and e.g.
-                  <code>KISSPORT 8003</code>; add a row with Speed 9600 G3RUH (see docs/APRS.md).
-                  KISS port (Advanced) is only for multi-channel Direwolf / multi-port TNCs.
-                  <b>Bluetooth TNC</b> (Mobilinkd, TH-D74/D75): pair once with <code>bluetoothctl</code>,
-                  then <code>sudo rfcomm bind 0 &lt;MAC&gt;</code> and pick Serial, <code>/dev/rfcomm0</code>.
-                </p>
+                <p class="form-hint">Graywolf / Direwolf setup: see docs (APRS).</p>
+                <p class="form-hint">9600 G3RUH: Direwolf <code>MODEM 9600</code>.</p>
               </details>
             </div>
 
@@ -1153,14 +1077,14 @@
                   <label for="cfg-kiss-path">Default Via (path)</label>
                   <input type="text" id="cfg-kiss-path" placeholder="ARISS" autocomplete="off" spellcheck="false" />
                 </div>
-                <div class="form-hint" style="align-self:end">Sending is never blocked by the selected satellite's elevation or mode.</div>
+                <div class="form-hint" style="align-self:end">Not blocked by elevation or mode.</div>
               </div>
               <div class="form-row-2">
                 <div>
                   <label for="cfg-kiss-default-to">Default To (AX.25 destination)</label>
                   <input type="text" id="cfg-kiss-default-to" placeholder="CQ" maxlength="9" autocomplete="off" spellcheck="false" />
                 </div>
-                <div class="form-hint" style="align-self:end">Like UISS: To / Via form the header of every packet (CQ VIA ARISS). Change them per send in the APRS windows.</div>
+                <div class="form-hint" style="align-self:end">To / Via header (e.g. CQ VIA ARISS); editable per send.</div>
               </div>
               <div class="form-row">
                 <label for="cfg-kiss-satpaths">Per-satellite Via (one per line: SAT=PATH)</label>
@@ -1169,7 +1093,7 @@
               <div class="form-row">
                 <label for="cfg-kiss-satspeeds">Per-satellite speed (one per line: SAT=1200 or SAT=9600)</label>
                 <textarea id="cfg-kiss-satspeeds" rows="2" spellcheck="false" placeholder="CROCUBE=9600&#10;ISS=1200"></textarea>
-                <p class="form-hint" id="cfg-kiss-satspeeds-hint">Empty = from the AMSAT digipeater list (ISS, IO-86, NO-44, SONATE-2 = 1200; CroCube, GRBBeta, KNACKSAT-2, KOSTKA, LASARsat, Marina = 9600), else the selected mode (9k6 / G3RUH = 9600), else 1200.</p>
+                <p class="form-hint" id="cfg-kiss-satspeeds-hint">Empty = AMSAT list, else mode (9k6 = 9600), else 1200.</p>
               </div>
               <div class="form-row">
                 <label class="cfg-check-label" for="cfg-kiss-req-radio">
@@ -1180,21 +1104,21 @@
                   <input type="checkbox" id="cfg-kiss-retry-tag" checked />
                   Add retry number to repeated sends
                 </label>
-                <div class="form-hint">Resending the same position / UI text within 30 s appends “ #2”, “ #3”… so Graywolf (drops identical frames within 30 s) and digipeater dupe filters pass it. Messages are not changed.</div>
+                <div class="form-hint">Repeats within 30 s get “ #2”, “ #3” (dupe filters).</div>
               </div>
               <div class="form-row-2">
                 <div>
                   <label for="cfg-kiss-digi-timeout">Digipeat wait (s)</label>
                   <input type="number" id="cfg-kiss-digi-timeout" placeholder="30" min="5" max="600" step="1" title="After this long without hearing your packet repeated, it is marked No digipeat heard" />
                 </div>
-                <div class="form-hint" style="align-self:end">Your packet heard back with a used (*) digipeater = digipeated; logged to ~/.rpitrack/aprs/digipeats.jsonl.</div>
+                <div class="form-hint" style="align-self:end">Heard back via (*) digi = digipeated; logged to ~/.rpitrack/aprs/digipeats.jsonl.</div>
               </div>
               <div class="form-row-2">
                 <div>
                   <label for="cfg-kiss-dupe">Duplicate window (s)</label>
                   <input type="number" id="cfg-kiss-dupe" placeholder="30" min="1" max="600" step="1" title="Same source + same info within this many seconds is shown as one row with a ×N badge" />
                 </div>
-                <div class="form-hint" style="align-self:end">Copies of one packet (direct and via digipeaters, any connection) collapse into one ×N row; click it to see each path.</div>
+                <div class="form-hint" style="align-self:end">Duplicates collapse to ×N; click for paths.</div>
               </div>
               <div class="form-row">
                 <label class="cfg-check-label" for="cfg-kiss-log">
@@ -1202,7 +1126,7 @@
                   Log all packets to ~/.rpitrack/aprs/aprs-YYYY-MM-DD.log (UTC)
                 </label>
               </div>
-              <p class="form-hint">Header = <code>CALL&gt;To,Via</code> (UISS style). APRS messages are sent without ack request (UISS default); no retries.</p>
+              <p class="form-hint">Header <code>CALL&gt;To,Via</code>. Messages: no ack, no retries.</p>
             </div>
             </section>
           </div>
