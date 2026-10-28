@@ -209,12 +209,7 @@
                 <input type="checkbox" id="cfg-alert-desktop" />
                 Desktop notifications for pass alerts
               </label>
-              <p class="form-hint" id="cfg-alert-desktop-hint">
-                Pass alerts (the bells) always ding and show a toast here.
-                Turn this on to also get a system notification, e.g. when
-                this tab is in the background. Saved in this browser; applies
-                right away.
-              </p>
+              <p class="form-hint" id="cfg-alert-desktop-hint"></p>
             </div>
 
             <div class="form-row backup-row" id="cfg-backup">
@@ -226,17 +221,7 @@
                   title="Replace all settings on this server with a backup file (the current settings are kept in ~/.rpitrack/backups first)">Restore from backup</button>
                 <input type="file" id="backup-file" accept=".json,application/json" hidden />
               </div>
-              <p class="form-hint" id="backup-hint">
-                Saves all station profiles (radios, rotor, logging, WSJT-X,
-                KISS / APRS, favorites, bells), per-sat offsets and TLE
-                sources, plus this browser's display preferences, to
-                <code>pi-sat-track-backup-&lt;date&gt;.json</code>. The file is
-                plain text and includes everything in your settings, including
-                any passwords or passcodes you have entered: keep it private.
-                Restore replaces the server's settings (the current ones are
-                saved to <code>~/.rpitrack/backups/</code> first), then reloads
-                the page.
-              </p>
+              <p class="form-hint" id="backup-hint">Backs up all settings to a file. Restore replaces current settings (the old ones are saved first).</p>
               <p class="form-hint backup-status" id="backup-status" role="status" aria-live="polite"></p>
             </div>
 

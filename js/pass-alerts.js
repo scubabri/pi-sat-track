@@ -316,8 +316,8 @@
     function refresh() {
       const perm = typeof Notification !== "undefined" ? Notification.permission : "unsupported";
       cb.checked = desktopOn() && perm === "granted";
-      if (!supported) setHint("Not available here: browsers only allow notifications on https:// or http://localhost.");
-      else if (perm === "denied") setHint("Notifications are blocked for this site in the browser's site settings.");
+      if (!supported) setHint("Unavailable: needs https:// or localhost.");
+      else if (perm === "denied") setHint("Blocked in browser site settings.");
       else setHint("");
     }
     cb.addEventListener("change", async (e) => {
