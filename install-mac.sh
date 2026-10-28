@@ -97,5 +97,7 @@ cat <<SUM
 
   Serial radios / rotors: /dev/cu.usbserial-* or /dev/cu.usbmodem*
   (some USB-serial adapters need the vendor's macOS driver).
+  Hamlib radios (rigctld): brew install hamlib
+  (found in /opt/homebrew/bin or /usr/local/bin).
 ============================================================
 SUM

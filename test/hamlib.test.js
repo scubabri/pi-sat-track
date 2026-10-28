@@ -528,3 +528,11 @@ test("integration: model list + caps from the installed Hamlib", { skip: !RIGCTL
   assert.strictEqual(st.installed, true);
   assert.match(st.version, /^\d+\.\d+/);
 });
+
+test("missing rigctl on macOS points at brew install hamlib", () => {
+  const src = require("fs").readFileSync(require("path").join(__dirname, "../lib/hamlib/index.js"), "utf8");
+  assert.match(src, /darwin"\) return "install it with: brew install hamlib/);
+  const tools = require("fs").readFileSync(require("path").join(__dirname, "../lib/hamlib/tools.js"), "utf8");
+  assert.match(tools, /\/opt\/homebrew\/bin/);
+  assert.match(tools, /"\/usr\/local\/bin"/);
+});
