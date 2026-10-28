@@ -23,8 +23,9 @@ param(
   [switch]$NoPort80
 )
 $ErrorActionPreference = 'Continue'
-$RuleNames = @('Pi Sat Track (TCP 80)', 'Pi Sat Track (TCP 3000)', 'Pi Sat Track (rigctld 4534/4535)')
-$LegacyRules = @('Pi Sat Track HTTP 80')
+$RuleNames = @('Pi Sat Track (TCP 80)', 'Pi Sat Track (TCP 3000)')
+# Removed on install / uninstall if present (rigctld rule from earlier alphas: rigctld is localhost-only now)
+$LegacyRules = @('Pi Sat Track HTTP 80', 'Pi Sat Track (rigctld 4534/4535)')
 
 function Get-ProxyEntries {
   # netsh lines: "<listen addr>  <listen port>  <connect addr>  <connect port>"
@@ -190,10 +191,8 @@ switch ($Action) {
     }
     netsh advfirewall firewall add rule name="$($RuleNames[1])" dir=in action=allow protocol=TCP localport=$AppPort profile=any remoteip=localsubnet | Out-Null
     Write-Host "  firewall: allow TCP $AppPort from the local network"
-    # Hamlib "Share rigctld on network" (Configure -> Station). rigctld only listens on the
-    # LAN when that is on (otherwise 127.0.0.1), so the rule is harmless while it is off.
-    netsh advfirewall firewall add rule name="$($RuleNames[2])" dir=in action=allow protocol=TCP localport=4534-4535 profile=any remoteip=localsubnet | Out-Null
-    Write-Host "  firewall: allow TCP 4534-4535 (shared rigctld) from the local network"
+    # rigctld is localhost-only: drop the LAN rule older alphas added.
+    netsh advfirewall firewall delete rule name="Pi Sat Track (rigctld 4534/4535)" 2>$null | Out-Null
     Show-FirewallState
     Show-Urls $port80
   }

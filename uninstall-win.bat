@@ -111,6 +111,7 @@ if exist "%APP_DIR%\win-network.ps1" (
   netsh advfirewall firewall delete rule name="Pi Sat Track HTTP 80" >nul 2>&1
   netsh advfirewall firewall delete rule name="Pi Sat Track (TCP 80)" >nul 2>&1
   netsh advfirewall firewall delete rule name="Pi Sat Track (TCP 3000)" >nul 2>&1
+  netsh advfirewall firewall delete rule name="Pi Sat Track (rigctld 4534/4535)" >nul 2>&1
   echo   done. Stop the server window yourself if it is still open.
 )
 timeout /t 1 /nobreak >nul

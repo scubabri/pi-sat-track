@@ -234,7 +234,7 @@
           (r && r.ok ? "\n" + (r.message || "Hamlib " + (r.version || "") + " ready") + (r.note ? " — " + r.note : "") : "");
       } else pre.hidden = true;
       const runEl = b.querySelector(".hamlib-run");
-      const ds = (st.daemons || []).map((x) => "rigctld " + x.state + " on " + (st.net && st.net.share ? "0.0.0.0" : "127.0.0.1") + ":" + x.port + (x.error ? " — " + x.error : "") + (x.restarts ? " · " + x.restarts + " restarts" : ""));
+      const ds = (st.daemons || []).map((x) => "rigctld " + x.state + " on " + "127.0.0.1" + ":" + x.port + (x.error ? " — " + x.error : "") + (x.restarts ? " · " + x.restarts + " restarts" : ""));
       if (ds.length) runEl.textContent = ds.join(" · ");
     });
     renderNet(st);
@@ -277,7 +277,7 @@
       .catch((e) => alert(e.message));
   }
 
-  // ---- Configure → Station: "Share rigctld on network" (config.hamlibNet) ----
+  // ---- Configure → Station: rigctld ports per radio (config.hamlibNet), localhost only ----
   function injectNet() {
     if ($("cfg-hamlib-net")) return;
     const units = $("cfg-units");
@@ -286,19 +286,16 @@
     row.insertAdjacentHTML(
       "afterend",
       '<div class="form-row" id="cfg-hamlib-net">' +
-        '<label class="cfg-check"><input type="checkbox" id="cfg-hamlib-share" /> Share rigctld on network (Hamlib serial radios)</label>' +
         '<div class="form-row-2"><div><label for="cfg-hamlib-port-ul">rigctld port — Radio 1</label><input type="number" id="cfg-hamlib-port-ul" min="1024" max="65535" placeholder="4534" /><small class="form-hint hamlib-port-off" id="cfg-hamlib-port-ul-off" hidden>not shared (no rigctld)</small></div>' +
         '<div><label for="cfg-hamlib-port-dl">rigctld port — Radio 2</label><input type="number" id="cfg-hamlib-port-dl" min="1024" max="65535" placeholder="4535" /><small class="form-hint hamlib-port-off" id="cfg-hamlib-port-dl-off" hidden>not shared (no rigctld)</small></div></div>' +
         '<p class="form-hint" id="cfg-hamlib-net-hint"></p></div>',
     );
-    $("cfg-hamlib-share").addEventListener("change", () => renderNet(lastStatus));
     ["ul", "dl"].forEach((k) => $("cfg-hamlib-port-" + k).addEventListener("input", () => renderNet(lastStatus)));
   }
   let lastStatus = null;
   function readNet() {
     if (!$("cfg-hamlib-net")) return undefined;
     return {
-      share: !!$("cfg-hamlib-share").checked,
       portUl: parseInt($("cfg-hamlib-port-ul").value, 10) || 4534,
       portDl: parseInt($("cfg-hamlib-port-dl").value, 10) || 4535,
     };
@@ -307,7 +304,6 @@
     injectNet();
     if (!$("cfg-hamlib-net")) return;
     n = n || {};
-    $("cfg-hamlib-share").checked = n.share === true;
     $("cfg-hamlib-port-ul").value = n.portUl || 4534;
     $("cfg-hamlib-port-dl").value = n.portDl || 4535;
     renderNet(lastStatus);
@@ -322,11 +318,7 @@
     const h = $("cfg-hamlib-net-hint");
     if (!h) return;
     const n = readNet();
-    const net = (lastStatus && lastStatus.net) || {};
-    const primary = net.primaryIp || (net.lanIps || [])[0] || "<this computer's IP>";
-    const others = (net.allIps || []).filter((ip) => ip !== primary);
-    const win = net.platform === "win32";
-    const addr = (port) => (n.share ? primary : "127.0.0.1") + ":" + port;
+    const addr = (port) => "127.0.0.1:" + port;
     // Ports belong to the configured radio (Radio 1 / Radio 2), not to the per-satellite UL / DL role.
     const single = !!($("cfg-single-radio") || {}).checked;
     const isHamlib = (side) => ($("cfg-" + side + "-transport") || {}).value === "hamlib";
@@ -346,18 +338,10 @@
     };
     show("ul", h1);
     show("dl", h2);
-    const line = (k, on, port) => "Radio " + k + ": " + (on ? "<b>" + esc(addr(port)) + "</b>" : "not shared (no rigctld)");
+    const line = (k, on, port) => "Radio " + k + ": " + (on ? esc(addr(port)) : "not shared (no rigctld)");
     const lines = [line(1, h1, n.portUl)];
     if (!single) lines.push(line(2, h2 || (!single && isHamlib("dl") && h1), h2 ? n.portDl : n.portUl));
-    h.innerHTML =
-      (!h1 && !h2 ? "<b>No radio uses Hamlib serial yet.</b> Set Radio 1 or Radio 2 to Hamlib serial in Radio config first.<br>" : "") +
-      lines.join(" · ") + (n.share ? "" : " (this computer only)") + "<br>" +
-      (n.share ? "rigctld has <b>no password</b>: use on your local network only. " : "Off: rigctld listens on 127.0.0.1 only. ") +
-      "In WSJT-X set Rig = <b>Hamlib NET rigctl</b>, Network Server = the address above, and turn its Doppler tracking and Split off so it does not fight our Doppler. The port stays with the radio when a satellite swaps UL / DL. Saving restarts rigctld." +
-      (win && n.share && (h1 && (n.portUl < 4534 || n.portUl > 4535) || h2 && (n.portDl < 4534 || n.portDl > 4535))
-        ? " <b>Windows Firewall:</b> setup opened TCP 4534–4535 only; allow other ports yourself."
-        : "") +
-      (n.share && others.length ? '<details class="hamlib-ips"><summary>other addresses</summary>' + esc(others.join(", ")) + "</details>" : "");
+    h.innerHTML = !h1 && !h2 ? "No radio uses Hamlib serial yet. Set Radio 1 or Radio 2 to Hamlib serial in Radio config first." : lines.join(" · ");
   }
 
   // ---- Station summary: rigctld state (separate from Radio on/off) ----
@@ -368,7 +352,6 @@
     const list = daemons || [];
     dt.hidden = dd.hidden = !list.length;
     if (!list.length) return;
-    const host = net && net.share ? "LAN" : "local";
     const who = (d) => (d.radios && d.radios.length ? "R" + d.radios.join("+") + " " : "");
     const one = (d) =>
       who(d) +
@@ -376,7 +359,7 @@
       : d.state === "failed" ? "error" + (d.error ? ": " + d.error : "")
       : "reconnecting" + (d.restarts ? " (" + d.restarts + ")" : ""));
     dd.textContent = list.map(one).join(" · ");
-    dd.title = "Hamlib rigctld (" + host + "), runs while Radio is off too — WSJT-X can use it. " + list.map((d) => "Radio " + (d.radios || []).join("+") + " port " + d.port + " " + d.state + (d.error ? " — " + d.error : "")).join("; ");
+    dd.title = "rigctld 127.0.0.1 (runs with Radio off). " + list.map((d) => "Radio " + (d.radios || []).join("+") + " port " + d.port + " " + d.state + (d.error ? " — " + d.error : "")).join("; ");
     dd.className = list.some((d) => d.state === "failed") ? "hamlib-sum-err" : list.every((d) => d.state === "running") ? "hamlib-sum-ok" : "hamlib-sum-wait";
   }
   function hookWs() {

@@ -291,34 +291,32 @@ test("config: a model with a built-in driver stays Hamlib under Hamlib serial; n
   assert.strictEqual(hamlib.wantedSpecs().size, 0);
 });
 
-test("share rigctld on network: -T 0.0.0.0 with the chosen ports; off = 127.0.0.1", () => {
+test("rigctld is always localhost (-T 127.0.0.1) with the chosen ports; old share flag ignored", () => {
   const config = require("../lib/config");
   const hamlib = require("../lib/hamlib");
   const a = { transport: "hamlib", hamlibModel: 3085, serialDevice: "COM5", serialBaud: 19200 };
   const b = { transport: "hamlib", hamlibModel: 3081, serialDevice: "COM7", serialBaud: 19200 };
   const argsOf = () => Object.fromEntries(Array.from(hamlib.wantedSpecs().values()).map((w) => [w.sides.join(), w.args]));
   const tt = (args) => args.slice(args.indexOf("-T"));
-  // default: off, 4534 / 4535, loopback only
-  config.applyEndpoints({ singleRadio: false, radioUl: a, radioDl: b, hamlibNet: { share: false } });
+  // always loopback; an old saved share:true is ignored
+  config.applyEndpoints({ singleRadio: false, radioUl: a, radioDl: b, hamlibNet: { share: true } });
   assert.deepStrictEqual(tt(argsOf().ul), ["-T", "127.0.0.1", "-t", "4534"]);
   assert.deepStrictEqual(tt(argsOf().dl), ["-T", "127.0.0.1", "-t", "4535"]);
-  // on, custom ports
-  config.applyEndpoints({ singleRadio: false, radioUl: a, radioDl: b, hamlibNet: { share: true, portUl: 4600, portDl: 4601 } });
-  assert.deepStrictEqual(tt(argsOf().ul), ["-T", "0.0.0.0", "-t", "4600"]);
-  assert.deepStrictEqual(tt(argsOf().dl), ["-T", "0.0.0.0", "-t", "4601"]);
-  assert.strictEqual(config.RIGCTL_UL_HOST, "127.0.0.1", "our driver still dials loopback");
+  // custom ports
+  config.applyEndpoints({ singleRadio: false, radioUl: a, radioDl: b, hamlibNet: { portUl: 4600, portDl: 4601 } });
+  assert.deepStrictEqual(tt(argsOf().ul), ["-T", "127.0.0.1", "-t", "4600"]);
+  assert.deepStrictEqual(tt(argsOf().dl), ["-T", "127.0.0.1", "-t", "4601"]);
+  assert.strictEqual(config.RIGCTL_UL_HOST, "127.0.0.1");
   assert.strictEqual(config.RIGCTL_UL_PORT, 4600);
   assert.strictEqual(config.RIGCTL_PORT, 4601);
-  // single radio = main port; args change => ensure() restarts (argsKey differs)
-  config.applyEndpoints({ singleRadio: true, radioUl: a, radioDl: a, hamlibNet: { share: true, portUl: 4534, portDl: 4535 } });
+  // single radio = main port
+  config.applyEndpoints({ singleRadio: true, radioUl: a, radioDl: a, hamlibNet: { portUl: 4534, portDl: 4535 } });
   const one = Array.from(hamlib.wantedSpecs().values());
   assert.strictEqual(one.length, 1);
-  assert.deepStrictEqual(tt(one[0].args), ["-T", "0.0.0.0", "-t", "4534"]);
-  config.applyEndpoints({ hamlibNet: { share: false } });
-  assert.notStrictEqual(Array.from(hamlib.wantedSpecs().values())[0].argsKey, one[0].argsKey);
-  // bad ports fall back to defaults
-  assert.deepStrictEqual(config.normalizeHamlibNet({ share: "yes", portUl: 80, portDl: 99999 }), { share: false, portUl: 4534, portDl: 4535 });
-  config.applyEndpoints({ hamlibNet: { share: false, portUl: 4534, portDl: 4535 } });
+  assert.deepStrictEqual(tt(one[0].args), ["-T", "127.0.0.1", "-t", "4534"]);
+  // bad ports fall back to defaults; share dropped
+  assert.deepStrictEqual(config.normalizeHamlibNet({ share: true, portUl: 80, portDl: 99999 }), { portUl: 4534, portDl: 4535 });
+  config.applyEndpoints({ hamlibNet: { portUl: 4534, portDl: 4535 } });
 });
 
 test("rigctld port is pinned to the configured radio, not the per-sat UL / DL role", () => {
@@ -330,7 +328,7 @@ test("rigctld port is pinned to the configured radio, not the per-sat UL / DL ro
     singleRadio: false,
     radioUl: { transport: "tcp", type: "smartsdr", protocol: "cat", catEndpoint: "127.0.0.9:5002" },
     radioDl: { transport: "hamlib", hamlibModel: 3085, serialDevice: "COM17", serialBaud: 19200 },
-    hamlibNet: { share: true, portUl: 4534, portDl: 4535 },
+    hamlibNet: { portUl: 4534, portDl: 4535 },
   };
   const spec = () => Array.from(hamlib.wantedSpecs().values());
   config.applyEndpoints(roles.effectiveEndpoints(cfg, 1, null));
@@ -357,7 +355,7 @@ test("rigctld port is pinned to the configured radio, not the per-sat UL / DL ro
   config.applyEndpoints(roles.effectiveEndpoints(two, 2, null));
   assert.deepStrictEqual(ports(), { 1: 4534, 2: 4535 });
   // no model chosen: nothing started (never a silent default model)
-  config.applyEndpoints({ singleRadio: true, radioUl: { transport: "hamlib", hamlibModel: null, serialDevice: "COM17" }, hamlibNet: { share: false, portUl: 4534, portDl: 4535 } });
+  config.applyEndpoints({ singleRadio: true, radioUl: { transport: "hamlib", hamlibModel: null, serialDevice: "COM17" }, hamlibNet: { portUl: 4534, portDl: 4535 } });
   assert.strictEqual(spec().length, 0);
 });
 

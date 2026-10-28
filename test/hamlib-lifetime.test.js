@@ -156,7 +156,7 @@ test("rigctld starts from the config with Radio off, survives re-applies, stops 
   hamlib.configure({ auto: true, log: () => {}, warn: () => {} });
   try {
     const side = { transport: "hamlib", hamlibModel: 1, serialDevice: "/dev/null-test", serialBaud: 19200 };
-    config.applyEndpoints({ singleRadio: true, radioUl: side, radioDl: side, hamlibNet: { share: false, portUl: port, portDl: port + 1 } });
+    config.applyEndpoints({ singleRadio: true, radioUl: side, radioDl: side, hamlibNet: { portUl: port, portDl: port + 1 } });
     await hamlib.ensure(); // wait for the autoSync started by applyEndpoints
     const d = Array.from(hamlib._daemons.values());
     assert.strictEqual(d.length, 1, "rigctld started without Radio on");
@@ -173,7 +173,7 @@ test("rigctld starts from the config with Radio off, survives re-applies, stops 
   } finally {
     hamlib.configure({ auto: false });
     await hamlib.stopAll();
-    config.applyEndpoints({ hamlibNet: { share: false, portUl: 4534, portDl: 4535 } });
+    config.applyEndpoints({ hamlibNet: { portUl: 4534, portDl: 4535 } });
   }
 });
 
