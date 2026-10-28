@@ -100,6 +100,11 @@
         $(p + "-model").innerHTML = modelId ? opt(modelId, "model " + modelId) : "";
         return;
       }
+      // Switching a native serial radio to Hamlib: preselect its Hamlib model (IC-705 -> 3085),
+      // never a silent first-of-manufacturer (that saved IC ID-1 = 3054 before).
+      if (!modelId && pendingNative[side]) {
+        for (const g of r.groups) for (const m of g.models) if (m.native && m.native.serialModel === pendingNative[side]) modelId = m.id;
+      }
       const want = byId.get(String(modelId || ""));
       mfg.innerHTML = r.groups.map((g) => opt(g.mfg, g.mfg + " (" + g.models.length + ")")).join("");
       mfg.value = want ? want.mfg : r.groups.some((g) => g.mfg === "Icom") ? "Icom" : r.groups[0].mfg;
@@ -113,8 +118,10 @@
       modelsP.then((r) => {
         const g = (r.groups || []).find((x) => x.mfg === $(p + "-mfg").value);
         const sel = $(p + "-model");
-        sel.innerHTML = g ? g.models.map((m) => opt(m.id, m.model + " · " + m.status + (m.native ? " · built-in driver available" : "") + " (#" + m.id + ")")).join("") : "";
-        if (modelId && byId.has(String(modelId))) sel.value = String(modelId);
+        sel.innerHTML =
+          opt("", "— choose the model —") +
+          (g ? g.models.map((m) => opt(m.id, m.model + " · " + m.status + (m.native ? " · built-in driver available" : "") + " (#" + m.id + ")")).join("") : "");
+        sel.value = modelId && byId.has(String(modelId)) && g && g.models.some((m) => String(m.id) === String(modelId)) ? String(modelId) : "";
         onModel(side, user);
       });
   }
@@ -158,7 +165,8 @@
   /** config-form readSide(): always the Hamlib side for the selected model. */
   function read(side, base) {
     const p = "cfg-" + side + "-hamlib";
-    const id = parseInt($(p + "-model").value || pending[side], 10) || null;
+    // Only what is selected in the list (from this Hamlib's rigctl -l); "" = not chosen.
+    const id = parseInt($(p + "-model").value, 10) || (byId.size ? null : parseInt(pending[side], 10) || null);
     const m = byId.get(String(id));
     const device = typeof readSerialDeviceField === "function" ? readSerialDeviceField(p + "-device") : $(p + "-device").value;
     const baud = parseInt($(p + "-baud").value, 10) || null;
@@ -183,12 +191,14 @@
   }
 
   /** config-form fillSide(): restore a saved Hamlib side (or defaults). */
+  const pendingNative = {};
   function fill(side, d) {
     const p = "cfg-" + side + "-hamlib";
     if (!$(p + "-block")) return;
     d = d || {};
     const h = d.transport === "hamlib";
     pending[side] = h ? d.hamlibModel : null;
+    pendingNative[side] = !h && d.transport === "serial" ? d.serialModel || null : null;
     if (typeof populateSerialDeviceSelect === "function") populateSerialDeviceSelect(p + "-device", h ? d.serialDevice : d.serialDevice || "");
     $(p + "-baud").value = h && d.serialBaud ? d.serialBaud : "";
     $(p + "-civ").value = h ? d.hamlibCivAddr || "" : "";
@@ -288,8 +298,8 @@
       "afterend",
       '<div class="form-row" id="cfg-hamlib-net">' +
         '<label class="cfg-check"><input type="checkbox" id="cfg-hamlib-share" /> Share rigctld on network (Hamlib serial radios)</label>' +
-        '<div class="form-row-2"><div><label for="cfg-hamlib-port-ul">rigctld port — main / UL radio</label><input type="number" id="cfg-hamlib-port-ul" min="1024" max="65535" placeholder="4534" /></div>' +
-        '<div><label for="cfg-hamlib-port-dl">rigctld port — DL radio</label><input type="number" id="cfg-hamlib-port-dl" min="1024" max="65535" placeholder="4535" /></div></div>' +
+        '<div class="form-row-2"><div><label for="cfg-hamlib-port-ul">rigctld port — Radio 1</label><input type="number" id="cfg-hamlib-port-ul" min="1024" max="65535" placeholder="4534" /></div>' +
+        '<div><label for="cfg-hamlib-port-dl">rigctld port — Radio 2</label><input type="number" id="cfg-hamlib-port-dl" min="1024" max="65535" placeholder="4535" /></div></div>' +
         '<p class="form-hint" id="cfg-hamlib-net-hint"></p></div>',
     );
     $("cfg-hamlib-share").addEventListener("change", () => renderNet(lastStatus));
@@ -314,6 +324,10 @@
     renderNet(lastStatus);
     refreshStatus(false);
   }
+  function devOf(side) {
+    const id = "cfg-" + side + "-hamlib-device";
+    return String((typeof readSerialDeviceField === "function" ? readSerialDeviceField(id) : ($(id) || {}).value) || "").trim().toLowerCase();
+  }
   function renderNet(st) {
     if (st) lastStatus = st;
     const h = $("cfg-hamlib-net-hint");
@@ -322,8 +336,23 @@
     const ips = (lastStatus && lastStatus.net && lastStatus.net.lanIps) || [];
     const win = lastStatus && lastStatus.net && lastStatus.net.platform === "win32";
     const where = (port) => (n.share ? (ips.length ? ips : ["<this computer's IP>"]).map((ip) => ip + ":" + port).join(" or ") : "127.0.0.1:" + port + " (this computer only)");
+    // Ports belong to the configured radio (Radio 1 / Radio 2), not to the per-satellite UL / DL role.
+    const radioTxt = (side) => {
+      const name = ($(side === "ul" ? "cfg-r1-name" : "cfg-r2-name") || {}).value || "";
+      const tr = ($("cfg-" + side + "-transport") || {}).value;
+      if (tr !== "hamlib") return null;
+      const m = byId.get(($("cfg-" + side + "-hamlib-model") || {}).value || "");
+      return (name ? name + " · " : "") + (m ? m.model : "Hamlib");
+    };
+    const single = !!($("cfg-single-radio") || {}).checked;
+    const r1 = radioTxt("ul");
+    const r2 = single ? null : radioTxt("dl");
+    const lines = [];
+    if (r1) lines.push("Radio 1 (" + esc(r1) + "): <b>" + esc(where(n.portUl)) + "</b>");
+    if (r2) lines.push("Radio 2 (" + esc(r2) + "): <b>" + esc(where(r1 && devOf("ul") === devOf("dl") ? n.portUl : n.portDl)) + "</b>");
+    if (!lines.length) lines.push("No radio uses Hamlib serial. Radio 1 → " + esc(where(n.portUl)) + ", Radio 2 → " + esc(where(n.portDl)));
     h.innerHTML =
-      "Main / UL radio: <b>" + esc(where(n.portUl)) + "</b> · DL radio (own serial port): <b>" + esc(where(n.portDl)) + "</b><br>" +
+      lines.join(" · ") + " — the port stays with the radio when a satellite swaps UL / DL.<br>" +
       (n.share
         ? "rigctld has <b>no password</b>: use on your local network only. "
         : "Off: rigctld listens on 127.0.0.1 only. ") +
@@ -342,12 +371,14 @@
     dt.hidden = dd.hidden = !list.length;
     if (!list.length) return;
     const host = net && net.share ? "LAN" : "local";
+    const who = (d) => (d.radios && d.radios.length ? "R" + d.radios.join("+") + " " : "");
     const one = (d) =>
-      d.state === "running" ? "connected :" + d.port
+      who(d) +
+      (d.state === "running" ? "connected :" + d.port
       : d.state === "failed" ? "error" + (d.error ? ": " + d.error : "")
-      : "reconnecting" + (d.restarts ? " (" + d.restarts + ")" : "");
+      : "reconnecting" + (d.restarts ? " (" + d.restarts + ")" : ""));
     dd.textContent = list.map(one).join(" · ");
-    dd.title = "Hamlib rigctld (" + host + "), runs while Radio is off too — WSJT-X can use it. " + list.map((d) => d.sides.join("+").toUpperCase() + " port " + d.port + " " + d.state + (d.error ? " — " + d.error : "")).join("; ");
+    dd.title = "Hamlib rigctld (" + host + "), runs while Radio is off too — WSJT-X can use it. " + list.map((d) => "Radio " + (d.radios || []).join("+") + " port " + d.port + " " + d.state + (d.error ? " — " + d.error : "")).join("; ");
     dd.className = list.some((d) => d.state === "failed") ? "hamlib-sum-err" : list.every((d) => d.state === "running") ? "hamlib-sum-ok" : "hamlib-sum-wait";
   }
   function hookWs() {

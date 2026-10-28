@@ -321,6 +321,46 @@ test("share rigctld on network: -T 0.0.0.0 with the chosen ports; off = 127.0.0.
   config.applyEndpoints({ hamlibNet: { share: false, portUl: 4534, portDl: 4535 } });
 });
 
+test("rigctld port is pinned to the configured radio, not the per-sat UL / DL role", () => {
+  const config = require("../lib/config");
+  const hamlib = require("../lib/hamlib");
+  const roles = require("../lib/radio-roles");
+  // Brian's Flex705: Radio 1 = Flex (TCP), Radio 2 = IC-705 on Hamlib serial
+  const cfg = {
+    singleRadio: false,
+    radioUl: { transport: "tcp", type: "smartsdr", protocol: "cat", catEndpoint: "127.0.0.9:5002" },
+    radioDl: { transport: "hamlib", hamlibModel: 3085, serialDevice: "COM17", serialBaud: 19200 },
+    hamlibNet: { share: true, portUl: 4534, portDl: 4535 },
+  };
+  const spec = () => Array.from(hamlib.wantedSpecs().values());
+  config.applyEndpoints(roles.effectiveEndpoints(cfg, 1, null));
+  const normal = spec();
+  assert.strictEqual(normal.length, 1);
+  assert.strictEqual(normal[0].port, 4535, "Radio 2 -> 4535");
+  assert.deepStrictEqual(normal[0].radios, [2]);
+  // RS-44: roles swapped (Radio 2 on uplink) — same port, same args (no restart)
+  config.applyEndpoints(roles.effectiveEndpoints(cfg, 2, null));
+  const swapped = spec();
+  assert.strictEqual(swapped[0].port, 4535);
+  assert.strictEqual(swapped[0].argsKey, normal[0].argsKey, "role swap does not change / restart rigctld");
+  assert.deepStrictEqual(swapped[0].sides, ["ul"]);
+  assert.strictEqual(config.RIGCTL_PORT, 4535, "our driver dials the Radio 2 port on the swapped leg too");
+  // a sat that turns the Hamlib leg off: rigctld keeps running (WSJT-X)
+  config.applyEndpoints(roles.effectiveEndpoints(cfg, 2, "ul"));
+  assert.strictEqual(spec().length, 1);
+  assert.strictEqual(spec()[0].argsKey, normal[0].argsKey);
+  // two Hamlib radios: Radio 1 4534, Radio 2 4535, swap keeps both
+  const two = Object.assign({}, cfg, { radioUl: { transport: "hamlib", hamlibModel: 3081, serialDevice: "COM9", serialBaud: 19200 } });
+  const ports = () => Object.fromEntries(spec().map((w) => [w.radios.join(), w.port]));
+  config.applyEndpoints(roles.effectiveEndpoints(two, 1, null));
+  assert.deepStrictEqual(ports(), { 1: 4534, 2: 4535 });
+  config.applyEndpoints(roles.effectiveEndpoints(two, 2, null));
+  assert.deepStrictEqual(ports(), { 1: 4534, 2: 4535 });
+  // no model chosen: nothing started (never a silent default model)
+  config.applyEndpoints({ singleRadio: true, radioUl: { transport: "hamlib", hamlibModel: null, serialDevice: "COM17" }, hamlibNet: { share: false, portUl: 4534, portDl: 4535 } });
+  assert.strictEqual(spec().length, 0);
+});
+
 test("update helpers: versions, sums file, per-OS plan, source build is labelled manual", () => {
   assert.strictEqual(tools.parseVersion("rigctld Hamlib 4.6.2 2025-02-09T21:03:50Z SHA=870364 64-bit"), "4.6.2");
   assert.ok(tools.cmpVersion("4.7.2", "4.6.2") > 0);
@@ -457,6 +497,21 @@ test("integration: real rigctld -m 1 (dummy) supervised, set / get freq through 
   c.close();
   await s.stop();
   assert.strictEqual(s.state, "stopped");
+});
+
+test("integration: a second client (WSJT-X) works while our client holds a connection", { skip: !RIGCTLD && "Hamlib not installed", timeout: 30000 }, async () => {
+  const port = await freePort();
+  const s = new Supervisor({ name: "rigctld", bin: RIGCTLD, args: models.buildRigctldArgs({ model: 1, port, host: "0.0.0.0" }), port, log: () => {}, warn: () => {} });
+  assert.strictEqual(await s.start(), true);
+  const ours = await rigctlClient(port);
+  assert.strictEqual(await ours.cmd("F 435640000"), "RPRT 0");
+  const other = await rigctlClient(port); // WSJT-X style: connect, then write
+  assert.strictEqual(await other.cmd("F 145900000"), "RPRT 0");
+  assert.strictEqual(await other.cmd("f"), "145900000");
+  assert.match(await ours.cmd("f"), /^\d+$/, "ours still answered");
+  ours.close();
+  other.close();
+  await s.stop();
 });
 
 test("integration: model list + caps from the installed Hamlib", { skip: !RIGCTLD && "Hamlib not installed", timeout: 60000 }, async () => {

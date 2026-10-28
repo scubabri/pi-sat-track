@@ -173,8 +173,8 @@ set "START_BAT=%APP_DIR%\start-sat-tracker.bat"
   echo echo Open http://localhost/  ^(or http://localhost:3000/^)
   echo echo Press Ctrl+C to stop
   echo if exist "%%~dp0open-when-ready.ps1" start "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%%~dp0open-when-ready.ps1"
-  echo if exist "%%~dp0.stopping" del /q "%%~dp0.stopping"
-  echo node server.js ^& if errorlevel 1 ^(if not exist "%%~dp0.stopping" pause^) ^& if exist "%%~dp0.stopping" del /q "%%~dp0.stopping" ^& exit /b 0
+  echo if exist "%%USERPROFILE%%\.rpitrack\.stopping" del /q "%%USERPROFILE%%\.rpitrack\.stopping"
+  echo node server.js ^& if errorlevel 1 ^(if not exist "%%USERPROFILE%%\.rpitrack\.stopping" pause^) ^& if exist "%%USERPROFILE%%\.rpitrack\.stopping" del /q "%%USERPROFILE%%\.rpitrack\.stopping" ^& exit /b 0
 ) > "%START_BAT%"
 echo Wrote launcher: %START_BAT%
 echo.

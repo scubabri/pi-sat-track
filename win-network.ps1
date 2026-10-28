@@ -100,7 +100,8 @@ function Stop-AppServer {
   # Tell the launcher this is a deliberate stop (no "Press any key"), then close the
   # launcher's console window itself (cmd.exe running <AppDir>\start-sat-tracker.bat)
   # and the pending browser opener, so nothing is left waiting or reading a replaced .bat.
-  try { Set-Content -Path (Join-Path $AppDir '.stopping') -Value (Get-Date -Format o) -ErrorAction Stop } catch {}
+  # Marker in the user's ~/.rpitrack (the launcher, not elevated, cannot delete files in Program Files).
+  try { $mk = Join-Path $UserHome '.rpitrack'; New-Item -ItemType Directory -Force -Path $mk | Out-Null; Set-Content -Path (Join-Path $mk '.stopping') -Value (Get-Date -Format o) -ErrorAction Stop } catch {}
   $batEsc = [regex]::Escape((Join-Path $AppDir 'start-sat-tracker.bat'))
   $openEsc = [regex]::Escape((Join-Path $AppDir 'open-when-ready.ps1'))
   $exeEsc = [regex]::Escape((Join-Path $AppDir 'PiSatTrack.exe'))

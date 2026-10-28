@@ -9,13 +9,13 @@ echo Pi Sat Track - open http://localhost (or http://localhost:3000)
 echo Node: %NODE_EXE%
 echo Stop: close this window or press Ctrl+C
 echo.
-if exist "%~dp0.stopping" del /q "%~dp0.stopping" >nul 2>&1
+if exist "%USERPROFILE%\.rpitrack\.stopping" del /q "%USERPROFILE%\.rpitrack\.stopping" >nul 2>&1
 REM Open the browser 10 s after start (then as soon as the server answers). --no-browser skips.
 if /i not "%~1"=="--no-browser" call :open_browser
 REM One line on purpose: cmd parses it whole, so setup replacing this file while the
 REM server runs cannot make cmd resume mid-file. Pause only on a crash, not when
 REM setup / Stop Pi Sat Track stopped it (they write .stopping, or close this window).
-"%NODE_EXE%" server.js & if errorlevel 1 (if not exist "%~dp0.stopping" (echo. & echo Server exited with an error. & pause)) & if exist "%~dp0.stopping" del /q "%~dp0.stopping" >nul 2>&1 & exit /b 0
+"%NODE_EXE%" server.js & if errorlevel 1 (if not exist "%USERPROFILE%\.rpitrack\.stopping" (echo. & echo Server exited with an error. & pause)) & if exist "%USERPROFILE%\.rpitrack\.stopping" del /q "%USERPROFILE%\.rpitrack\.stopping" >nul 2>&1 & exit /b 0
 
 :nonode
 echo Node.js was not found. Install Node.js 22 or newer from https://nodejs.org

@@ -223,8 +223,8 @@ Main = downlink / Sub = uplink; radios with split use VFO A = downlink / VFO B =
 split track the downlink only.
 
 **What runs:** as soon as the server starts (or you save / switch to a profile with a Hamlib serial radio),
-the app starts `rigctld` on port **4534** for the main / UL radio (a DL radio on its own serial port gets
-**4535**) and keeps it running whether **Radio** is on or off, so WSJT-X etc. can always reach the radio.
+the app starts `rigctld` on port **4534** for **Radio 1** and **4535** for **Radio 2** (as configured in
+Configure → Radio; a per-satellite UL / DL role swap never moves or restarts it) and keeps it running whether **Radio** is on or off, so WSJT-X etc. can always reach the radio.
 It is restarted automatically if it exits (1, 2, 5, 10, 30 s back-off) and stopped when the profile no
 longer has a Hamlib serial radio, and when the server stops. rigctld's messages appear in the server log;
 Station → **rigctld** shows *connected :4534*, *reconnecting* or *error*.
@@ -235,7 +235,7 @@ program has the radio to itself.
 
 **Share rigctld on network** (Configure → **Station**, off by default): off, rigctld listens on
 `127.0.0.1` only (this computer). On, it listens on all interfaces (`-T 0.0.0.0`) so WSJT-X etc. on another
-computer can use the radio; the two port fields (default 4534 main / UL, 4535 DL) set the ports, and the
+computer can use the radio; the two port fields (default 4534 Radio 1, 4535 Radio 2) set the ports, and the
 hint below them shows the address to use (this computer's LAN IP:port). Saving restarts rigctld.
 rigctld has **no authentication** — use it on your local network only.
 Windows: setup.exe adds the firewall rule *Pi Sat Track (rigctld 4534/4535)* (inbound TCP 4534–4535,
@@ -254,8 +254,8 @@ After an update the model list is reloaded. **Reload models** re-reads it by han
 
 **Sharing the radio with WSJT-X (or another app):** only one program can open the serial port, so let
 Pi Sat Track own it and point the other program at our rigctld. In WSJT-X: *Settings → Radio → Rig =
-**Hamlib NET rigctl***, *Network Server = `127.0.0.1:4534`* on the same computer (4535 for the DL radio),
-or *`<LAN IP>:4534`* from another computer with **Share rigctld on network** on. In WSJT-X turn **Doppler
+**Hamlib NET rigctl***, *Network Server = `127.0.0.1:4534`* on the same computer (4535 if the Hamlib radio is Radio 2 — Station
+shows which radio is on which port), or *`<LAN IP>:port`* from another computer with **Share rigctld on network** on. In WSJT-X turn **Doppler
 tracking off** and set **Split Operation = None** so it does not fight our Doppler. Pi Sat Track's Radio must
 be on so rigctld is running.
 
