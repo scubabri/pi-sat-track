@@ -3,7 +3,8 @@
   Called by install-win.bat / uninstall-win.bat (as Administrator):
     win-network.ps1 -Action Install     port 80 proxy + firewall rules, print URLs
     win-network.ps1 -Action Uninstall   stop the server, remove proxy + rules
-    win-network.ps1 -Action Stop        stop this app's server only
+    win-network.ps1 -Action Stop        stop this app's server (and its rigctld) only;
+                                        exit code 10 = something was running
     win-network.ps1 -Action Urls        print the URLs
 
   Port 80: the app listens on TCP 3000 (all interfaces). A Windows portproxy
@@ -18,6 +19,7 @@ param(
   [string]$Action = 'Urls',
   [string]$AppDir = $PSScriptRoot,
   [int]$AppPort = 3000,
+  [string]$UserHome = $env:USERPROFILE,
   [switch]$NoPort80
 )
 $ErrorActionPreference = 'Continue'
@@ -81,23 +83,44 @@ function Show-Urls([bool]$Port80) {
 }
 
 function Stop-AppServer {
-  # Only this app's server: node.exe listening on :AppPort, or running <AppDir>\server.js
+  # Only this app's processes:
+  #  - node.exe listening on :AppPort, or running <AppDir>\server.js
+  #  - rigctld.exe the app started: under %USERPROFILE%\.rpitrack\hamlib, or with our
+  #    own arguments "-T 127.0.0.1 -t 4534/4535". A user's own rigctld (e.g. port 4532,
+  #    or Program Files without our args) is left alone.
+  # Waits for them to exit. Sets $script:StoppedCount.
   $ids = @()
   foreach ($c in (Get-NetTCPConnection -LocalPort $AppPort -State Listen -ErrorAction SilentlyContinue)) { $ids += $c.OwningProcess }
   $esc = [regex]::Escape((Join-Path $AppDir 'server.js'))
   foreach ($p in (Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue)) {
     if ($p.CommandLine -match $esc) { $ids += $p.ProcessId }
   }
-  $stopped = 0
+  $stopped = @()
   foreach ($procId in ($ids | Select-Object -Unique)) {
     $pr = Get-Process -Id $procId -ErrorAction SilentlyContinue
     if ($pr -and $pr.ProcessName -eq 'node') {
       Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
       Write-Host "  stopped Pi Sat Track server (node PID $procId)"
-      $stopped++
+      $stopped += $procId
     }
   }
-  if (-not $stopped) { Write-Host '  server not running' }
+  $hamDir = Join-Path $UserHome '.rpitrack\hamlib'
+  $hamEsc = [regex]::Escape($hamDir)
+  foreach ($p in (Get-CimInstance Win32_Process -Filter "Name='rigctld.exe'" -ErrorAction SilentlyContinue)) {
+    $ours = ($p.ExecutablePath -and $p.ExecutablePath -match ('^' + $hamEsc)) -or
+            ($p.CommandLine -match '-T\s+127\.0\.0\.1\s+-t\s+453[45]\b')
+    if ($ours) {
+      Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+      Write-Host "  stopped Pi Sat Track rigctld (PID $($p.ProcessId)): $($p.CommandLine)"
+      $stopped += $p.ProcessId
+    }
+  }
+  foreach ($procId in $stopped) { Wait-Process -Id $procId -Timeout 15 -ErrorAction SilentlyContinue }
+  foreach ($procId in $stopped) {
+    if (Get-Process -Id $procId -ErrorAction SilentlyContinue) { Write-Host "  WARN: PID $procId still running" }
+  }
+  if ($stopped.Count) { Write-Host "  stopped $($stopped.Count) process(es); all exited" } else { Write-Host '  server not running' }
+  $script:StoppedCount = $stopped.Count
 }
 
 function Show-FirewallState {
@@ -159,7 +182,7 @@ switch ($Action) {
     Remove-OurRules
     Write-Host '  done'
   }
-  'Stop' { Stop-AppServer }
+  'Stop' { Stop-AppServer; if ($script:StoppedCount) { exit 10 } }
   'Urls' {
     $has80 = [bool](Get-ProxyEntries | Where-Object { $_.ListenPort -eq 80 -and $_.ConnectPort -eq $AppPort })
     Show-Urls $has80

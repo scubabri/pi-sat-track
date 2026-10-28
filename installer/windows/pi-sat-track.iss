@@ -55,6 +55,8 @@ Source: "{#SrcRoot}\*"; DestDir: "{app}"; \
   Excludes: "\.git,\.github,\.gitattributes,\.gitignore,\dist,\installer,\test,\tools,\*.run,\*.sh,\*.log"; \
   Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "start-sat-tracker.bat"; DestDir: "{app}"; Flags: ignoreversion
+; This build's stop logic, run from {tmp} before files are replaced (PrepareToInstall).
+Source: "{#SrcRoot}\win-network.ps1"; DestName: "stop-pi-sat-track.ps1"; Flags: dontcopy
 
 [INI]
 Filename: "{app}\Open Pi Sat Track.url"; Section: "InternetShortcut"; Key: "URL"; String: "http://localhost:3000/"
@@ -96,7 +98,7 @@ var
   NodeExe: string;
   NeedNode: Boolean;
   DownloadPage: TDownloadWizardPage;
-  RemoveData, RemoveNode, NodeWasOurs: Boolean;
+  RemoveData, RemoveNode, NodeWasOurs, AppWasRunning: Boolean;
 
 function DataDir(): string;
 begin
@@ -248,23 +250,49 @@ begin
   RegWriteStringValue(HKLM64, OurKey, 'NodeInstalledBySetup', NodeVersion);
 end;
 
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+{ Stop a running Pi Sat Track (node server.js from {app}) and the rigctld it started,
+  using win-network.ps1 -Action Stop (exit 10 = something was running). Waits for exit. }
+function StopRunningApp(const Ps, Why: string): Boolean;
 var
   Rc: Integer;
+begin
+  Result := False;
+  if not FileExists(Ps) then
+  begin
+    Log(Why + ': stop script not found: ' + Ps);
+    exit;
+  end;
+  if Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+      '-NoProfile -ExecutionPolicy Bypass -File "' + Ps + '" -Action Stop -AppDir "' + ExpandConstant('{app}') +
+      '" -UserHome "' + ExpandConstant('{%USERPROFILE}') + '"',
+      '', SW_HIDE, ewWaitUntilTerminated, Rc) then
+  begin
+    Result := Rc = 10;
+    if Result then Log(Why + ': stopped running Pi Sat Track server / rigctld')
+    else Log(Why + ': Pi Sat Track was not running (stop exit ' + IntToStr(Rc) + ')');
+  end
+  else
+    Log(Why + ': could not run the stop script');
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
   Ps: string;
 begin
   Result := '';
+  { Stop a running Pi Sat Track first (this build's script, extracted to {tmp}). }
+  try
+    ExtractTemporaryFile('stop-pi-sat-track.ps1');
+    Ps := ExpandConstant('{tmp}\stop-pi-sat-track.ps1');
+  except
+    Ps := ExpandConstant('{app}\win-network.ps1');
+  end;
+  AppWasRunning := StopRunningApp(Ps, 'Setup');
   if NeedNode then
   begin
     Result := InstallNode(NeedsRestart);
     if Result <> '' then exit;
   end;
-  { Update: stop a running Pi Sat Track server so files can be replaced. }
-  Ps := ExpandConstant('{app}\win-network.ps1');
-  if FileExists(Ps) then
-    Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-      '-NoProfile -ExecutionPolicy Bypass -File "' + Ps + '" -Action Stop -AppDir "' + ExpandConstant('{app}') + '"',
-      '', SW_HIDE, ewWaitUntilTerminated, Rc);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -401,6 +429,12 @@ var
   Code: string;
   Rc: Integer;
 begin
+  if CurUninstallStep = usUninstall then
+  begin
+    { Before files are removed: stop the server and our rigctld. }
+    StopRunningApp(ExpandConstant('{app}\win-network.ps1'), 'Uninstall');
+    exit;
+  end;
   if CurUninstallStep <> usPostUninstall then exit;
   if RemoveData then
     DelTree(DataDir(), True, True, True);
