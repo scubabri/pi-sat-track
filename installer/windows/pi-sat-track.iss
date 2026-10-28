@@ -88,6 +88,7 @@ Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
 Type: filesandordirs; Name: "{app}\node_modules"
 Type: files; Name: "{app}\*.log"
 Type: files; Name: "{app}\Open Pi Sat Track.url"
+Type: files; Name: "{app}\.stopping"
 Type: dirifempty; Name: "{app}"
 
 [Code]

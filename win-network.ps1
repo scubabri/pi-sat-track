@@ -96,6 +96,20 @@ function Stop-AppServer {
     if ($p.CommandLine -match $esc) { $ids += $p.ProcessId }
   }
   $stopped = @()
+  # Tell the launcher this is a deliberate stop (no "Press any key"), then close the
+  # launcher's console window itself (cmd.exe running <AppDir>\start-sat-tracker.bat)
+  # and the pending browser opener, so nothing is left waiting or reading a replaced .bat.
+  try { Set-Content -Path (Join-Path $AppDir '.stopping') -Value (Get-Date -Format o) -ErrorAction Stop } catch {}
+  $batEsc = [regex]::Escape((Join-Path $AppDir 'start-sat-tracker.bat'))
+  $openEsc = [regex]::Escape((Join-Path $AppDir 'open-when-ready.ps1'))
+  foreach ($p in (Get-CimInstance Win32_Process -Filter "Name='cmd.exe' OR Name='powershell.exe'" -ErrorAction SilentlyContinue)) {
+    if ($p.ProcessId -eq $PID) { continue }
+    if (($p.Name -eq 'cmd.exe' -and $p.CommandLine -match $batEsc) -or ($p.Name -eq 'powershell.exe' -and $p.CommandLine -match $openEsc)) {
+      Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+      Write-Host "  closed $($p.Name) (PID $($p.ProcessId))"
+      $stopped += $p.ProcessId
+    }
+  }
   foreach ($procId in ($ids | Select-Object -Unique)) {
     $pr = Get-Process -Id $procId -ErrorAction SilentlyContinue
     if ($pr -and $pr.ProcessName -eq 'node') {
