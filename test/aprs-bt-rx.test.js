@@ -125,7 +125,7 @@ test("radio not in KISS mode: text bytes counted, no frames, one warning with a 
   assert.ok(st.rxBytes >= 48);
   const w = logs.filter((l) => /receiving data but no KISS frames/.test(l));
   assert.strictEqual(w.length, 1);
-  assert.match(w[0], /is the radio in KISS mode \(KISS12\)\?/);
+  assert.match(w[0], /is the TNC in KISS mode\?/);
   const pv = logs.find((l) => /first bytes:/.test(l));
   assert.match(pv, /0d 0a 63 6d 64 3a/);
   assert.match(pv, /\|\.\.cmd:KA7XYZ-7>APRS/);
