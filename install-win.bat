@@ -172,6 +172,7 @@ set "START_BAT=%APP_DIR%\start-sat-tracker.bat"
   echo echo Starting Pi Sat Track...
   echo echo Open http://localhost/  ^(or http://localhost:3000/^)
   echo echo Press Ctrl+C to stop
+  echo if exist "%%~dp0open-when-ready.ps1" start "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%%~dp0open-when-ready.ps1"
   echo node server.js
   echo pause
 ) > "%START_BAT%"

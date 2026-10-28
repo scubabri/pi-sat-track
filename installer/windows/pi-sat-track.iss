@@ -70,9 +70,7 @@ Name: "{group}\Uninstall Pi Sat Track"; Filename: "{uninstallexe}"
 ; Started through 64-bit cmd.exe ({sys} in 64-bit mode): a shellexec from 32-bit setup
 ; got a 32-bit cmd where %ProgramFiles% = Program Files (x86), so node was not found.
 Filename: "{sys}\cmd.exe"; Parameters: "/c ""{app}\start-sat-tracker.bat"""; WorkingDir: "{app}"; \
-  Description: "Start Pi Sat Track now"; Flags: postinstall nowait skipifsilent runasoriginaluser
-Filename: "{app}\Open Pi Sat Track.url"; Description: "Open Pi Sat Track in the browser"; \
-  Flags: postinstall nowait skipifsilent shellexec runasoriginaluser unchecked
+  Description: "Start Pi Sat Track now (opens the browser after 10 s)"; Flags: postinstall nowait skipifsilent runasoriginaluser
 
 [UninstallRun]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
