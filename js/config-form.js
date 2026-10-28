@@ -316,7 +316,7 @@ function readSide(side) {
   else if (type === "sdrconnect" || type === "sdrplay") protocol = "websocket";
   else if (type === "smartsdr" && protocol === "tci") protocol = "cat";
 
-  return {
+  const base = {
     transport,
     type,
     protocol,
@@ -332,6 +332,9 @@ function readSide(side) {
       hostSerialDefault("/dev/ttyACM0"),
     serialBaud: parseInt(val(p + "-serial-baud"), 10) || 19200,
   };
+  // Hamlib serial (js/hamlib-ui.js): saved as the native driver when the model has one.
+  if (transport === "hamlib" && window.hamlibUI) return window.hamlibUI.read(side, base);
+  return base;
 }
 
 function fillSide(side, s) {
@@ -355,6 +358,7 @@ function fillSide(side, s) {
       hostSerialDefault("/dev/ttyACM0"),
   );
   setVal(p + "-serial-baud", d.serialBaud != null ? d.serialBaud : 19200);
+  if (window.hamlibUI) window.hamlibUI.fill(side, d);
   updateSideVisibility(side);
 }
 
@@ -372,7 +376,7 @@ function updateSideProtocolOptions(side) {
     proto.appendChild(opt);
   };
   if (type === "rigctl") {
-    add("rigctl", "rigctl");
+    add("rigctl", "Hamlib NET rigctl (rigctld protocol)");
     proto.value = "rigctl";
     return;
   }
@@ -406,6 +410,7 @@ function updateSideVisibility(side) {
 
   if (tcpBlock) tcpBlock.hidden = transport !== "tcp";
   if (serialBlock) serialBlock.hidden = transport !== "serial";
+  if (window.hamlibUI) window.hamlibUI.visible(side, transport);
 
   if (transport !== "tcp") {
     if (protocolRow) protocolRow.hidden = true;
@@ -428,7 +433,8 @@ function updateSideVisibility(side) {
     (type === "smartsdr" || type === "aethersdr" || type === "flex");
   const needsApi = isCat || isTci;
 
-  if (protocolRow) protocolRow.hidden = isRigctl || isSdrconnect;
+  // Always show what the TCP link speaks (rigctl / WebSocket / CAT / TCI).
+  if (protocolRow) protocolRow.hidden = false;
   if (tciBlock) tciBlock.hidden = !isTci;
   if (rigctlBlock) rigctlBlock.hidden = !isRigctl;
   if (isRigctl) updateRigctldHelpPort(p);

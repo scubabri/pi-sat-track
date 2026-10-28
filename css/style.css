@@ -690,3 +690,31 @@ body {
   line-height: 1.2;
   white-space: nowrap;
 }
+
+/* Hamlib (rigctld) block in Configure → Radio */
+.hamlib-ver {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 0.75rem;
+  opacity: 0.9;
+}
+.hamlib-job {
+  max-height: 10rem;
+  overflow: auto;
+  font-size: 0.7rem;
+  white-space: pre-wrap;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 6px;
+  border-radius: 4px;
+}
+.hamlib-native {
+  font-size: 0.75rem;
+  margin: 4px 0;
+}
+.hamlib-prefer {
+  display: block;
+  margin-top: 4px;
+}

@@ -23,6 +23,11 @@
     // Serial connections use make/model; the TCP "Radio / software" select is stale then.
     const radioName = (side) => {
       const tr = document.getElementById("cfg-" + side + "-transport");
+      if (tr && tr.value === "hamlib") {
+        const m = document.getElementById("cfg-" + side + "-hamlib-model");
+        const t = m && m.selectedIndex >= 0 ? m.options[m.selectedIndex].textContent.split(" · ")[0] : "";
+        return "Hamlib " + (t || "serial");
+      }
       if (tr && tr.value === "serial") {
         const make = txt(document.getElementById("cfg-" + side + "-serial-make"));
         const model = txt(document.getElementById("cfg-" + side + "-serial-model"));
