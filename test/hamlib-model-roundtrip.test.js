@@ -97,3 +97,28 @@ test("unknown saved model is not replaced by the first Icom entry", async () => 
   assert.strictEqual($("cfg-ul-hamlib-model").value, "");
   assert.notStrictEqual(ui.read("ul", {}).hamlibModel, 3054);
 });
+
+test("Station share: both port fields shown; non-Hamlib radio grayed out, its port kept on save", async () => {
+  const { ui, $ } = await load();
+  $("cfg-ul-transport").value = "hamlib";
+  $("cfg-dl-transport").value = "tcp";
+  ui.fillNet({ share: true, portUl: 4534, portDl: 4600 });
+  const ul = $("cfg-hamlib-port-ul"), dl = $("cfg-hamlib-port-dl");
+  assert.strictEqual(ul.parentElement, undefined); // fake DOM: no parent; visibility via disabled
+  assert.strictEqual(!!ul.disabled, false);
+  assert.strictEqual(dl.disabled, true);
+  assert.strictEqual($("cfg-hamlib-port-dl-off").hidden, false);
+  assert.strictEqual($("cfg-hamlib-port-ul-off").hidden, true);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ui.readNet())), { share: true, portUl: 4534, portDl: 4600 });
+  assert.match($("cfg-hamlib-net-hint").innerHTML, /Radio 2: not shared \(no rigctld\)/);
+});
+
+test("Station share: no Hamlib radio -> both grayed out with a clear note", async () => {
+  const { ui, $ } = await load();
+  $("cfg-ul-transport").value = "serial";
+  $("cfg-dl-transport").value = "tcp";
+  ui.fillNet({ share: false });
+  assert.strictEqual($("cfg-hamlib-port-ul").disabled, true);
+  assert.strictEqual($("cfg-hamlib-port-dl").disabled, true);
+  assert.match($("cfg-hamlib-net-hint").innerHTML, /No radio uses Hamlib serial yet/);
+});

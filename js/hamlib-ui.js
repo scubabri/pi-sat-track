@@ -299,8 +299,8 @@
       "afterend",
       '<div class="form-row" id="cfg-hamlib-net">' +
         '<label class="cfg-check"><input type="checkbox" id="cfg-hamlib-share" /> Share rigctld on network (Hamlib serial radios)</label>' +
-        '<div class="form-row-2"><div><label for="cfg-hamlib-port-ul">rigctld port — Radio 1</label><input type="number" id="cfg-hamlib-port-ul" min="1024" max="65535" placeholder="4534" /></div>' +
-        '<div><label for="cfg-hamlib-port-dl">rigctld port — Radio 2</label><input type="number" id="cfg-hamlib-port-dl" min="1024" max="65535" placeholder="4535" /></div></div>' +
+        '<div class="form-row-2"><div><label for="cfg-hamlib-port-ul">rigctld port — Radio 1</label><input type="number" id="cfg-hamlib-port-ul" min="1024" max="65535" placeholder="4534" /><small class="form-hint hamlib-port-off" id="cfg-hamlib-port-ul-off" hidden>not shared (no rigctld)</small></div>' +
+        '<div><label for="cfg-hamlib-port-dl">rigctld port — Radio 2</label><input type="number" id="cfg-hamlib-port-dl" min="1024" max="65535" placeholder="4535" /><small class="form-hint hamlib-port-off" id="cfg-hamlib-port-dl-off" hidden>not shared (no rigctld)</small></div></div>' +
         '<p class="form-hint" id="cfg-hamlib-net-hint"></p></div>',
     );
     $("cfg-hamlib-share").addEventListener("change", () => renderNet(lastStatus));
@@ -346,7 +346,15 @@
     const h2 = !single && isHamlib("dl") && !(h1 && devOf("ul") === devOf("dl"));
     const show = (side, on) => {
       const f = $("cfg-hamlib-port-" + side);
-      if (f && f.parentElement) f.parentElement.hidden = !on;
+      // Always shown side by side; a radio without rigctld is grayed out (its stored port is kept on save).
+      if (f) {
+        if (f.parentElement) f.parentElement.hidden = false;
+        f.disabled = !on;
+        f.style.opacity = on ? "" : "0.5";
+        f.title = on ? "" : "Radio not on Hamlib serial: not shared (no rigctld)";
+      }
+      const off = $("cfg-hamlib-port-" + side + "-off");
+      if (off) off.hidden = on;
     };
     show("ul", h1);
     show("dl", h2);
@@ -354,6 +362,7 @@
     const lines = [line(1, h1, n.portUl)];
     if (!single) lines.push(line(2, h2 || (!single && isHamlib("dl") && h1), h2 ? n.portDl : n.portUl));
     h.innerHTML =
+      (!h1 && !h2 ? "<b>No radio uses Hamlib serial yet.</b> Set Radio 1 or Radio 2 to Hamlib serial in Radio config first.<br>" : "") +
       lines.join(" · ") + (n.share ? "" : " (this computer only)") + "<br>" +
       (n.share ? "rigctld has <b>no password</b>: use on your local network only. " : "Off: rigctld listens on 127.0.0.1 only. ") +
       "In WSJT-X set Rig = <b>Hamlib NET rigctl</b>, Network Server = the address above, and turn its Doppler tracking and Split off so it does not fight our Doppler. The port stays with the radio when a satellite swaps UL / DL. Saving restarts rigctld." +
