@@ -209,9 +209,10 @@ Turn **Antenna OFF** in the UI before running the rotator connection test so the
 
 Use **Connection = Hamlib serial (rigctld)** for a radio that has no built-in driver here. Pick the
 **Manufacturer**, then the **Model** (the list comes from the installed Hamlib, `rigctl -l`, with each
-model's Hamlib status: Stable / Beta / Alpha / Untested). Models that have a built-in driver (IC-705,
-IC-9700, FT-991/991A, FT-847, FT-817/818, TS-2000, Flex) are marked **built-in driver** and use it unless
-you tick **Use Hamlib (rigctld) anyway**.
+model's Hamlib status: Stable / Beta / Alpha / Untested). The model you pick always runs through Hamlib
+(rigctld). Models we also have a built-in driver for (IC-705, IC-9700, FT-991/991A, FT-847, FT-817/818,
+TS-2000, Flex) are marked **built-in driver available** as a hint only; to use our own driver instead,
+set **Connection = Native serial** (or TCP for Flex SmartSDR CAT).
 
 Choosing a model fills the serial settings from Hamlib's own defaults (`rigctl --dump-caps`): baud,
 data/stop bits, parity, handshake and, for Icom, the CI-V address. Change them under **Serial options**

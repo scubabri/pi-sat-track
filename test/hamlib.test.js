@@ -52,7 +52,7 @@ test("manufacturer grouping: alphabetical, Hamlib virtual rigs last, models natu
   assert.deepStrictEqual(icom, ["IC-705", "IC-7300", "IC-9700"]);
 });
 
-test("native vs Hamlib: our drivers win unless the user prefers Hamlib", () => {
+test("native hint vs Hamlib: a Hamlib-serial side always uses Hamlib", () => {
   const l = models.parseList(LIST);
   const by = (id) => l.find((x) => x.id === id);
   assert.deepStrictEqual(models.nativeFor(by(3081)), { transport: "serial", serialMake: "icom", serialModel: "ic-9700", label: "IC-9700 (built-in CI-V driver)" });
@@ -62,10 +62,11 @@ test("native vs Hamlib: our drivers win unless the user prefers Hamlib", () => {
   assert.strictEqual(models.nativeFor(by(2036)).type, "smartsdr");
   assert.strictEqual(models.nativeFor(by(23005)).transport, "tcp", "Flex SmartSDR slices -> native SmartSDR CAT");
   assert.strictEqual(models.nativeFor(by(3073)), null);
-  assert.strictEqual(models.chooseDriver(by(3081)), "native");
+  assert.strictEqual(models.chooseDriver(by(3081)), "hamlib", "IC-9700 picked under Hamlib serial stays Hamlib");
+  assert.strictEqual(models.chooseDriver(by(3085)), "hamlib", "IC-705 too");
   assert.strictEqual(models.chooseDriver(by(3081), { preferHamlib: true }), "hamlib");
   assert.strictEqual(models.chooseDriver(by(3073)), "hamlib");
-  assert.strictEqual(models.chooseDriver(1035), "native", "plain model number works too");
+  assert.strictEqual(models.chooseDriver(1035), "hamlib", "plain model number works too");
 });
 
 test("caps: serial defaults, handshake, split, CI-V address", () => {
@@ -268,6 +269,24 @@ test("config: a Hamlib-serial side is rigctl over 127.0.0.1:<hamlibPort> for the
   config.applyEndpoints({ singleRadio: true, radioUl: { transport: "serial", serialMake: "icom", serialModel: "ic-9700", serialDevice: "/dev/ttyUSB0" } });
   assert.strictEqual(hamlib.wantedSpecs().size, 0);
   assert.strictEqual(hamlib.anyWanted(), false);
+});
+
+test("config: a model with a built-in driver stays Hamlib under Hamlib serial; native saves stay native", () => {
+  const config = require("../lib/config");
+  const radios = require("../lib/radios");
+  const hamlib = require("../lib/hamlib");
+  // IC-705 (3085) selected under Hamlib serial, incl. an old save carrying hamlibPreferHamlib
+  for (const extra of [{}, { hamlibPreferHamlib: false }, { hamlibPreferHamlib: true }]) {
+    const side = Object.assign({ transport: "hamlib", hamlibModel: 3085, serialDevice: "/dev/ttyACM0", serialBaud: 19200 }, extra);
+    config.applyEndpoints({ singleRadio: true, radioUl: side, radioDl: side });
+    assert.strictEqual(config.RADIO_UL.transport, "hamlib");
+    assert.strictEqual(radios.activeUl().meta.id, "rigctl", "rigctld, not the native IC-705 driver");
+    assert.deepStrictEqual(Array.from(hamlib.wantedSpecs().values())[0].args.slice(0, 2), ["-m", "3085"]);
+  }
+  // old forced-native save (transport serial, ic-705) loads as the native driver
+  config.applyEndpoints({ singleRadio: true, radioUl: { transport: "serial", serialMake: "icom", serialModel: "ic-705", serialDevice: "/dev/ttyACM0" } });
+  assert.strictEqual(config.RADIO_UL.transport, "serial");
+  assert.strictEqual(hamlib.wantedSpecs().size, 0);
 });
 
 test("update helpers: versions, sums file, per-OS plan, source build is labelled manual", () => {

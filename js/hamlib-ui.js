@@ -4,8 +4,8 @@
  * Injects a block per radio side (cfg-ul / cfg-dl): Manufacturer → Model
  * (from the installed Hamlib's `rigctl -l`, with its status), serial port /
  * baud / CI-V, serial options, rigctld port, plus the Hamlib version line with
- * Update / Rollback / Reload models. Models we have a built-in driver for are
- * saved as that native driver unless "Use Hamlib anyway" is ticked.
+ * Update / Rollback / Reload models. The selected model always runs through
+ * rigctld; a built-in driver is only mentioned as a hint (Native serial).
  * config-form.js calls hamlibUI.read / fill / visible.
  */
 (function () {
@@ -114,7 +114,7 @@
       modelsP.then((r) => {
         const g = (r.groups || []).find((x) => x.mfg === $(p + "-mfg").value);
         const sel = $(p + "-model");
-        sel.innerHTML = g ? g.models.map((m) => opt(m.id, m.model + " · " + m.status + (m.native ? " · built-in driver" : "") + " (#" + m.id + ")")).join("") : "";
+        sel.innerHTML = g ? g.models.map((m) => opt(m.id, m.model + " · " + m.status + (m.native ? " · built-in driver available" : "") + " (#" + m.id + ")")).join("") : "";
         if (modelId && byId.has(String(modelId))) sel.value = String(modelId);
         onModel(side, user);
       });
@@ -127,14 +127,12 @@
     const icom = !!(m && /icom/i.test(m.mfg));
     $(p + "-civ-row").hidden = !icom;
     const note = $(p + "-native");
+    // Informational only: the Hamlib model is always run through rigctld.
     if (m && m.native) {
       note.hidden = false;
-      const prefer = $(p + "-prefer");
-      const was = prefer ? prefer.checked : !!(pendingPrefer[side]);
       note.innerHTML =
-        "<b>" + esc(m.model) + "</b> has a built-in driver: " + esc(m.native.label) + ". It is used (recommended) unless you tick below." +
-        (m.native.transport === "tcp" ? " Set the SmartSDR CAT endpoint under Connection = TCP." : "") +
-        '<label class="hamlib-prefer"><input type="checkbox" id="' + p + '-prefer"' + (was ? " checked" : "") + " /> Use Hamlib (rigctld) anyway</label>";
+        "Built-in driver available: " + esc(m.native.label) + ". Hamlib (rigctld) will be used as selected; " +
+        (m.native.transport === "tcp" ? "Connection = TCP (SmartSDR CAT)" : "Connection = Native serial") + " is also an option.";
     } else {
       note.hidden = true;
       note.innerHTML = "";
@@ -157,22 +155,14 @@
       })
       .catch(() => {});
   }
-  const pendingPrefer = {};
 
-  /** config-form readSide(): Hamlib side, or the native side when the model has one. */
+  /** config-form readSide(): always the Hamlib side for the selected model. */
   function read(side, base) {
     const p = "cfg-" + side + "-hamlib";
     const id = parseInt($(p + "-model").value || pending[side], 10) || null;
     const m = byId.get(String(id));
     const device = typeof readSerialDeviceField === "function" ? readSerialDeviceField(p + "-device") : $(p + "-device").value;
     const baud = parseInt($(p + "-baud").value, 10) || null;
-    const prefer = !!($(p + "-prefer") && $(p + "-prefer").checked);
-    if (m && m.native && !prefer) {
-      const n = m.native;
-      if (n.transport === "serial")
-        return Object.assign({}, base, { transport: "serial", serialMake: n.serialMake, serialModel: n.serialModel, serialDevice: device || base.serialDevice, serialBaud: baud || base.serialBaud });
-      return Object.assign({}, base, { transport: "tcp", type: n.type, protocol: n.protocol });
-    }
     const v = (k) => $(p + "-" + k).value || "";
     return Object.assign({}, base, {
       transport: "hamlib",
@@ -181,7 +171,6 @@
       hamlibModel: id,
       hamlibMfg: m ? m.mfg : $(p + "-mfg").value || "",
       hamlibModelName: m ? m.model : "",
-      hamlibPreferHamlib: prefer,
       serialDevice: device,
       serialBaud: baud,
       hamlibCivAddr: v("civ").trim(),
@@ -202,7 +191,6 @@
     d = d || {};
     const h = d.transport === "hamlib";
     pending[side] = h ? d.hamlibModel : null;
-    pendingPrefer[side] = h && !!d.hamlibPreferHamlib;
     if (typeof populateSerialDeviceSelect === "function") populateSerialDeviceSelect(p + "-device", h ? d.serialDevice : d.serialDevice || "");
     $(p + "-baud").value = h && d.serialBaud ? d.serialBaud : "";
     $(p + "-civ").value = h ? d.hamlibCivAddr || "" : "";

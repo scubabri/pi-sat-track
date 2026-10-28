@@ -332,7 +332,7 @@ function readSide(side) {
       hostSerialDefault("/dev/ttyACM0"),
     serialBaud: parseInt(val(p + "-serial-baud"), 10) || 19200,
   };
-  // Hamlib serial (js/hamlib-ui.js): saved as the native driver when the model has one.
+  // Hamlib serial (js/hamlib-ui.js): always saved as Hamlib (rigctld) for the selected model.
   if (transport === "hamlib" && window.hamlibUI) return window.hamlibUI.read(side, base);
   return base;
 }
