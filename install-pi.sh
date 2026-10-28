@@ -72,6 +72,12 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+# Linux with apt (Raspberry Pi OS, Debian, Ubuntu, ...): other distros can
+# still run the app by hand (docs/Home.md), not with this script.
+if ! command -v apt-get >/dev/null 2>&1 || ! command -v dpkg >/dev/null 2>&1; then
+  die "This installer needs a Debian-based Linux with apt (Raspberry Pi OS, Debian, Ubuntu). Elsewhere: install Node.js ${NODE_MAJOR}+, then npm install --omit=dev && node server.js"
+fi
+
 # -------------------- identity / paths --------------------
 if [[ "$(id -u)" -eq 0 && -z "${SUDO_USER:-}" ]]; then
   die "Run as a normal user (not root). The script will sudo when needed."

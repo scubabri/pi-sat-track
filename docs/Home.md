@@ -11,6 +11,7 @@ This wiki is the operator guide. Source and installers live in the [repository](
 1. [Overview](#1-overview)
 2. [What you need](#2-what-you-need)
 3. [Install](#3-install)
+   - [One installer for Pi, Linux and Mac (.run)](#30-one-installer-for-pi-linux-and-mac-run)
    - [Raspberry Pi / Linux](#31-raspberry-pi--linux)
    - [Windows 11](#32-windows-11)
    - [macOS](#33-macos)
@@ -35,7 +36,7 @@ This wiki is the operator guide. Source and installers live in the [repository](
 8. [Supported radios and rotors](#8-supported-radios-and-rotors)
 9. [Cache and data files](#9-cache-and-data-files)
 10. [Port 80 (Windows)](#10-port-80-windows)
-11. [Uninstall (Windows)](#11-uninstall-windows)
+11. [Uninstall (Windows, macOS)](#11-uninstall-windows)
 12. [Troubleshooting](#12-troubleshooting)
 13. [Planned wiki pages](#13-planned-wiki-pages)
 
@@ -70,6 +71,30 @@ Internet is used for AMSAT catalog / Celestrak TLE refresh; after that, tracking
 ---
 
 ## 3. Install
+
+### 3.0 One installer for Pi, Linux and Mac (`.run`)
+
+Release builds are a single file, `pi-sat-track-<branch>-alpha.<N>.run`, that
+works out where it is running and installs accordingly:
+
+| Detected | How | What it does |
+|----------|-----|--------------|
+| Raspberry Pi | Linux + `/proc/device-tree/model` contains "Raspberry Pi" | extracts to `pi-sat-track/` next to the `.run`, runs `install-pi.sh` (unchanged) |
+| Other Linux | Linux, not a Pi | same as the Pi (Debian / Ubuntu with apt; other distros get a clear message) |
+| macOS | `uname -s` = Darwin | extracts to `~/pi-sat-track` (updated in place, `~/.rpitrack` kept), runs `install-mac.sh` |
+| Windows | – | not supported by the `.run`: use `install-win.bat` (3.2) |
+
+```bash
+chmod +x pi-sat-track-<branch>-alpha.<N>.run
+./pi-sat-track-<branch>-alpha.<N>.run                  # install
+./pi-sat-track-<branch>-alpha.<N>.run --update         # update (options go to the platform installer)
+./pi-sat-track-<branch>-alpha.<N>.run --print-platform # only show what it detected / would do
+```
+
+On a Mac, a `~/pi-sat-track` that is a git checkout is never overwritten: update
+that with `./install-mac.sh --update`. `PST_MAC_DEST=<dir>` picks another parent
+folder. For testing, `PST_FORCE_PLATFORM=pi|linux|mac|other` and
+`PST_FORCE_MODEL="..."` override the detection.
 
 ### 3.1 Raspberry Pi / Linux
 
@@ -115,15 +140,41 @@ Re-run `install-win.bat` to update; it stops the running server first and keeps 
 
 ### 3.3 macOS
 
-No dedicated installer yet. Install [Node.js LTS](https://nodejs.org/), then:
+macOS 12 or newer, Apple Silicon or Intel. Easiest: run the `.run` (3.0); it
+puts the app in `~/pi-sat-track` and runs `install-mac.sh` for you. From a git
+checkout or an extracted zip instead, e.g. in `~/pi-sat-track`, in Terminal:
 
 ```bash
-cd /path/to/pi-sat-track
-npm install
-node server.js
+git clone https://github.com/scubabri/pi-sat-track.git ~/pi-sat-track   # or extract the zip there
+cd ~/pi-sat-track
+./install-mac.sh
 ```
 
-Open **http://127.0.0.1:3000**. Serial devices appear as `/dev/cu.usb*` (not Linux `ttyUSB`).
+`install-mac.sh` (no sudo, no background service):
+
+1. Checks for Node.js 22 or newer. If it is missing or too old it runs
+   `brew install node` when Homebrew is installed; otherwise it tells you to
+   install Node.js LTS from [nodejs.org](https://nodejs.org/) and stops.
+2. Creates `~/.rpitrack` (settings / data) if needed.
+3. Runs `npm ci --omit=dev` in the app folder (the app stays where it is).
+4. Prints how to start, open, stop, update and uninstall.
+
+Start / stop (nothing starts automatically):
+
+```bash
+cd ~/pi-sat-track && node server.js     # Ctrl+C stops it
+```
+
+Open **http://127.0.0.1:3000** (the script also prints the Mac's LAN address
+for other devices). Serial devices appear as `/dev/cu.usbserial-*` or
+`/dev/cu.usbmodem*` (not Linux `ttyUSB`); some USB-serial adapters need the
+vendor's macOS driver.
+
+Update: `./install-mac.sh --update` (a git checkout is pulled with
+`git pull --ff-only`; for a zip, extract the new one over the folder first).
+`~/.rpitrack` is kept. `--dry-run` shows what the script would do.
+
+Uninstall: see [11. Uninstall](#11-uninstall-windows).
 
 ---
 
@@ -373,6 +424,18 @@ Double-click and accept the UAC prompt, then type `YES`. It stops the Pi Sat Tra
 | `--remove-node` | Offer to uninstall Node.js |
 
 Node.js stays installed. Only if the installer installed it does uninstall **offer** to remove it (type `YES`).
+
+### macOS
+
+Stop the server first (Ctrl+C), then:
+
+```bash
+cd ~/pi-sat-track && ./uninstall-mac.sh          # removes the app folder, keeps ~/.rpitrack
+./uninstall-mac.sh --data                          # also deletes ~/.rpitrack (all profiles / settings)
+```
+
+It asks you to type `YES` (`--yes` skips that). Node.js is left installed
+(`brew uninstall node`, or the nodejs.org uninstall steps, to remove it).
 
 ---
 
