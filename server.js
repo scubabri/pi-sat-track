@@ -1729,6 +1729,12 @@ setInterval(() => {
       console.warn("Startup sat load failed (" + key + "):", err.message);
     }
   }
+  // Hamlib serial radios: rigctld runs from now on (Radio on or off) and follows the config.
+  hamlib.configure({
+    auto: true,
+    onChange: (st) => broadcast({ type: "hamlib", daemons: st.daemons, net: st.net }),
+  });
+  hamlib.ensure().catch(() => {});
   server.listen(PORT, "0.0.0.0", () => {
     const host = platform.hostInfo();
     console.log("Sat Tracker  http://127.0.0.1:" + PORT);

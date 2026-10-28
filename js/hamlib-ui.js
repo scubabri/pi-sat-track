@@ -333,6 +333,43 @@
         : "");
   }
 
+  // ---- Station summary: rigctld state (separate from Radio on/off) ----
+  function renderSummary(daemons, net) {
+    const dt = $("cfg-sum-rigctld-dt");
+    const dd = $("cfg-sum-rigctld");
+    if (!dt || !dd) return;
+    const list = daemons || [];
+    dt.hidden = dd.hidden = !list.length;
+    if (!list.length) return;
+    const host = net && net.share ? "LAN" : "local";
+    const one = (d) =>
+      d.state === "running" ? "connected :" + d.port
+      : d.state === "failed" ? "error" + (d.error ? ": " + d.error : "")
+      : "reconnecting" + (d.restarts ? " (" + d.restarts + ")" : "");
+    dd.textContent = list.map(one).join(" · ");
+    dd.title = "Hamlib rigctld (" + host + "), runs while Radio is off too — WSJT-X can use it. " + list.map((d) => d.sides.join("+").toUpperCase() + " port " + d.port + " " + d.state + (d.error ? " — " + d.error : "")).join("; ");
+    dd.className = list.some((d) => d.state === "failed") ? "hamlib-sum-err" : list.every((d) => d.state === "running") ? "hamlib-sum-ok" : "hamlib-sum-wait";
+  }
+  function hookWs() {
+    if (typeof ws === "undefined" || !ws || ws.__hamlibHooked) return;
+    ws.__hamlibHooked = true;
+    ws.addEventListener("message", (ev) => {
+      let m;
+      try { m = JSON.parse(ev.data); } catch (_) { return; }
+      if (m && m.type === "hamlib") renderSummary(m.daemons, m.net);
+    });
+    ws.addEventListener("open", () => refreshSummary());
+  }
+  function refreshSummary() {
+    return fetch("/api/hamlib/status", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((st) => renderSummary(st.daemons, st.net))
+      .catch(() => {});
+  }
+  setInterval(hookWs, 2000);
+  setInterval(refreshSummary, 30000);
+  setTimeout(() => { hookWs(); refreshSummary(); }, 500);
+
   inject();
   injectNet();
   window.hamlibUI = { read, fill, visible, refreshStatus, loadModels, readNet, fillNet };

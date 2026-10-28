@@ -96,6 +96,7 @@ function Stop-AppServer {
     if ($p.CommandLine -match $esc) { $ids += $p.ProcessId }
   }
   $stopped = @()
+  $nodeIds = @($ids)
   # Tell the launcher this is a deliberate stop (no "Press any key"), then close the
   # launcher's console window itself (cmd.exe running <AppDir>\start-sat-tracker.bat)
   # and the pending browser opener, so nothing is left waiting or reading a replaced .bat.
@@ -122,7 +123,8 @@ function Stop-AppServer {
   $hamEsc = [regex]::Escape($hamDir)
   foreach ($p in (Get-CimInstance Win32_Process -Filter "Name='rigctld.exe'" -ErrorAction SilentlyContinue)) {
     $ours = ($p.ExecutablePath -and $p.ExecutablePath -match ('^' + $hamEsc)) -or
-            ($p.CommandLine -match '-T\s+127\.0\.0\.1\s+-t\s+453[45]\b')
+            ($p.CommandLine -match '-T\s+(127\.0\.0\.1|0\.0\.0\.0)\s+-t\s+453[45]\b') -or
+            ($nodeIds -contains $p.ParentProcessId)
     if ($ours) {
       Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
       Write-Host "  stopped Pi Sat Track rigctld (PID $($p.ProcessId)): $($p.CommandLine)"

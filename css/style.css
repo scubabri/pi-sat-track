@@ -714,3 +714,6 @@ body {
   font-size: 0.75rem;
   margin: 4px 0;
 }
+.hamlib-sum-ok { color: #6fd08c; }
+.hamlib-sum-wait { color: #e8c35a; }
+.hamlib-sum-err { color: #ff7b72; }

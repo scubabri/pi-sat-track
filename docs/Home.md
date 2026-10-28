@@ -222,10 +222,16 @@ Hamlib's capabilities also decide how the radio is driven: radios with satellite
 Main = downlink / Sub = uplink; radios with split use VFO A = downlink / VFO B = uplink; radios without
 split track the downlink only.
 
-**What runs:** when Radio is turned on, the app starts `rigctld` on port **4534** for the main / UL radio
-(a DL radio on its own serial port gets **4535**). It is restarted automatically if it exits (1, 2, 5, 10,
-30 s back-off) and stopped when Radio is turned off or the profile changes. rigctld's messages appear in
-the server log.
+**What runs:** as soon as the server starts (or you save / switch to a profile with a Hamlib serial radio),
+the app starts `rigctld` on port **4534** for the main / UL radio (a DL radio on its own serial port gets
+**4535**) and keeps it running whether **Radio** is on or off, so WSJT-X etc. can always reach the radio.
+It is restarted automatically if it exits (1, 2, 5, 10, 30 s back-off) and stopped when the profile no
+longer has a Hamlib serial radio, and when the server stops. rigctld's messages appear in the server log;
+Station → **rigctld** shows *connected :4534*, *reconnecting* or *error*.
+
+The **Radio** button only engages Pi Sat Track's control: frequency / mode / VFO and satellite-mode set-up,
+Doppler updates and the tuning controls. With Radio off we send nothing to rigctld (no polling), so another
+program has the radio to itself.
 
 **Share rigctld on network** (Configure → **Station**, off by default): off, rigctld listens on
 `127.0.0.1` only (this computer). On, it listens on all interfaces (`-T 0.0.0.0`) so WSJT-X etc. on another
