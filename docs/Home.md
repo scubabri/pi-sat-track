@@ -225,7 +225,7 @@ After an update the model list is reloaded. **Reload models** re-reads it by han
 Pi Sat Track own it and point the other program at our rigctld. In WSJT-X: *Settings → Radio → Rig =
 **Hamlib NET rigctl***, *Network Server = `127.0.0.1:4534`* (4535 for the second radio). WSJT-X must run
 on the same computer (rigctld only listens on 127.0.0.1), and Pi Sat Track's Radio must be on so rigctld
-is running. Both programs then share the radio; Doppler tracking keeps running while WSJT-X keys PTT.
+is running. Both programs then send commands to the same radio through rigctld.
 
 **Rotators:** Hamlib rotators (`rotctld`) are not wired up yet; use the built-in rotor drivers.
 
