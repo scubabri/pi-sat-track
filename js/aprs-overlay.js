@@ -430,7 +430,7 @@
     const badge = last && B ? B.digiBadge(last, Date.now() + skewMs, expireMs) : last ? { ageMs: 0 } : null;
     const dt = badge && APRS().digiText ? APRS().digiText(last.digi) : null;
     const fmt = APRS().fmtTime || ((t) => new Date(t).toISOString().slice(11, 19) + " UTC");
-    const dc = APRS().digipeatCount || st.digipeatCount || 0;
+    const dc = Number.isFinite(st.digipeatCount) ? st.digipeatCount : APRS().digipeatCount || 0;
     const age = badge && B ? " · " + B.agoText(badge.ageMs) : "";
     const html =
       (badge

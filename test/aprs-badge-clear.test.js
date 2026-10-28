@@ -182,6 +182,36 @@ test("server: Clear recents empties the heard store for every client and dismiss
   await t.close();
 });
 
+test("server: Messages Clear empties packets and the digipeat log (memory + file), count 0 everywhere, not reloaded", async () => {
+  const t = await fakeTnc();
+  const file = tmpFile();
+  const { svc, out } = makeSvc(file);
+  svc.configure(cfgFor(t));
+  assert.ok(await until(() => svc.statusPayload().state === "connected" && t.open()));
+  const r = svc.send({ kind: "beacon", via: "WIDE2-1" });
+  assert.ok(await until(() => t.rx.length === 1));
+  const info = r.packet.tnc2.slice(r.packet.tnc2.indexOf(":") + 1);
+  t.pushTnc2("KA7KDX-3>APRS,KU5R-6*,WIDE2*:" + info);
+  assert.ok(await until(() => svc.digipeatsPayload().count === 1));
+  assert.ok(fs.readFileSync(file, "utf8").trim().length > 0);
+  out.length = 0;
+  svc.clear();
+  assert.strictEqual(svc.packetsPayload().packets.length, 0);
+  assert.strictEqual(svc.digipeatsPayload().count, 0);
+  assert.strictEqual(svc.digipeatsPayload().entries.length, 0);
+  assert.strictEqual(fs.readFileSync(file, "utf8"), "", "digipeats.jsonl emptied");
+  const dm = out.find((m) => m.type === "aprs-digipeats");
+  assert.ok(dm && dm.count === 0 && dm.entries.length === 0, "count 0 pushed to clients");
+  const st = out.find((m) => m.type === "aprs-status");
+  assert.ok(st && st.digipeatCount === 0, "status Digipeats: 0");
+  svc.stop();
+  await t.close();
+  // a restarted server (page reload / service restart) does not bring them back
+  const again = makeSvc(file);
+  assert.strictEqual(again.svc.digipeatsPayload().count, 0);
+  again.svc.stop();
+});
+
 test("Via options: every catalog sat with a published Via, labelled; per-sat settings first", () => {
   const vals = satSpeeds.viaOptions().map((o) => o.value);
   for (const v of ["ARISS", "RS0ISS", "DP0SNX", "9A0CC", "HA2GRB", "OK0KST", "OK0LSR", "OM9MAR"]) assert.ok(vals.includes(v), v);

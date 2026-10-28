@@ -118,7 +118,7 @@
       defaultY: 90,
       headHtml:
         '<span class="aprs-win-kiss" id="aprs-win-kiss"></span>' +
-        '<button type="button" class="aprs-win-clear" id="aprs-win-clear" title="Clear the packet list and heard stations">Clear</button>',
+        '<button type="button" class="aprs-win-clear" id="aprs-win-clear" title="Clear the packet list, heard stations and the digipeat log">Clear</button>',
     });
     win = w.el;
     delete w.st.tab; // old Messages / Packets tabs

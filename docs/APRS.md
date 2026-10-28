@@ -261,7 +261,7 @@ were received but not transmitted; after a power cycle in KISS12 the next
 position was digipeated. The row's TX count only means the frame was written
 to the link.)
 
-Connected but RX 0 frames · 0 B raw and TX frames do not key the radio:
+Connected but RX 0 and TX frames do not key the radio (TH-D74/D75):
 the link is up but the radio's TNC is not on it. Check, in order: KISS12 shows
 on the display (F 5); **Menu 983 KISS = Bluetooth** (if it is USB, the
 Bluetooth serial port connects but the TNC never talks on it); Menu 506 data
@@ -281,8 +281,8 @@ Status / Test errors:
 | no Bluetooth socket support | Kernel / Python without BlueZ sockets (not Raspberry Pi OS) |
 | python3 not found | `sudo apt install python3` |
 | link lost | The radio was turned off or went out of range; it reconnects by itself |
-| connected · RX 0 frames · 1.2 kB raw · receiving data but no KISS frames | The radio sends text, not KISS: it is in its own APRS / TNC mode. Press **F 5** until **KISS12** shows. The server log has the first bytes (hex / ASCII) |
-| Connected, no data from radio | Connected 2+ min and not one byte: check KISS12 and the data band (Menu 506; in single-band display the data band must be the one shown), and that packets are heard on that band |
+| Server log: receiving data but no KISS frames (TH-D74/D75) | The radio sends text, not KISS: it is in its own APRS / TNC mode. Press **F 5** until **KISS12** shows. The server log has the first bytes (hex / ASCII) |
+| Server log: no data from the TNC (TH-D74/D75) | Connected 2+ min and not one byte: check KISS12 and the data band (Menu 506; in single-band display the data band must be the one shown), and that packets are heard on that band |
 
 Sources: Kenwood, *TH-D74A/E Operating Tips* (KISS commands, KISS12 / KISS96,
 Bluetooth SPP, Menu 930, 505);
