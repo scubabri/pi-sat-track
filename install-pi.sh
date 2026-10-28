@@ -18,6 +18,8 @@
 #   --no-bluetooth  Skip Bluetooth setup (bluez, bluetooth service + group) for
 #                 Bluetooth KISS TNCs such as the Kenwood TH-D74/D75
 #                 (runs on full install and --update; idempotent)
+#   SKIP_HAMLIB=1 ./install-pi.sh   Do not install Hamlib (libhamlib-utils); it is
+#                 only needed for radios set to "Hamlib serial (rigctld)"
 # =============================================================================
 
 set -euo pipefail
@@ -143,6 +145,18 @@ if [[ $UPDATE_ONLY -eq 0 ]]; then
       need_sudo usermod -aG dialout "${APP_USER}"
       warn "dialout membership applies on next login (or: newgrp dialout)"
     fi
+  fi
+fi
+
+# -------------------- Hamlib (rigctld for "Hamlib serial" radios) --------------------
+# Optional: only radios set to Connection = "Hamlib serial (rigctld)" use it. The
+# app also offers Configure → Radio → Update (apt) later. SKIP_HAMLIB=1 skips.
+if [[ "${SKIP_HAMLIB:-0}" != 1 ]]; then  # full install and --update; idempotent
+  if command -v rigctld >/dev/null 2>&1; then
+    echo "    Hamlib present: $(rigctld --version 2>/dev/null | head -n1)"
+  else
+    log "Installing Hamlib (libhamlib-utils: rigctl / rigctld / rotctld)"
+    need_sudo apt-get install -y --no-install-recommends libhamlib-utils || warn "Could not install libhamlib-utils (Hamlib radios will not work; native drivers are unaffected)"
   fi
 fi
 
