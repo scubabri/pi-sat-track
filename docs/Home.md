@@ -40,6 +40,7 @@ This wiki is the operator guide. Source and installers live in the [repository](
 11. [Uninstall (Windows, macOS)](#11-uninstall-windows)
 12. [Troubleshooting](#12-troubleshooting)
 13. [Planned wiki pages](#13-planned-wiki-pages)
+14. [Advanced setup](#14-advanced-setup)
 
 ---
 
@@ -492,6 +493,32 @@ Placeholder index for pages to expand with screenshots:
 | [FT-817 notes](FT-817) | FM split, UL lock, limitations |
 | [Profiles and offsets](Profiles) | Saving setups, fine tune |
 | [Troubleshooting](Troubleshooting) | Expanded FAQ |
+
+## 14. Advanced setup
+
+### 14.1 Running rigctld yourself (radio on another computer)
+
+The rigctld that Pi Sat Track starts for a **Hamlib serial** radio listens on `127.0.0.1` only (ports 4534 /
+4535) and cannot be reached from the network. To drive a radio that is plugged into another computer
+(e.g. a Windows / Mac PC that also runs WSJT-X), run rigctld there yourself and point Pi Sat Track at it:
+
+1. On the PC with the radio, install Hamlib (Windows: `hamlib-w64-<version>.zip` from GitHub; Mac:
+   `brew install hamlib`) and start rigctld:
+
+   ```
+   rigctld -m <model> -r <serial port> -s <baud> -T 0.0.0.0 -t 4532
+   ```
+
+   e.g. IC-705 on Windows: `rigctld -m 3085 -r COM17 -s 19200 -T 0.0.0.0 -t 4532`
+   (`rigctl -l` lists model numbers). Allow TCP 4532 in that PC's firewall for your local network only;
+   rigctld has no authentication.
+2. On the PC, point WSJT-X at the same rigctld: *Rig = Hamlib NET rigctl*, *Network Server =
+   `127.0.0.1:4532`*, Doppler tracking off, Split = None.
+3. On the Pi: Configure → Radio → **Connection = Hamlib/rigctl TCP**, endpoint `<PC IP>:4532`.
+   Pi Sat Track then handles Doppler over the network; the serial port stays with the PC.
+
+rigctld accepts several clients at once, so WSJT-X and Pi Sat Track can share it. For start at boot use a
+systemd service (Linux), a launchd agent (Mac) or a scheduled task / shortcut (Windows).
 
 ---
 
