@@ -49,6 +49,23 @@ const platform = require("./lib/platform");
 const profiles = require("./lib/profiles");
 const backup = require("./lib/backup");
 const connectionTest = require("./lib/connection-test");
+const hamlib = require("./lib/hamlib");
+
+/** /api/hamlib/* — JSON in / out. Update / rollback are POST (start a job; poll status). */
+function handleHamlib(req, res, urlPath, qs) {
+  const json = (code, o) => {
+    res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    res.end(JSON.stringify(o));
+  };
+  const fail = (e) => json(500, { ok: false, error: e && e.message ? e.message : String(e) });
+  const what = urlPath.slice("/api/hamlib/".length);
+  if (what === "models" && req.method === "GET") return hamlib.listModels({ force: qs.get("reload") === "1" }).then((r) => json(200, r), fail);
+  if (what === "rotors" && req.method === "GET") return hamlib.listRotors().then((r) => json(200, r), fail);
+  if (what === "caps" && req.method === "GET") return hamlib.caps(qs.get("model")).then((r) => json(200, { ok: true, caps: r }), fail);
+  if (what === "status" && req.method === "GET") return hamlib.status({ checkLatest: qs.get("latest") === "1" }).then((r) => json(200, r), fail);
+  if ((what === "update" || what === "rollback") && req.method === "POST") return json(200, hamlib.startJob(what));
+  return json(404, { ok: false, error: "unknown Hamlib request" });
+}
 const logbook = require("./lib/logbook");
 const wsjtxListener = require("./lib/wsjtx-listener");
 const wsjtxDecodes = require("./lib/wsjtx-decodes");
@@ -506,6 +523,9 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
     return res.end(JSON.stringify({ version: APP_VERSION, source: APP_VERSION_INFO.source }));
   }
+
+  // Hamlib (lib/hamlib): model list, caps, version / update, rigctld status.
+  if (urlPath.startsWith("/api/hamlib/")) return handleHamlib(req, res, urlPath, new URLSearchParams(q));
 
   // Configure → Station → Backup & restore (lib/backup.js, js/settings-backup.js).
   if (urlPath === "/api/backup" && req.method === "GET") {

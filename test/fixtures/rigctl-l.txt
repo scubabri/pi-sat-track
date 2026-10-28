@@ -1,0 +1,15 @@
+ Rig #  Mfg                    Model                   Version         Status      Macro
+     1  Hamlib                 Dummy                   20240709.0      Stable      RIG_MODEL_DUMMY
+     2  Hamlib                 NET rigctl              20240418.0      Stable      RIG_MODEL_NETRIGCTL
+     4  FLRig                                          20250107.0      Stable      RIG_MODEL_FLRIG
+     6  Hamlib                 Dummy No VFO            20240409.0      Stable      RIG_MODEL_DUMMY_NOVFO
+  1035  Yaesu                  FT-991                  20241118.18     Stable      RIG_MODEL_FT991
+  1041  Yaesu                  FT-818                  20221117.0      Stable      RIG_MODEL_FT818
+  2014  Kenwood                TS-2000                 20250107.2      Stable      RIG_MODEL_TS2000
+  2036  FlexRadio              6xxx                    20240829.0      Stable      RIG_MODEL_F6K
+  3073  Icom                   IC-7300                 20250107.14     Stable      RIG_MODEL_IC7300
+  3081  Icom                   IC-9700                 20250107.20     Stable      RIG_MODEL_IC9700
+  3085  Icom                   IC-705                  20250107.11     Stable      RIG_MODEL_IC705
+ 23005  FlexRadio              SmartSDR Slice A        20240814.0      Stable      RIG_MODEL_SMARTSDR_A
+ 25008  mRS                    miniVNA                 20190817.0      Stable      RIG_MODEL_MINIVNA
+ 29001  ADAT www.adat.ch       ADT-200A                20230927.0      Stable      RIG_MODEL_ADT_200A

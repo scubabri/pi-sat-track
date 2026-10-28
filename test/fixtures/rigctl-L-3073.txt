@@ -1,0 +1,3 @@
+civaddr: "Transceiver's CI-V address"
+	Default: 0, Value: 148
+	Range: 0..255, step 1.0
