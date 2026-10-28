@@ -255,8 +255,8 @@ begin
   RegWriteStringValue(HKLM64, OurKey, 'NodeInstalledBySetup', NodeVersion);
 end;
 
-{ Stop a running Pi Sat Track (node server.js from {app}) and the rigctld it started,
-  using win-network.ps1 -Action Stop (exit 10 = something was running). Waits for exit. }
+// Stop a running Pi Sat Track (node server.js from the app dir) and the rigctld it started,
+// using win-network.ps1 -Action Stop (exit 10 = something was running). Waits for exit.
 function StopRunningApp(const Ps, Why: string): Boolean;
 var
   Rc: Integer;
@@ -285,7 +285,7 @@ var
   Ps: string;
 begin
   Result := '';
-  { Stop a running Pi Sat Track first (this build's script, extracted to {tmp}). }
+  // Stop a running Pi Sat Track first (this build's script, extracted to tmp).
   try
     ExtractTemporaryFile('stop-pi-sat-track.ps1');
     Ps := ExpandConstant('{tmp}\stop-pi-sat-track.ps1');

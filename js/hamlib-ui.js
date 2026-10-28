@@ -38,7 +38,6 @@
       '<div><label for="' + p + '-handshake">Handshake</label>' + sel("handshake", opt("", "model default") + opt("None", "None") + opt("XONXOFF", "XON/XOFF") + opt("Hardware", "Hardware (RTS/CTS)")) + "</div></div>" +
       '<div class="form-row-2"><div><label for="' + p + '-dtr">DTR</label>' + sel("dtr", opt("Unset", "leave (Unset)") + opt("ON", "ON") + opt("OFF", "OFF"), "Some interfaces power the radio's CAT from DTR / RTS; some key PTT on them (then OFF)") + "</div>" +
       '<div><label for="' + p + '-rts">RTS</label>' + sel("rts", opt("Unset", "leave (Unset)") + opt("ON", "ON") + opt("OFF", "OFF")) + "</div></div>" +
-      '<div class="form-row"><label for="' + p + '-port">rigctld TCP port</label><input type="number" id="' + p + '-port" min="1024" max="65535" placeholder="auto (4534; 2nd radio 4535)" title="Local port of the rigctld Pi Sat Track starts (127.0.0.1 only). WSJT-X: Rig = Hamlib NET rigctl, Network Server = 127.0.0.1:this port." /></div>' +
       "</details>" +
       '<p class="form-hint hamlib-run" id="' + p + '-run"></p>' +
       '<div class="hamlib-ver"><span class="hamlib-ver-text">Hamlib: checking…</span> ' +
@@ -180,7 +179,6 @@
       hamlibHandshake: v("handshake"),
       hamlibDtr: v("dtr") || "Unset",
       hamlibRts: v("rts") || "Unset",
-      hamlibPort: parseInt(v("port"), 10) || null,
     });
   }
 
@@ -200,7 +198,6 @@
     $(p + "-handshake").value = h ? d.hamlibHandshake || "" : "";
     $(p + "-dtr").value = h ? d.hamlibDtr || "Unset" : "Unset";
     $(p + "-rts").value = h ? d.hamlibRts || "Unset" : "Unset";
-    $(p + "-port").value = h && d.hamlibPort ? d.hamlibPort : "";
     if (h) fillMfgs(side, d.hamlibModel);
   }
 
@@ -239,9 +236,10 @@
           (r && r.ok ? "\n" + (r.message || "Hamlib " + (r.version || "") + " ready") + (r.note ? " — " + r.note : "") : "");
       } else pre.hidden = true;
       const runEl = b.querySelector(".hamlib-run");
-      const ds = (st.daemons || []).map((x) => "rigctld " + x.state + " on 127.0.0.1:" + x.port + (x.error ? " — " + x.error : "") + (x.restarts ? " · " + x.restarts + " restarts" : ""));
+      const ds = (st.daemons || []).map((x) => "rigctld " + x.state + " on " + (st.net && st.net.share ? "0.0.0.0" : "127.0.0.1") + ":" + x.port + (x.error ? " — " + x.error : "") + (x.restarts ? " · " + x.restarts + " restarts" : ""));
       if (ds.length) runEl.textContent = ds.join(" · ");
     });
+    renderNet(st);
     if (st.sourceBuild && !document.querySelector(".hamlib-src")) {
       document.querySelectorAll(".hamlib-ver").forEach((v) =>
         v.insertAdjacentHTML("afterend", '<details class="hamlib-src"><summary>' + esc(st.sourceBuild.label) + "</summary><pre>" + esc(st.sourceBuild.commands.join("\n")) + "</pre></details>"),
@@ -280,6 +278,62 @@
       .catch((e) => alert(e.message));
   }
 
+  // ---- Configure → Station: "Share rigctld on network" (config.hamlibNet) ----
+  function injectNet() {
+    if ($("cfg-hamlib-net")) return;
+    const units = $("cfg-units");
+    const row = units && units.closest(".form-row, div");
+    if (!row) return;
+    row.insertAdjacentHTML(
+      "afterend",
+      '<div class="form-row" id="cfg-hamlib-net">' +
+        '<label class="cfg-check"><input type="checkbox" id="cfg-hamlib-share" /> Share rigctld on network (Hamlib serial radios)</label>' +
+        '<div class="form-row-2"><div><label for="cfg-hamlib-port-ul">rigctld port — main / UL radio</label><input type="number" id="cfg-hamlib-port-ul" min="1024" max="65535" placeholder="4534" /></div>' +
+        '<div><label for="cfg-hamlib-port-dl">rigctld port — DL radio</label><input type="number" id="cfg-hamlib-port-dl" min="1024" max="65535" placeholder="4535" /></div></div>' +
+        '<p class="form-hint" id="cfg-hamlib-net-hint"></p></div>',
+    );
+    $("cfg-hamlib-share").addEventListener("change", () => renderNet(lastStatus));
+    ["ul", "dl"].forEach((k) => $("cfg-hamlib-port-" + k).addEventListener("input", () => renderNet(lastStatus)));
+  }
+  let lastStatus = null;
+  function readNet() {
+    if (!$("cfg-hamlib-net")) return undefined;
+    return {
+      share: !!$("cfg-hamlib-share").checked,
+      portUl: parseInt($("cfg-hamlib-port-ul").value, 10) || 4534,
+      portDl: parseInt($("cfg-hamlib-port-dl").value, 10) || 4535,
+    };
+  }
+  function fillNet(n) {
+    injectNet();
+    if (!$("cfg-hamlib-net")) return;
+    n = n || {};
+    $("cfg-hamlib-share").checked = n.share === true;
+    $("cfg-hamlib-port-ul").value = n.portUl || 4534;
+    $("cfg-hamlib-port-dl").value = n.portDl || 4535;
+    renderNet(lastStatus);
+    refreshStatus(false);
+  }
+  function renderNet(st) {
+    if (st) lastStatus = st;
+    const h = $("cfg-hamlib-net-hint");
+    if (!h) return;
+    const n = readNet();
+    const ips = (lastStatus && lastStatus.net && lastStatus.net.lanIps) || [];
+    const win = lastStatus && lastStatus.net && lastStatus.net.platform === "win32";
+    const where = (port) => (n.share ? (ips.length ? ips : ["<this computer's IP>"]).map((ip) => ip + ":" + port).join(" or ") : "127.0.0.1:" + port + " (this computer only)");
+    h.innerHTML =
+      "Main / UL radio: <b>" + esc(where(n.portUl)) + "</b> · DL radio (own serial port): <b>" + esc(where(n.portDl)) + "</b><br>" +
+      (n.share
+        ? "rigctld has <b>no password</b>: use on your local network only. "
+        : "Off: rigctld listens on 127.0.0.1 only. ") +
+      "In WSJT-X set Rig = <b>Hamlib NET rigctl</b>, Network Server = the address above, and turn its Doppler tracking and Split off so it does not fight our Doppler. Saving restarts rigctld." +
+      (win && n.share && (n.portUl < 4534 || n.portUl > 4535 || n.portDl < 4534 || n.portDl > 4535)
+        ? " <b>Windows Firewall:</b> setup opened TCP 4534–4535 only; allow other ports yourself."
+        : "");
+  }
+
   inject();
-  window.hamlibUI = { read, fill, visible, refreshStatus, loadModels };
+  injectNet();
+  window.hamlibUI = { read, fill, visible, refreshStatus, loadModels, readNet, fillNet };
 })();

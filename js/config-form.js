@@ -666,6 +666,7 @@ function readFormConfig() {
       const m = val("cfg-log-method") || "off";
       return ["off", "adif", "udp"].indexOf(m) >= 0 ? m : "off";
     })(),
+    hamlibNet: window.hamlibUI && window.hamlibUI.readNet ? window.hamlibUI.readNet() : undefined,
     logAmsatHeard: (function () {
       const el = document.getElementById("cfg-log-amsat-heard");
       return el ? !!el.checked : true;
@@ -852,6 +853,7 @@ function fillForm(cfg) {
   if (stopN) stopN.checked = stop === "north";
   if (stopS) stopS.checked = stop === "south";
   updateRotorFormVisibility();
+  if (window.hamlibUI && window.hamlibUI.fillNet) window.hamlibUI.fillNet(d.hamlibNet);
   setVal("cfg-log-method", d.logMethod || "off");
   const amsatHeard = document.getElementById("cfg-log-amsat-heard");
   if (amsatHeard) amsatHeard.checked = d.logAmsatHeard !== false;

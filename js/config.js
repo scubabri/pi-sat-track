@@ -108,6 +108,7 @@ function sendEndpointsToServer(cfg) {
       rotorAzStop: cfg.rotorAzStop || "north",
       logMethod: cfg.logMethod || "off",
       logAmsatHeard: cfg.logAmsatHeard !== false,
+      hamlibNet: cfg.hamlibNet || { share: false, portUl: 4534, portDl: 4535 },
       logAdifPath: cfg.logAdifPath || "~/.rpitrack/pi-sat-track.adi",
       logUdpHost: cfg.logUdpHost || "127.0.0.1",
       logUdpPort: cfg.logUdpPort != null ? cfg.logUdpPort : 2237,

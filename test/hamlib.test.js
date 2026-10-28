@@ -259,11 +259,13 @@ test("config: a Hamlib-serial side is rigctl over 127.0.0.1:<hamlibPort> for the
   // two radios on two serial ports: two rigctld, UL on 4535
   config.applyEndpoints({ singleRadio: false, radioUl: { transport: "hamlib", hamlibModel: 1035, serialDevice: "/dev/ttyUSB1", serialBaud: 38400 }, radioDl: side });
   const two = Array.from(hamlib.wantedSpecs().values());
-  assert.deepStrictEqual(two.map((x) => [x.sides.join(), x.port]), [["dl", 4534], ["ul", 4535]]);
-  assert.strictEqual(config.RIGCTL_UL_PORT, 4535);
-  // both Hamlib on the SAME port: one rigctld, one link
-  config.applyEndpoints({ singleRadio: false, radioUl: Object.assign({}, side, { hamlibPort: 4535 }), radioDl: side });
+  assert.deepStrictEqual(two.map((x) => [x.sides.join(), x.port]), [["dl", 4535], ["ul", 4534]], "main/UL 4534, DL 4535");
+  assert.strictEqual(config.RIGCTL_UL_PORT, 4534);
+  assert.strictEqual(config.RIGCTL_PORT, 4535);
+  // both Hamlib on the SAME serial port: one rigctld (4534), one link
+  config.applyEndpoints({ singleRadio: false, radioUl: Object.assign({}, side), radioDl: side });
   assert.strictEqual(hamlib.wantedSpecs().size, 1);
+  assert.strictEqual(Array.from(hamlib.wantedSpecs().values())[0].port, 4534);
   assert.strictEqual(config.RIGCTL_UL_PORT, 0);
   // native serial side: nothing for Hamlib to start
   config.applyEndpoints({ singleRadio: true, radioUl: { transport: "serial", serialMake: "icom", serialModel: "ic-9700", serialDevice: "/dev/ttyUSB0" } });
@@ -287,6 +289,36 @@ test("config: a model with a built-in driver stays Hamlib under Hamlib serial; n
   config.applyEndpoints({ singleRadio: true, radioUl: { transport: "serial", serialMake: "icom", serialModel: "ic-705", serialDevice: "/dev/ttyACM0" } });
   assert.strictEqual(config.RADIO_UL.transport, "serial");
   assert.strictEqual(hamlib.wantedSpecs().size, 0);
+});
+
+test("share rigctld on network: -T 0.0.0.0 with the chosen ports; off = 127.0.0.1", () => {
+  const config = require("../lib/config");
+  const hamlib = require("../lib/hamlib");
+  const a = { transport: "hamlib", hamlibModel: 3085, serialDevice: "COM5", serialBaud: 19200 };
+  const b = { transport: "hamlib", hamlibModel: 3081, serialDevice: "COM7", serialBaud: 19200 };
+  const argsOf = () => Object.fromEntries(Array.from(hamlib.wantedSpecs().values()).map((w) => [w.sides.join(), w.args]));
+  const tt = (args) => args.slice(args.indexOf("-T"));
+  // default: off, 4534 / 4535, loopback only
+  config.applyEndpoints({ singleRadio: false, radioUl: a, radioDl: b, hamlibNet: { share: false } });
+  assert.deepStrictEqual(tt(argsOf().ul), ["-T", "127.0.0.1", "-t", "4534"]);
+  assert.deepStrictEqual(tt(argsOf().dl), ["-T", "127.0.0.1", "-t", "4535"]);
+  // on, custom ports
+  config.applyEndpoints({ singleRadio: false, radioUl: a, radioDl: b, hamlibNet: { share: true, portUl: 4600, portDl: 4601 } });
+  assert.deepStrictEqual(tt(argsOf().ul), ["-T", "0.0.0.0", "-t", "4600"]);
+  assert.deepStrictEqual(tt(argsOf().dl), ["-T", "0.0.0.0", "-t", "4601"]);
+  assert.strictEqual(config.RIGCTL_UL_HOST, "127.0.0.1", "our driver still dials loopback");
+  assert.strictEqual(config.RIGCTL_UL_PORT, 4600);
+  assert.strictEqual(config.RIGCTL_PORT, 4601);
+  // single radio = main port; args change => ensure() restarts (argsKey differs)
+  config.applyEndpoints({ singleRadio: true, radioUl: a, radioDl: a, hamlibNet: { share: true, portUl: 4534, portDl: 4535 } });
+  const one = Array.from(hamlib.wantedSpecs().values());
+  assert.strictEqual(one.length, 1);
+  assert.deepStrictEqual(tt(one[0].args), ["-T", "0.0.0.0", "-t", "4534"]);
+  config.applyEndpoints({ hamlibNet: { share: false } });
+  assert.notStrictEqual(Array.from(hamlib.wantedSpecs().values())[0].argsKey, one[0].argsKey);
+  // bad ports fall back to defaults
+  assert.deepStrictEqual(config.normalizeHamlibNet({ share: "yes", portUl: 80, portDl: 99999 }), { share: false, portUl: 4534, portDl: 4535 });
+  config.applyEndpoints({ hamlibNet: { share: false, portUl: 4534, portDl: 4535 } });
 });
 
 test("update helpers: versions, sums file, per-OS plan, source build is labelled manual", () => {
