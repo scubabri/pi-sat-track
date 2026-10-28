@@ -5,7 +5,7 @@
  * (from the installed Hamlib's `rigctl -l`, with its status), serial port /
  * baud / CI-V, serial options, rigctld port, plus the Hamlib version line with
  * Update / Rollback / Reload models. The selected model always runs through
- * rigctld; a built-in driver is only mentioned as a hint (Native serial).
+ * rigctld.
  * config-form.js calls hamlibUI.read / fill / visible.
  */
 (function () {
@@ -25,7 +25,6 @@
       '<div id="' + p + '-block" class="hamlib-block" hidden>' +
       '<div class="form-row"><label for="' + p + '-mfg">Manufacturer</label>' + sel("mfg", opt("", "Loading Hamlib models…")) + "</div>" +
       '<div class="form-row"><label for="' + p + '-model">Model</label>' + sel("model", "", "Hamlib model (status from Hamlib: Stable / Beta / Alpha / Untested)") + "</div>" +
-      '<div class="form-hint hamlib-native" id="' + p + '-native" hidden></div>' +
       '<div class="form-row"><label for="' + p + '-device">Serial device</label>' +
       '<select id="' + p + '-device" class="cfg-select cfg-serial-device"></select>' +
       '<input type="text" id="' + p + '-device-custom" class="cfg-serial-custom" placeholder="/dev/ttyUSB0 or COM5" autocomplete="off" spellcheck="false" hidden /></div>' +
@@ -120,29 +119,18 @@
         const sel = $(p + "-model");
         sel.innerHTML =
           opt("", "— choose the model —") +
-          (g ? g.models.map((m) => opt(m.id, m.model + " · " + m.status + (m.native ? " · built-in driver available" : "") + " (#" + m.id + ")")).join("") : "");
+          (g ? g.models.map((m) => opt(m.id, m.model + " · " + m.status + " (#" + m.id + ")")).join("") : "");
         sel.value = modelId && byId.has(String(modelId)) && g && g.models.some((m) => String(m.id) === String(modelId)) ? String(modelId) : "";
         onModel(side, user);
       });
   }
 
-  /** Model picked: native-driver note, CI-V row, and (user change) defaults from --dump-caps. */
+  /** Model picked: CI-V row, and (user change) defaults from --dump-caps. */
   function onModel(side, user) {
     const p = "cfg-" + side + "-hamlib";
     const m = byId.get($(p + "-model").value);
     const icom = !!(m && /icom/i.test(m.mfg));
     $(p + "-civ-row").hidden = !icom;
-    const note = $(p + "-native");
-    // Informational only: the Hamlib model is always run through rigctld.
-    if (m && m.native) {
-      note.hidden = false;
-      note.innerHTML =
-        "Built-in driver available: " + esc(m.native.label) + ". Hamlib (rigctld) will be used as selected; " +
-        (m.native.transport === "tcp" ? "Connection = TCP (SmartSDR CAT)" : "Connection = Native serial") + " is also an option.";
-    } else {
-      note.hidden = true;
-      note.innerHTML = "";
-    }
     if (!user || !m) return;
     fetch("/api/hamlib/caps?model=" + encodeURIComponent(m.id), { cache: "no-store" })
       .then((r) => r.json())
