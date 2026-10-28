@@ -44,7 +44,8 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayName={#AppName}
-UninstallDisplayIcon={sys}\shell32.dll,13
+UninstallDisplayIcon={app}\pi-sat-track.ico
+SetupIconFile=pi-sat-track.ico
 VersionInfoVersion=0.1.0.0
 VersionInfoTextVersion={#AppLabel}
 CloseApplications=yes
@@ -55,18 +56,22 @@ Source: "{#SrcRoot}\*"; DestDir: "{app}"; \
   Excludes: "\.git,\.github,\.gitattributes,\.gitignore,\dist,\installer,\test,\tools,\*.run,\*.sh,\*.log"; \
   Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "start-sat-tracker.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "pi-sat-track.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; This build's stop logic, run from {tmp} before files are replaced (PrepareToInstall).
 Source: "{#SrcRoot}\win-network.ps1"; DestName: "stop-pi-sat-track.ps1"; Flags: dontcopy
 
 [INI]
 Filename: "{app}\Open Pi Sat Track.url"; Section: "InternetShortcut"; Key: "URL"; String: "http://localhost:3000/"
+Filename: "{app}\Open Pi Sat Track.url"; Section: "InternetShortcut"; Key: "IconFile"; String: "{app}\pi-sat-track.ico"
+Filename: "{app}\Open Pi Sat Track.url"; Section: "InternetShortcut"; Key: "IconIndex"; String: "0"
 
 [Icons]
-Name: "{group}\Start Pi Sat Track"; Filename: "{app}\start-sat-tracker.bat"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 13
+Name: "{group}\Start Pi Sat Track"; Filename: "{app}\start-sat-tracker.bat"; WorkingDir: "{app}"; IconFilename: "{app}\pi-sat-track.ico"; \
+  AppUserModelID: "PiSatTrack.Server"
 Name: "{group}\Stop Pi Sat Track"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\win-network.ps1"" -Action Stop -AppDir ""{app}"""; WorkingDir: "{app}"
-Name: "{group}\Open Pi Sat Track"; Filename: "{app}\Open Pi Sat Track.url"
-Name: "{group}\Uninstall Pi Sat Track"; Filename: "{uninstallexe}"
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\win-network.ps1"" -Action Stop -AppDir ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\pi-sat-track.ico"
+Name: "{group}\Open Pi Sat Track"; Filename: "{app}\Open Pi Sat Track.url"; IconFilename: "{app}\pi-sat-track.ico"
+Name: "{group}\Uninstall Pi Sat Track"; Filename: "{uninstallexe}"; IconFilename: "{app}\pi-sat-track.ico"
 
 [Run]
 ; Started through 64-bit cmd.exe ({sys} in 64-bit mode): a shellexec from 32-bit setup
