@@ -23,6 +23,14 @@ const MODELS = {
   ],
 };
 
+const ROTORS = {
+  ok: true,
+  groups: [
+    { mfg: "Dummy", models: [{ id: 1, mfg: "Dummy", model: "Dummy", status: "Stable" }] },
+    { mfg: "Yaesu", models: [{ id: 601, mfg: "Yaesu", model: "GS-232A", status: "Beta" }, { id: 603, mfg: "Yaesu", model: "GS-232B", status: "Stable" }] },
+  ],
+};
+
 function el() {
   const e = {
     _v: "", _opts: null, hidden: false, textContent: "", checked: false, style: {}, classList: { add() {}, remove() {}, toggle() {} },
@@ -51,7 +59,7 @@ async function load() {
   const sb = {
     document, console, Map, Promise, setTimeout, clearTimeout, setInterval: () => 0, location: { host: "x", protocol: "http:" },
     WebSocket: function () { return { addEventListener() {} }; },
-    fetch: (url) => { if (/models/.test(url)) fetches++; return Promise.resolve({ json: () => Promise.resolve(/models/.test(url) ? MODELS : { ok: false }) }); },
+    fetch: (url) => { if (/models/.test(url)) fetches++; return Promise.resolve({ json: () => Promise.resolve(/models/.test(url) ? MODELS : /rotors/.test(url) ? ROTORS : { ok: false }) }); },
   };
   sb.window = sb;
   vm.createContext(sb);
@@ -121,4 +129,26 @@ test("Station rigctld ports: no Hamlib radio -> both grayed out with a clear not
   assert.strictEqual($("cfg-hamlib-port-ul").disabled, true);
   assert.strictEqual($("cfg-hamlib-port-dl").disabled, true);
   assert.match($("cfg-hamlib-net-hint").innerHTML, /No radio uses Hamlib serial yet/);
+});
+
+test("Hamlib rotor: saved model 603 round-trips; nothing chosen saves null (no first entry)", async () => {
+  const { ui, $ } = await load();
+  $("cfg-rotor-type").value = "hamlib";
+  ui.fillRotor(603);
+  await tick();
+  assert.strictEqual($("cfg-rotor-hamlib").hidden, false);
+  assert.strictEqual($("cfg-rotor-hamlib-mfg").value, "Yaesu");
+  assert.strictEqual($("cfg-rotor-hamlib-model").value, "603");
+  assert.strictEqual(ui.readRotor(), 603);
+  const r2 = await load();
+  r2.$("cfg-rotor-type").value = "hamlib";
+  r2.ui.fillRotor(null);
+  await tick();
+  assert.strictEqual(r2.$("cfg-rotor-hamlib-model").value, "");
+  assert.strictEqual(r2.ui.readRotor(), null);
+  const r3 = await load();
+  r3.$("cfg-rotor-type").value = "rt21";
+  r3.ui.fillRotor(603);
+  await tick();
+  assert.strictEqual(r3.$("cfg-rotor-hamlib").hidden, true, "native rotor: Hamlib block hidden");
 });

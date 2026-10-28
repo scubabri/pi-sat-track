@@ -641,6 +641,7 @@ function readFormConfig() {
       );
     })(),
     rotorBaud: parseInt(val("cfg-rotor-baud"), 10) || 4800,
+    rotorHamlibModel: window.hamlibUI && window.hamlibUI.readRotor ? window.hamlibUI.readRotor() : undefined,
     rotorParkAz: parseFloat(val("cfg-rotor-park-az")) || 0,
     rotorParkEl: parseFloat(val("cfg-rotor-park-el")) || 0,
     rotorMinEl: (function () {
@@ -828,6 +829,7 @@ function fillForm(cfg) {
       hostSerialDefault("/dev/ttyUSB1"),
   );
   setVal("cfg-rotor-baud", d.rotorBaud != null ? d.rotorBaud : 4800);
+  if (window.hamlibUI && window.hamlibUI.fillRotor) window.hamlibUI.fillRotor(d.rotorHamlibModel);
   setVal("cfg-rotor-park-az", d.rotorParkAz != null ? d.rotorParkAz : 0);
   setVal("cfg-rotor-park-el", d.rotorParkEl != null ? d.rotorParkEl : 0);
   setVal(

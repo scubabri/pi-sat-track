@@ -388,7 +388,83 @@
     if (/^cfg-(ul|dl)-(transport|hamlib-device|hamlib-model)$|^cfg-single-radio$/.test(id)) renderNet(null);
   });
 
+  // ---- Configure → Rotor → Controller "Hamlib serial (rotctld)": Manufacturer / Model from `rotctl -l` ----
+  let rotP = null;
+  let rotById = new Map();
+  let rotPending = null;
+  function injectRotor() {
+    const type = $("cfg-rotor-type");
+    if (!type || $("cfg-rotor-hamlib")) return;
+    const row = type.closest(".form-row") || type.parentElement;
+    if (!row) return;
+    row.insertAdjacentHTML(
+      "afterend",
+      '<div class="form-row" id="cfg-rotor-hamlib" hidden><div class="form-row-2">' +
+        '<div><label for="cfg-rotor-hamlib-mfg">Manufacturer</label><select id="cfg-rotor-hamlib-mfg" class="cfg-select"></select></div>' +
+        '<div><label for="cfg-rotor-hamlib-model">Model</label><select id="cfg-rotor-hamlib-model" class="cfg-select"></select></div></div>' +
+        '<p class="form-hint" id="cfg-rotor-hamlib-hint">rotctld on 127.0.0.1:4537.</p></div>',
+    );
+    type.addEventListener("change", rotorVisible);
+    $("cfg-rotor-hamlib-mfg").addEventListener("change", () => fillRotModels(null));
+  }
+  function loadRotors() {
+    if (!rotP)
+      rotP = fetch("/api/hamlib/rotors", { cache: "no-store" })
+        .then((r) => r.json())
+        .catch((e) => ({ ok: false, error: e.message, groups: [] }))
+        .then((r) => {
+          rotById = new Map();
+          (r.groups || []).forEach((g) => g.models.forEach((m) => rotById.set(String(m.id), m)));
+          if (!r.ok) rotP = null;
+          return r;
+        });
+    return rotP;
+  }
+  function rotorVisible() {
+    const b = $("cfg-rotor-hamlib");
+    if (!b) return;
+    b.hidden = ($("cfg-rotor-type") || {}).value !== "hamlib";
+    if (!b.hidden) fillRotMfgs(rotPending);
+  }
+  function fillRotMfgs(modelId) {
+    return loadRotors().then((r) => {
+      const mfg = $("cfg-rotor-hamlib-mfg");
+      if (!r.ok) {
+        mfg.innerHTML = opt("", r.error || "Hamlib not installed");
+        $("cfg-rotor-hamlib-model").innerHTML = modelId ? opt(modelId, "model " + modelId) : opt("", "—");
+        return;
+      }
+      const want = rotById.get(String(modelId || ""));
+      mfg.innerHTML = opt("", "— manufacturer —") + r.groups.map((g) => opt(g.mfg, g.mfg + " (" + g.models.length + ")")).join("");
+      mfg.value = want ? want.mfg : "";
+      fillRotModels(modelId);
+    });
+  }
+  function fillRotModels(modelId) {
+    rotP &&
+      rotP.then((r) => {
+        const g = (r.groups || []).find((x) => x.mfg === $("cfg-rotor-hamlib-mfg").value);
+        const sel = $("cfg-rotor-hamlib-model");
+        sel.innerHTML = opt("", "— choose the model —") + (g ? g.models.map((m) => opt(m.id, m.model + " · " + m.status + " (#" + m.id + ")")).join("") : "");
+        sel.value = modelId && g && g.models.some((m) => String(m.id) === String(modelId)) ? String(modelId) : "";
+      });
+  }
+  /** config-form: rotorHamlibModel (null = not chosen; never a silent first entry). */
+  function readRotor() {
+    const sel = $("cfg-rotor-hamlib-model");
+    if (!sel) return undefined;
+    const v = parseInt(sel.value, 10);
+    if (v > 0) return v;
+    return rotById.size ? null : parseInt(rotPending, 10) || null;
+  }
+  function fillRotor(model) {
+    injectRotor();
+    rotPending = parseInt(model, 10) > 0 ? parseInt(model, 10) : null;
+    rotorVisible();
+  }
+
   inject();
   injectNet();
-  window.hamlibUI = { read, fill, visible, refreshStatus, loadModels, readNet, fillNet };
+  injectRotor();
+  window.hamlibUI = { read, fill, visible, refreshStatus, loadModels, readNet, fillNet, readRotor, fillRotor };
 })();

@@ -3,7 +3,7 @@
   Called by install-win.bat / uninstall-win.bat (as Administrator):
     win-network.ps1 -Action Install     port 80 proxy + firewall rules, print URLs
     win-network.ps1 -Action Uninstall   stop the server, remove proxy + rules
-    win-network.ps1 -Action Stop        stop this app's server (and its rigctld) only;
+    win-network.ps1 -Action Stop        stop this app's server (and its rigctld / rotctld) only;
                                         exit code 10 = something was running
     win-network.ps1 -Action Urls        print the URLs
 
@@ -87,7 +87,8 @@ function Stop-AppServer {
   # Only this app's processes:
   #  - node.exe listening on :AppPort, or running <AppDir>\server.js
   #  - rigctld.exe the app started: under %USERPROFILE%\.rpitrack\hamlib, or with our
-  #    own arguments "-T 127.0.0.1 -t 4534/4535". A user's own rigctld (e.g. port 4532,
+  #    own arguments "-T 127.0.0.1 -t 4534/4535"; rotctld.exe likewise ("-t 4537").
+  #    A user's own rigctld / rotctld (e.g. port 4532 / 4533,
   #    or Program Files without our args) is left alone.
   # Waits for them to exit. Sets $script:StoppedCount.
   $ids = @()
@@ -125,13 +126,15 @@ function Stop-AppServer {
   }
   $hamDir = Join-Path $UserHome '.rpitrack\hamlib'
   $hamEsc = [regex]::Escape($hamDir)
-  foreach ($p in (Get-CimInstance Win32_Process -Filter "Name='rigctld.exe'" -ErrorAction SilentlyContinue)) {
+  # rigctld (4534/4535) and rotctld (4537) the app started; a user's own (e.g. 4532 / 4533) is left alone.
+  foreach ($p in (Get-CimInstance Win32_Process -Filter "Name='rigctld.exe' OR Name='rotctld.exe'" -ErrorAction SilentlyContinue)) {
     $ours = ($p.ExecutablePath -and $p.ExecutablePath -match ('^' + $hamEsc)) -or
-            ($p.CommandLine -match '-T\s+(127\.0\.0\.1|0\.0\.0\.0)\s+-t\s+453[45]\b') -or
+            ($p.Name -eq 'rigctld.exe' -and $p.CommandLine -match '-T\s+(127\.0\.0\.1|0\.0\.0\.0)\s+-t\s+453[45]\b') -or
+            ($p.Name -eq 'rotctld.exe' -and $p.CommandLine -match '-T\s+127\.0\.0\.1\s+-t\s+4537\b') -or
             ($nodeIds -contains $p.ParentProcessId)
     if ($ours) {
       Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
-      Write-Host "  stopped Pi Sat Track rigctld (PID $($p.ProcessId)): $($p.CommandLine)"
+      Write-Host "  stopped Pi Sat Track $($p.Name -replace '\.exe$','') (PID $($p.ProcessId)): $($p.CommandLine)"
       $stopped += $p.ProcessId
     }
   }
