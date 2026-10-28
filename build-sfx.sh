@@ -134,6 +134,14 @@ else
 fi
 APP="${DEST}/pi-sat-track"
 
+# Per-OS files: install only this platform's installer files (paths relative to the app folder).
+# Runtime files (server.js, lib/, js/, ...) are shared and always installed.
+WIN_ONLY="install-win.bat uninstall-win.bat open-when-ready.ps1 win-network.ps1 installer"
+MAC_ONLY="install-mac.sh uninstall-mac.sh"
+PI_ONLY="install-pi.sh"
+REPO_ONLY=".gitattributes"
+if [ "$PLATFORM" = mac ]; then DROP="$WIN_ONLY $PI_ONLY $REPO_ONLY"; else DROP="$WIN_ONLY $MAC_ONLY $REPO_ONLY"; fi
+
 echo "pi-sat-track ${PI_SAT_TRACK_VERSION}"
 if [ "$PLATFORM" = mac ] && [ -e "${APP}/.git" ]; then
   echo "ERROR: ${APP} is a git checkout; not extracting a release over it." >&2
@@ -142,6 +150,7 @@ if [ "$PLATFORM" = mac ] && [ -e "${APP}/.git" ]; then
 fi
 if [ "$PRINT_ONLY" -eq 1 ]; then
   echo "Would extract to ${APP} and run ${INSTALLER}${1:+ $*}"
+  echo "Skipped (other OS): ${DROP}"
   [ -d "$APP" ] && echo "(existing install there: updated in place; ~/.rpitrack is kept)"
   exit 0
 fi
@@ -154,7 +163,18 @@ fi
 
 mkdir -p "${DEST}"
 echo "Extracting to ${APP} ..."
-tail -n +"${ARCHIVE_LINE}" "$0" | tar -xzf - -C "${DEST}"
+set -f  # DROP holds plain names; no globbing
+EXCL=""
+for f in $DROP; do EXCL="$EXCL --exclude=pi-sat-track/$f"; done
+# shellcheck disable=SC2086
+tail -n +"${ARCHIVE_LINE}" "$0" | tar -xzf - $EXCL -C "${DEST}"
+# An earlier .run left the other OS's files: remove them (never in a git checkout).
+if [ ! -e "${APP}/.git" ]; then
+  for f in $DROP; do
+    [ -e "${APP}/$f" ] && rm -rf "${APP:?}/$f" && echo "  removed ${f} (not used on this OS)"
+  done
+fi
+set +f
 if [ ! -d "${APP}" ]; then
   echo "ERROR: ${APP} missing after extract" >&2
   exit 1

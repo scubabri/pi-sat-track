@@ -97,6 +97,11 @@ that with `./install-mac.sh --update`. `PST_MAC_DEST=<dir>` picks another parent
 folder. For testing, `PST_FORCE_PLATFORM=pi|linux|mac|other` and
 `PST_FORCE_MODEL="..."` override the detection.
 
+**Per-OS files:** each install gets only its own installer files. Pi / Linux skip the Windows files
+(`install-win.bat`, `uninstall-win.bat`, `open-when-ready.ps1`, `win-network.ps1`, `installer/`) and the
+Mac scripts; macOS skips the Windows files and `install-pi.sh`. Leftovers from an earlier `.run` are removed
+(not in a git checkout). Windows `setup.exe` leaves out all `.sh` files. App runtime files are the same everywhere.
+
 ### 3.1 Raspberry Pi / Linux
 
 Distribution is a **zip / self-extracting archive** (not a git clone requirement for alpha testers).
