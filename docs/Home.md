@@ -22,6 +22,7 @@ This wiki is the operator guide. Source and installers live in the [repository](
    - [Radio connection types](#54-radio-connection-types)
    - [Serial ports (COM / tty)](#55-serial-ports-com--tty)
    - [Rotator](#56-rotator)
+   - [Hamlib (rigctld)](#57-hamlib-rigctld)
 6. [Connection tests](#6-connection-tests)
    - [Radio test](#61-radio-test)
    - [Rotator test](#62-rotator-test)
@@ -154,7 +155,8 @@ When enabled on a dual-VFO radio, uplink can use **VFO B** (or the driver's spli
 | **Serial CAT** | Yaesu / Icom / Kenwood over USB-serial |
 | **TCI** | AetherSDR / ExpertSDR WebSocket |
 | **Flex** | SmartSDR CAT TCP |
-| **rigctl** | Hamlib |
+| **TCP → Hamlib NET rigctl** | An rigctld you run yourself (another PC, or shared with other apps) |
+| **Hamlib serial (rigctld)** | Any of Hamlib's ~300 radios over USB-serial — the app starts rigctld for you (see 5.7) |
 | **SDRconnect** | SDRplay SDRconnect WebSocket |
 
 Manufacturer **Other** drivers exist for try-it serial where a specific model driver is not listed yet.
@@ -187,6 +189,45 @@ Options:
 Turn **Antenna OFF** in the UI before running the rotator connection test so the port is free.
 
 ---
+
+### 5.7 Hamlib (rigctld)
+
+Use **Connection = Hamlib serial (rigctld)** for a radio that has no built-in driver here. Pick the
+**Manufacturer**, then the **Model** (the list comes from the installed Hamlib, `rigctl -l`, with each
+model's Hamlib status: Stable / Beta / Alpha / Untested). Models that have a built-in driver (IC-705,
+IC-9700, FT-991/991A, FT-847, FT-817/818, TS-2000, Flex) are marked **built-in driver** and use it unless
+you tick **Use Hamlib (rigctld) anyway**.
+
+Choosing a model fills the serial settings from Hamlib's own defaults (`rigctl --dump-caps`): baud,
+data/stop bits, parity, handshake and, for Icom, the CI-V address. Change them under **Serial options**
+only if your radio's menu differs. DTR / RTS default to *leave (Unset)*.
+
+Hamlib's capabilities also decide how the radio is driven: radios with satellite mode (SATMODE) use
+Main = downlink / Sub = uplink; radios with split use VFO A = downlink / VFO B = uplink; radios without
+split track the downlink only.
+
+**What runs:** when Radio is turned on, the app starts `rigctld` bound to `127.0.0.1` on port **4534**
+(a second radio on a different serial port gets **4535**; the port is settable). It is restarted
+automatically if it exits (1, 2, 5, 10, 30 s back-off) and stopped when Radio is turned off or the profile
+changes. rigctld's messages appear in the server log.
+
+**Install / update Hamlib** (Configure → Radio shows the installed version and whether a newer release exists):
+
+| OS | How |
+|----|-----|
+| Raspberry Pi / Linux | `install-pi.sh` installs `libhamlib-utils` (skip with `SKIP_HAMLIB=1`). **Update** runs `sudo -n apt-get install libhamlib-utils`; if sudo needs a password it shows the command to run in a terminal. Debian/Raspberry Pi OS ship an older Hamlib; a from-source build of the latest release is shown under *Build from source* (run by hand). |
+| Windows | **Update** downloads the official `hamlib-w64-<version>.zip` from GitHub, checks its SHA-256, and unpacks it to `%USERPROFILE%\.rpitrack\hamlib\<version>`. **Roll back** returns to the previous one. A Hamlib already installed under `Program Files` is found and used if the app has not downloaded one. |
+| macOS | **Update** runs `brew install hamlib` / `brew upgrade hamlib` (needs Homebrew). |
+
+After an update the model list is reloaded. **Reload models** re-reads it by hand.
+
+**Sharing the radio with WSJT-X (or another app):** only one program can open the serial port, so let
+Pi Sat Track own it and point the other program at our rigctld. In WSJT-X: *Settings → Radio → Rig =
+**Hamlib NET rigctl***, *Network Server = `127.0.0.1:4534`* (4535 for the second radio). WSJT-X must run
+on the same computer (rigctld only listens on 127.0.0.1), and Pi Sat Track's Radio must be on so rigctld
+is running. Both programs then share the radio; Doppler tracking keeps running while WSJT-X keys PTT.
+
+**Rotators:** Hamlib rotators (`rotctld`) are not wired up yet; use the built-in rotor drivers.
 
 ## 6. Connection tests
 
