@@ -90,6 +90,7 @@ The Pi installer sets up Node dependencies, cache under `~/.rpitrack`, and optio
 - **Node.js:** if Node.js 22+ is missing (or older), the *Ready to Install* page lists **Node.js 22 LTS (will be downloaded and installed)**. Setup downloads the official MSI from nodejs.org, checks its SHA-256, and installs it silently. A newer Node.js is never touched. If the download or the install fails (e.g. *another installation is in progress*), setup stops before changing anything; the Node install log is `%TEMP%\\pi-sat-track-node-install.log`.
 - **Install:** to `C:\\Program Files\\Pi Sat Track`. Node packages are already inside the exe; no `npm` step and no internet needed after Node.js. It also sets up port 80 and the firewall (section 10).
 - **Shortcuts:** Start Menu **Start / Stop / Open / Uninstall Pi Sat Track**, plus an *Apps → Installed apps* entry. There is no service and no auto start.
+- **Troubleshooting:** run setup with `/LOG="%TEMP%\\pst-setup.log"` to get a log, including each Node.js detection step.
 - **Uninstall:** keeps `%USERPROFILE%\\.rpitrack` unless you tick **Remove my settings**. If setup installed Node.js, an unticked **Also uninstall Node.js** box appears; by default Node.js stays.
 
 **Option B: batch files (fallback, no setup.exe):**

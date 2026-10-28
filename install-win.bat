@@ -222,9 +222,18 @@ if not errorlevel 1 (
     if not defined NODE_EXE set "NODE_EXE=%%P"
   )
 )
+if not defined NODE_EXE if defined ProgramW6432 if exist "%ProgramW6432%\nodejs\node.exe" set "NODE_EXE=%ProgramW6432%\nodejs\node.exe"
 if not defined NODE_EXE if exist "%ProgramFiles%\nodejs\node.exe" set "NODE_EXE=%ProgramFiles%\nodejs\node.exe"
+if not defined NODE_EXE for %%V in (64 32) do if not defined NODE_EXE (
+  for /f "tokens=2,*" %%A in ('reg query "HKLM\SOFTWARE\Node.js" /v InstallPath /reg:%%V 2^>nul ^| find "InstallPath"') do (
+    if exist "%%~B\node.exe" set "NODE_EXE=%%~B\node.exe"
+  )
+)
 if not defined NODE_EXE if exist "%ProgramFiles(x86)%\nodejs\node.exe" set "NODE_EXE=%ProgramFiles(x86)%\nodejs\node.exe"
 if not defined NODE_EXE if exist "%LocalAppData%\Programs\node\node.exe" set "NODE_EXE=%LocalAppData%\Programs\node\node.exe"
+if not defined NODE_EXE exit /b 0
+where node >nul 2>&1
+if errorlevel 1 for %%D in ("%NODE_EXE%") do set "PATH=%%~dpD;%PATH%"
 exit /b 0
 
 REM =============================================================================

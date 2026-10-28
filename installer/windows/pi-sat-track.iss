@@ -1,4 +1,5 @@
 ; Pi Sat Track - Windows setup.exe (Inno Setup 6)
+; Diagnose: pi-sat-track-...-setup.exe /LOG="%TEMP%\pst-setup.log"
 ; Build (see .github/workflows/build-win-setup.yml):
 ;   ISCC /DAppLabel=<branch>-alpha.<N> /O<outdir> /Fpi-sat-track-<branch>-alpha.<N>-setup pi-sat-track.iss
 ; install-win.bat / uninstall-win.bat remain the no-setup fallback.
@@ -66,8 +67,10 @@ Name: "{group}\Open Pi Sat Track"; Filename: "{app}\Open Pi Sat Track.url"
 Name: "{group}\Uninstall Pi Sat Track"; Filename: "{uninstallexe}"
 
 [Run]
-Filename: "{app}\start-sat-tracker.bat"; WorkingDir: "{app}"; Description: "Start Pi Sat Track now"; \
-  Flags: postinstall nowait skipifsilent shellexec runasoriginaluser
+; Started through 64-bit cmd.exe ({sys} in 64-bit mode): a shellexec from 32-bit setup
+; got a 32-bit cmd where %ProgramFiles% = Program Files (x86), so node was not found.
+Filename: "{sys}\cmd.exe"; Parameters: "/c ""{app}\start-sat-tracker.bat"""; WorkingDir: "{app}"; \
+  Description: "Start Pi Sat Track now"; Flags: postinstall nowait skipifsilent runasoriginaluser
 Filename: "{app}\Open Pi Sat Track.url"; Description: "Open Pi Sat Track in the browser"; \
   Flags: postinstall nowait skipifsilent shellexec runasoriginaluser unchecked
 
@@ -139,9 +142,11 @@ begin
   for I := 0 to 3 do
   begin
     C := Cands[I];
+    Log('Node detect step ' + IntToStr(I) + ' (0=HKLM64 InstallPath, 1=HKLM32 InstallPath, 2=Program Files, 3=PATH): "' + C + '"');
     if (C <> '') and FileExists(C) then
     begin
       M := NodeMajor(C);
+      Log('  ' + C + ' reports major version ' + IntToStr(M));
       if M > Major then
       begin
         Major := M;
@@ -194,6 +199,7 @@ begin
   Result := '';
   DownloadPage.Clear;
   DownloadPage.Add(NodeUrl, NodeMsiName, NodeSha256);
+  Log('Downloading ' + NodeUrl);
   DownloadPage.Show;
   try
     try
@@ -231,6 +237,7 @@ begin
     exit;
   end;
   if Rc = 3010 then NeedsRestart := True;
+  Log('Node.js MSI install OK (exit ' + IntToStr(Rc) + ', restart needed: ' + IntToStr(Ord(NeedsRestart)) + ')');
 
   NodeExe := ExpandConstant('{commonpf64}\nodejs\node.exe');
   Major := NodeMajor(NodeExe);
@@ -239,6 +246,7 @@ begin
     Result := 'Node.js was installed but ' + NodeExe + ' does not report version 22 or newer.' + #13#10 + 'Log: ' + LogFile;
     exit;
   end;
+  Log('Node.js after install: ' + NodeExe + ' major ' + IntToStr(Major));
   RegWriteStringValue(HKLM64, OurKey, 'NodeInstalledBySetup', NodeVersion);
 end;
 
@@ -298,7 +306,7 @@ function NodeUninstallString(): string;
 var
   Names: TArrayOfString;
   I: Integer;
-  Dn, Us: string;
+  Dn: string;
 begin
   Result := '';
   if not RegGetSubkeyNames(HKLM64, UninstKey, Names) then exit;
