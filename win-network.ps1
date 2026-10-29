@@ -87,7 +87,7 @@ function Stop-AppServer {
   # Only this app's processes:
   #  - node.exe listening on :AppPort, or running <AppDir>\server.js
   #  - rigctld.exe the app started: under %USERPROFILE%\.rpitrack\hamlib, or with our
-  #    own arguments "-T 127.0.0.1 -t 4534/4535"; rotctld.exe likewise ("-t 4537").
+  #    own arguments "-T 127.0.0.1 -t 4534/4535"; rotctld.exe likewise ("-t 4537" / "-t 4538").
   #    A user's own rigctld / rotctld (e.g. port 4532 / 4533,
   #    or Program Files without our args) is left alone.
   # Waits for them to exit. Sets $script:StoppedCount.
@@ -126,11 +126,11 @@ function Stop-AppServer {
   }
   $hamDir = Join-Path $UserHome '.rpitrack\hamlib'
   $hamEsc = [regex]::Escape($hamDir)
-  # rigctld (4534/4535) and rotctld (4537) the app started; a user's own (e.g. 4532 / 4533) is left alone.
+  # rigctld (4534/4535) and rotctld (4537 AZ / 4538 EL) the app started; a user's own (e.g. 4532 / 4533) is left alone.
   foreach ($p in (Get-CimInstance Win32_Process -Filter "Name='rigctld.exe' OR Name='rotctld.exe'" -ErrorAction SilentlyContinue)) {
     $ours = ($p.ExecutablePath -and $p.ExecutablePath -match ('^' + $hamEsc)) -or
             ($p.Name -eq 'rigctld.exe' -and $p.CommandLine -match '-T\s+(127\.0\.0\.1|0\.0\.0\.0)\s+-t\s+453[45]\b') -or
-            ($p.Name -eq 'rotctld.exe' -and $p.CommandLine -match '-T\s+127\.0\.0\.1\s+-t\s+4537\b') -or
+            ($p.Name -eq 'rotctld.exe' -and $p.CommandLine -match '-T\s+127\.0\.0\.1\s+-t\s+453[78]\b') -or
             ($nodeIds -contains $p.ParentProcessId)
     if ($ours) {
       Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue

@@ -392,6 +392,28 @@
   let rotP = null;
   let rotById = new Map();
   let rotPending = null;
+  let rotElPending = null;
+  const RT21 = 405; // Hamlib RT-21: 2nd controller via rotctld -R (native)
+  function rotSplitUi() {
+    const split = !!($("cfg-rotor-hamlib-split") || {}).checked;
+    const rt21 = ($("cfg-rotor-hamlib-model") || {}).value === String(RT21);
+    const elb = $("cfg-rotor-hamlib-el");
+    if (elb) elb.hidden = !split;
+    const opts = $("cfg-rotor-hamlib-el-opts");
+    if (opts) opts.hidden = rt21; // RT-21: EL port only; baud / model from the AZ unit
+    const h = $("cfg-rotor-hamlib-hint");
+    if (h) h.textContent = !split ? "rotctld 127.0.0.1:4537." : rt21 ? "RT-21: one rotctld 127.0.0.1:4537, EL port via -R." : "rotctld AZ 127.0.0.1:4537 · EL 127.0.0.1:4538.";
+  }
+  function fillElModels(modelId) {
+    rotP &&
+      rotP.then((r) => {
+        const g = (r.groups || []).find((x) => x.mfg === $("cfg-rotor-hamlib-mfg").value);
+        const sel = $("cfg-rotor-hamlib-el-model");
+        if (!sel) return;
+        sel.innerHTML = opt("", "same as AZ") + (g ? g.models.map((m) => opt(m.id, m.model + " (#" + m.id + ")")).join("") : "");
+        sel.value = modelId && g && g.models.some((m) => String(m.id) === String(modelId)) ? String(modelId) : "";
+      });
+  }
   function injectRotor() {
     const type = $("cfg-rotor-type");
     if (!type || $("cfg-rotor-hamlib")) return;
@@ -402,10 +424,26 @@
       '<div class="form-row" id="cfg-rotor-hamlib" hidden><div class="form-row-2">' +
         '<div><label for="cfg-rotor-hamlib-mfg">Manufacturer</label><select id="cfg-rotor-hamlib-mfg" class="cfg-select"></select></div>' +
         '<div><label for="cfg-rotor-hamlib-model">Model</label><select id="cfg-rotor-hamlib-model" class="cfg-select"></select></div></div>' +
-        '<p class="form-hint" id="cfg-rotor-hamlib-hint">rotctld on 127.0.0.1:4537.</p></div>',
+        '<label class="cfg-check-label" for="cfg-rotor-hamlib-split"><input type="checkbox" id="cfg-rotor-hamlib-split" /> Separate AZ / EL controllers</label>' +
+        '<div id="cfg-rotor-hamlib-el" hidden>' +
+        '<div class="form-row"><label for="cfg-rotor-hamlib-el-device">EL serial device</label>' +
+        '<select id="cfg-rotor-hamlib-el-device" class="cfg-select cfg-serial-device"></select>' +
+        '<input type="text" id="cfg-rotor-hamlib-el-device-custom" class="cfg-serial-custom" placeholder="/dev/ttyUSB1 or COM6" autocomplete="off" spellcheck="false" hidden /></div>' +
+        '<div class="form-row-2" id="cfg-rotor-hamlib-el-opts"><div><label for="cfg-rotor-hamlib-el-baud">EL baud</label><input type="number" id="cfg-rotor-hamlib-el-baud" min="300" step="1" placeholder="AZ baud" /></div>' +
+        '<div><label for="cfg-rotor-hamlib-el-model">EL model</label><select id="cfg-rotor-hamlib-el-model" class="cfg-select"></select></div></div></div>' +
+        '<p class="form-hint" id="cfg-rotor-hamlib-hint">rotctld 127.0.0.1:4537.</p></div>',
     );
     type.addEventListener("change", rotorVisible);
     $("cfg-rotor-hamlib-mfg").addEventListener("change", () => fillRotModels(null));
+    $("cfg-rotor-hamlib-model").addEventListener("change", () => {
+      // Green Heron RT-21 az + el is two controllers: default to separate
+      if ($("cfg-rotor-hamlib-model").value === String(RT21)) $("cfg-rotor-hamlib-split").checked = true;
+      fillElModels(null);
+      rotSplitUi();
+    });
+    $("cfg-rotor-hamlib-split").addEventListener("change", rotSplitUi);
+    if (typeof SERIAL_DEVICE_SELECT_IDS !== "undefined" && SERIAL_DEVICE_SELECT_IDS.indexOf("cfg-rotor-hamlib-el-device") < 0)
+      SERIAL_DEVICE_SELECT_IDS.push("cfg-rotor-hamlib-el-device");
   }
   function loadRotors() {
     if (!rotP)
@@ -447,7 +485,32 @@
         const sel = $("cfg-rotor-hamlib-model");
         sel.innerHTML = opt("", "— choose the model —") + (g ? g.models.map((m) => opt(m.id, m.model + " · " + m.status + " (#" + m.id + ")")).join("") : "");
         sel.value = modelId && g && g.models.some((m) => String(m.id) === String(modelId)) ? String(modelId) : "";
+        fillElModels(rotElPending);
+        rotSplitUi();
       });
+  }
+  /** config-form: separate AZ / EL controller fields. */
+  function readRotorEl() {
+    if (!$("cfg-rotor-hamlib-split")) return {};
+    const dev = typeof readSerialDeviceField === "function" ? readSerialDeviceField("cfg-rotor-hamlib-el-device") : $("cfg-rotor-hamlib-el-device").value;
+    const em = parseInt(($("cfg-rotor-hamlib-el-model") || {}).value, 10);
+    return {
+      rotorHamlibSplit: !!$("cfg-rotor-hamlib-split").checked,
+      rotorHamlibElDevice: String(dev || "").trim(),
+      rotorHamlibElBaud: parseInt($("cfg-rotor-hamlib-el-baud").value, 10) || null,
+      rotorHamlibElModel: em > 0 ? em : rotById.size ? null : rotElPending,
+    };
+  }
+  function fillRotorEl(d) {
+    injectRotor();
+    d = d || {};
+    if (!$("cfg-rotor-hamlib-split")) return;
+    $("cfg-rotor-hamlib-split").checked = d.rotorHamlibSplit === true;
+    if (typeof populateSerialDeviceSelect === "function") populateSerialDeviceSelect("cfg-rotor-hamlib-el-device", d.rotorHamlibElDevice || "");
+    else $("cfg-rotor-hamlib-el-device").value = d.rotorHamlibElDevice || "";
+    $("cfg-rotor-hamlib-el-baud").value = d.rotorHamlibElBaud || "";
+    rotElPending = parseInt(d.rotorHamlibElModel, 10) > 0 ? parseInt(d.rotorHamlibElModel, 10) : null;
+    rotSplitUi();
   }
   /** config-form: rotorHamlibModel (null = not chosen; never a silent first entry). */
   function readRotor() {
@@ -466,5 +529,5 @@
   inject();
   injectNet();
   injectRotor();
-  window.hamlibUI = { read, fill, visible, refreshStatus, loadModels, readNet, fillNet, readRotor, fillRotor };
+  window.hamlibUI = { read, fill, visible, refreshStatus, loadModels, readNet, fillNet, readRotor, fillRotor, readRotorEl, fillRotorEl };
 })();

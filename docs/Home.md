@@ -317,13 +317,22 @@ tracking off** and set **Split Operation = None** so it does not fight our Doppl
 **Rotators (rotctld):** Configure → Rotor → **Controller = Hamlib serial (rotctld)**, then Manufacturer /
 Model (from `rotctl -l`), serial port and baud. The app runs
 `rotctld -m <model> -r <port> -s <baud> -T 127.0.0.1 -t 4537` and talks to it over TCP (`p` / `P az el` / `S`).
-Port **4537** on `127.0.0.1` only: it does not clash with Hamlib's rotctld default 4533 or a rigctld of your own
+Port **4537** (and **4538** for a separate EL controller) on `127.0.0.1` only: it does not clash with Hamlib's rotctld default 4533 or a rigctld of your own
 on 4532, nor with our rigctld 4534 / 4535. rotctld is supervised like rigctld (1, 2, 5, 10, 30 s back-off),
 restarted when the rotor settings change, stopped when the controller is no longer Hamlib and when the
 server stops. On Windows the stop script / setup / uninstall stop only a rotctld.exe we started (our
 Hamlib folder, `-T 127.0.0.1 -t 4537`, or a child of our node). Tracking: points at the sat in view,
 prepositions to the AOS azimuth 5 min before AOS, holds otherwise; Park, AZ only and Min EL apply.
 The built-in drivers (RT-21, GS-232) are unchanged.
+
+**Separate AZ / EL controllers** (e.g. Green Heron RT-21 az + el: two controllers, two serial ports): tick
+*Separate AZ / EL controllers* and set the EL serial device (and EL baud / model if they differ).
+- **RT-21 (Hamlib #405):** Hamlib drives the 2nd controller itself: one `rotctld -m 405 -r <AZ port> -R <EL port>`
+  on 4537 (`-R` = `--rot-file2`; Hamlib sends `AP1<el>` / `BI1` to that port). The EL port uses the
+  RT-21's fixed 4800 baud from Hamlib; `-s` only sets the AZ port.
+- **Other models:** two rotctld, AZ on 127.0.0.1:4537 and EL on 127.0.0.1:4538, each with its own
+  device / baud / model. The AZ daemon gets `P <az> 0`, the EL daemon `P <el> 0` (the EL controller's
+  azimuth axis is the elevation); position is read from each. Both are supervised and stopped the same way.
 
 ### 5.8 Configure field notes
 

@@ -247,3 +247,132 @@ test("driver: AZ only sends EL 0; reconnects with back-off when rotctld restarts
     config.applyEndpoints({ rotorType: prev.type, rotorAzOnly: prev.azOnly });
   }
 });
+
+// ---- separate AZ / EL controllers (Green Heron RT-21 az + el = two controllers) ----
+test("rotSpecs: RT-21 split = one rotctld with -R (Hamlib native); other models = two rotctld 4537 / 4538", () => {
+  hamlib.configure(quiet);
+  const base = { ROTOR_TYPE: "hamlib", ROTOR_AZ_DEVICE: "COM9", ROTOR_BAUD: 4800, ROTOR_HAMLIB_SPLIT: true, ROTOR_HAMLIB_EL_DEVICE: "COM10" };
+  const rt = hamlib.rotSpecs(Object.assign({ ROTOR_HAMLIB_MODEL: 405 }, base));
+  assert.strictEqual(rt.length, 1);
+  assert.deepStrictEqual(rt[0].args, ["-m", "405", "-r", "COM9", "-R", "COM10", "-s", "4800", "-T", "127.0.0.1", "-t", "4537"]);
+  assert.strictEqual(hamlib.rotEndpoints(Object.assign({ ROTOR_HAMLIB_MODEL: 405 }, base)).el, null);
+  const two = hamlib.rotSpecs(Object.assign({ ROTOR_HAMLIB_MODEL: 603, ROTOR_HAMLIB_EL_BAUD: 9600, ROTOR_HAMLIB_EL_MODEL: 601 }, base));
+  assert.deepStrictEqual(two.map((w) => [w.key, w.role, w.port]), [["rot", "az", 4537], ["rotEl", "el", 4538]]);
+  assert.deepStrictEqual(two[0].args, ["-m", "603", "-r", "COM9", "-s", "4800", "-T", "127.0.0.1", "-t", "4537"]);
+  assert.deepStrictEqual(two[1].args, ["-m", "601", "-r", "COM10", "-s", "9600", "-T", "127.0.0.1", "-t", "4538"]);
+  assert.deepStrictEqual(hamlib.rotEndpoints(Object.assign({ ROTOR_HAMLIB_MODEL: 603 }, base)).el, { host: "127.0.0.1", port: 4538 });
+  // EL model / baud default to the AZ unit's
+  const same = hamlib.rotSpecs(Object.assign({ ROTOR_HAMLIB_MODEL: 603 }, base));
+  assert.deepStrictEqual(same[1].args, ["-m", "603", "-r", "COM10", "-s", "4800", "-T", "127.0.0.1", "-t", "4538"]);
+  // split off / no EL device / AZ only: single controller unchanged
+  for (const x of [{ ROTOR_HAMLIB_SPLIT: false }, { ROTOR_HAMLIB_EL_DEVICE: "" }, { ROTOR_AZ_ONLY: true }]) {
+    const one = hamlib.rotSpecs(Object.assign({ ROTOR_HAMLIB_MODEL: 603 }, base, x));
+    assert.deepStrictEqual(one.map((w) => [w.role, w.port]), [["azel", 4537]], JSON.stringify(x));
+    assert.ok(one[0].args.indexOf("-R") < 0);
+  }
+  assert.strictEqual(hamlib.ROT_EL_PORT, 4538);
+});
+
+test("config: split fields round-trip", () => {
+  config.applyEndpoints({ rotorHamlibSplit: true, rotorHamlibElDevice: " /dev/ttyUSB8 ", rotorHamlibElBaud: 9600, rotorHamlibElModel: 601 });
+  const e = config.getEndpoints();
+  assert.deepStrictEqual([e.rotorHamlibSplit, e.rotorHamlibElDevice, e.rotorHamlibElBaud, e.rotorHamlibElModel], [true, "/dev/ttyUSB8", 9600, 601]);
+  config.applyEndpoints({ rotorHamlibSplit: false, rotorHamlibElDevice: "", rotorHamlibElBaud: null, rotorHamlibElModel: null });
+  assert.strictEqual(config.ROTOR_HAMLIB_SPLIT, false);
+  assert.strictEqual(config.ROTOR_HAMLIB_EL_MODEL, null);
+});
+
+test("supervisor: two rotctld (AZ 4537, EL 4538) started, both stopped on split off / stopAll", async (t) => {
+  for (const p of [4537, 4538]) {
+    if (!(await new Promise((r) => { const s = net.createServer().once("error", () => r(false)).listen(p, "127.0.0.1", () => s.close(() => r(true))); }))) {
+      t.skip("port " + p + " busy");
+      return;
+    }
+  }
+  const spawned = [];
+  const live = new Set();
+  const fakeSpawn = (bin, args) => {
+    const child = new EventEmitter();
+    child.pid = 91000 + spawned.length;
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    spawned.push({ bin, args, child });
+    live.add(child);
+    fakeRotctld(parseInt(args[args.indexOf("-t") + 1], 10)).then((st) => (child.st = st));
+    child.kill = () => {
+      live.delete(child);
+      if (child.st) child.st.server.close();
+      setImmediate(() => child.emit("exit", 0, null));
+      return true;
+    };
+    return child;
+  };
+  const origFind = tools.find;
+  tools.find = (tool) => (tool === "rotctld" ? "/fake/rotctld" : null);
+  hamlib.configure(Object.assign({ spawn: fakeSpawn, auto: false }, quiet));
+  const prev = config.getEndpoints();
+  try {
+    config.applyEndpoints({ singleRadio: true, radioUl: { transport: "tcp", type: "smartsdr", protocol: "cat", catEndpoint: "127.0.0.9:5002" }, rotorType: "hamlib", rotorAzOnly: false, rotorHamlibModel: 603, rotorAzDevice: "/dev/ttyUSB7", rotorBaud: 9600, rotorHamlibSplit: true, rotorHamlibElDevice: "/dev/ttyUSB8" });
+    await hamlib.ensure();
+    assert.deepStrictEqual(spawned.map((x) => x.args.slice(-1)[0]), ["4537", "4538"]);
+    assert.strictEqual(hamlib._rot().sv.status().state, "running");
+    assert.strictEqual(hamlib._rotEl().sv.status().state, "running");
+    const st = await hamlib.status();
+    assert.deepStrictEqual(st.rotors.map((r) => [r.role, r.port]), [["az", 4537], ["el", 4538]]);
+    // split off: EL daemon stopped, AZ restarted as a single controller (args unchanged -> kept)
+    config.applyEndpoints({ rotorHamlibSplit: false });
+    await hamlib.ensure();
+    assert.strictEqual(hamlib._rotEl(), null);
+    assert.ok(hamlib._rot());
+    assert.strictEqual(live.size, 1);
+    config.applyEndpoints({ rotorHamlibSplit: true });
+    await hamlib.ensure();
+    assert.strictEqual(live.size, 2);
+    await hamlib.stopAll();
+    assert.strictEqual(live.size, 0);
+    assert.strictEqual(hamlib._rot(), null);
+    assert.strictEqual(hamlib._rotEl(), null);
+  } finally {
+    tools.find = origFind;
+    await hamlib.stopAll();
+    hamlib.configure({ spawn: null });
+    config.applyEndpoints({ rotorType: prev.rotorType, rotorHamlibModel: null, rotorHamlibSplit: false, rotorHamlibElDevice: "", rotorAzDevice: prev.rotorAzDevice, rotorBaud: prev.rotorBaud });
+  }
+});
+
+test("driver: separate controllers — AZ to the AZ daemon, EL to the EL daemon, position from each", async () => {
+  const azd = await fakeRotctld(0);
+  const eld = await fakeRotctld(0);
+  azd.az = 100; azd.el = 0;
+  eld.az = 25; eld.el = 0; // EL unit reports elevation on its first axis
+  hrot._setDeps({ endpoint: () => ({ az: { host: "127.0.0.1", port: azd.server.address().port }, el: { host: "127.0.0.1", port: eld.server.address().port } }) });
+  const prev = { type: config.ROTOR_TYPE, azOnly: config.ROTOR_AZ_ONLY, parkAz: config.ROTOR_PARK_AZ, parkEl: config.ROTOR_PARK_EL };
+  config.applyEndpoints({ rotorType: "hamlib", rotorAzOnly: false, rotorParkAz: 180, rotorParkEl: 10 });
+  try {
+    hrot.setAntenna(true);
+    await sleep(150);
+    let s = hrot.getRotorState();
+    assert.strictEqual(s.azConnected, true);
+    assert.strictEqual(s.elConnected, true);
+    assert.strictEqual(s.az, 100);
+    assert.strictEqual(s.el, 25);
+    await hrot.updateTracking({ az: 200, el: 40 }, null, null, { minEl: 0 });
+    assert.ok(azd.cmds.includes("P 200.0 0.0"), azd.cmds.join("|"));
+    assert.ok(eld.cmds.includes("P 40.0 0.0"), eld.cmds.join("|"));
+    assert.ok(!azd.cmds.some((c) => c === "P 200.0 40.0"), "az daemon never gets the elevation");
+    hrot.park();
+    await sleep(80);
+    assert.ok(azd.cmds.includes("P 180.0 0.0"));
+    assert.ok(eld.cmds.includes("P 10.0 0.0"));
+    hrot.setAntenna(false);
+    await sleep(80);
+    assert.ok(azd.cmds.includes("S") && eld.cmds.includes("S"), "stop sent to both");
+    s = hrot.getRotorState();
+    assert.strictEqual(s.azConnected, false);
+  } finally {
+    hrot._setDeps({ endpoint: null });
+    azd.server.close();
+    eld.server.close();
+    config.applyEndpoints({ rotorType: prev.type, rotorAzOnly: prev.azOnly, rotorParkAz: prev.parkAz, rotorParkEl: prev.parkEl });
+  }
+});

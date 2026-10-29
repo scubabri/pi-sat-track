@@ -27,6 +27,7 @@ const ROTORS = {
   ok: true,
   groups: [
     { mfg: "Dummy", models: [{ id: 1, mfg: "Dummy", model: "Dummy", status: "Stable" }] },
+    { mfg: "Green Heron", models: [{ id: 405, mfg: "Green Heron", model: "RT-21", status: "Stable" }] },
     { mfg: "Yaesu", models: [{ id: 601, mfg: "Yaesu", model: "GS-232A", status: "Beta" }, { id: 603, mfg: "Yaesu", model: "GS-232B", status: "Stable" }] },
   ],
 };
@@ -151,4 +152,30 @@ test("Hamlib rotor: saved model 603 round-trips; nothing chosen saves null (no f
   r3.ui.fillRotor(603);
   await tick();
   assert.strictEqual(r3.$("cfg-rotor-hamlib").hidden, true, "native rotor: Hamlib block hidden");
+});
+
+test("Hamlib rotor: separate AZ / EL fields round-trip; RT-21 hides EL baud / model", async () => {
+  const { ui, $ } = await load();
+  $("cfg-rotor-type").value = "hamlib";
+  ui.fillRotorEl({ rotorHamlibSplit: true, rotorHamlibElDevice: "/dev/ttyUSB8", rotorHamlibElBaud: 9600, rotorHamlibElModel: 601 });
+  ui.fillRotor(603);
+  await tick();
+  assert.strictEqual($("cfg-rotor-hamlib-el").hidden, false);
+  assert.strictEqual($("cfg-rotor-hamlib-el-model").value, "601");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ui.readRotorEl())), { rotorHamlibSplit: true, rotorHamlibElDevice: "/dev/ttyUSB8", rotorHamlibElBaud: 9600, rotorHamlibElModel: 601 });
+  assert.match($("cfg-rotor-hamlib-hint").textContent, /AZ 127\.0\.0\.1:4537 · EL 127\.0\.0\.1:4538/);
+  const r2 = await load();
+  r2.$("cfg-rotor-type").value = "hamlib";
+  r2.ui.fillRotorEl({ rotorHamlibSplit: true, rotorHamlibElDevice: "COM10" });
+  r2.ui.fillRotor(405);
+  await tick();
+  assert.strictEqual(r2.$("cfg-rotor-hamlib-el-opts").hidden, true);
+  assert.match(r2.$("cfg-rotor-hamlib-hint").textContent, /RT-21: one rotctld .*-R/);
+  const r3 = await load();
+  r3.$("cfg-rotor-type").value = "hamlib";
+  r3.ui.fillRotorEl({});
+  r3.ui.fillRotor(603);
+  await tick();
+  assert.strictEqual(r3.$("cfg-rotor-hamlib-el").hidden, true, "single controller: EL fields hidden");
+  assert.strictEqual(r3.ui.readRotorEl().rotorHamlibSplit, false);
 });
