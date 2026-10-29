@@ -412,3 +412,50 @@ test("status role label follows the spec when a kept daemon gains a separate EL 
     config.applyEndpoints({ rotorType: prev.rotorType, rotorHamlibModel: null, rotorHamlibSplit: false, rotorHamlibElDevice: "", rotorAzDevice: prev.rotorAzDevice, rotorBaud: prev.rotorBaud });
   }
 });
+
+test("driver: slow rotctld (RT-21 -R, p > 1 s): one poll at a time, Park is not queued behind polls", async () => {
+  // Brian, alpha.18 (Windows, RT-21 -R): Park took seconds to start. rotctld's RT-21 backend sleeps
+  // 500 ms after every write, so "p" with -R takes > 1 s; a 1 s poll interval used to pile up "p".
+  const net = require("net");
+  let queued = 0, maxQueued = 0, pDone = null;
+  const cmds = [];
+  let lock = Promise.resolve();
+  const server = net.createServer((s) => {
+    let b = "";
+    s.on("error", () => {});
+    s.on("data", (d) => {
+      b += d;
+      let i;
+      while ((i = b.indexOf("\n")) >= 0) {
+        const c = b.slice(0, i).trim();
+        b = b.slice(i + 1);
+        if (c === "p") maxQueued = Math.max(maxQueued, ++queued);
+        lock = lock.then(() => new Promise((r) => setTimeout(() => {
+          cmds.push(c);
+          if (c === "p") { queued--; s.write("10.0\n20.0\n"); } else { if (c[0] === "P" && !pDone) pDone = Date.now(); s.write("RPRT 0\n"); }
+          r();
+        }, c === "p" ? 1100 : 300)));
+      }
+    });
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  hrot._setDeps({ endpoint: () => ({ host: "127.0.0.1", port: server.address().port }) });
+  const prev = { type: config.ROTOR_TYPE, parkAz: config.ROTOR_PARK_AZ, parkEl: config.ROTOR_PARK_EL };
+  config.applyEndpoints({ rotorType: "hamlib", rotorParkAz: 90, rotorParkEl: 10 });
+  try {
+    hrot.setAntenna(true);
+    await sleep(5500);
+    const t = Date.now();
+    hrot.park();
+    while (!pDone && Date.now() - t < 10000) await sleep(20);
+    assert.ok(pDone, "P sent");
+    // at most the in-flight "p" (1.1 s) + P (0.3 s) ahead; old code waited ~1.5 s more and grew
+    assert.ok(pDone - t < 1700, "Park reached rotctld after " + (pDone - t) + " ms");
+    assert.ok(maxQueued <= 1, "polls outstanding at once: " + maxQueued);
+    assert.ok(cmds.includes("P 90.0 10.0"), cmds.join("|"));
+  } finally {
+    hrot._setDeps({ endpoint: null });
+    server.close();
+    config.applyEndpoints({ rotorType: prev.type, rotorParkAz: prev.parkAz, rotorParkEl: prev.parkEl });
+  }
+});
