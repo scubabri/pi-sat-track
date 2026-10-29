@@ -96,6 +96,12 @@ function rotorConfigFromForm() {
   if (ports === 1) {
     az = readDev("cfg-rotor-device") || "/dev/ttyACM0";
     el = az;
+    // Hamlib serial: EL is its own port only with "Separate AZ / EL controllers";
+    // a single Hamlib controller has no EL port to test (never run EL on the AZ port).
+    if (type === "hamlib") {
+      const split = document.getElementById("cfg-rotor-hamlib-split");
+      el = split && split.checked ? readDev("cfg-rotor-hamlib-el-device") : "";
+    }
   } else {
     az = readDev("cfg-rotor-az-device") || "/dev/ttyUSB0";
     el = readDev("cfg-rotor-el-device") || "/dev/ttyUSB1";
@@ -441,13 +447,13 @@ async function runRotorTestGuided() {
 
   try {
     await axisSequence("az");
-    if (!base.rotorAzOnly) {
+    if (!base.rotorAzOnly && base.rotorElDevice) {
       await axisSequence("el");
     }
     setTestButtonState(
       btn,
       "ok",
-      base.rotorAzOnly ? "AZ test OK" : "AZ + EL test OK",
+      base.rotorAzOnly || !base.rotorElDevice ? "AZ test OK" : "AZ + EL test OK",
     );
   } catch (e) {
     console.warn("[connection-test] rotor guided", e);

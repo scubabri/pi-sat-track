@@ -376,3 +376,39 @@ test("driver: separate controllers — AZ to the AZ daemon, EL to the EL daemon,
     config.applyEndpoints({ rotorType: prev.type, rotorAzOnly: prev.azOnly, rotorParkAz: prev.parkAz, rotorParkEl: prev.parkEl });
   }
 });
+
+test("status role label follows the spec when a kept daemon gains a separate EL controller", async (t) => {
+  for (const p of [4537, 4538]) {
+    if (!(await new Promise((r) => { const s = net.createServer().once("error", () => r(false)).listen(p, "127.0.0.1", () => s.close(() => r(true))); }))) {
+      t.skip("port " + p + " busy");
+      return;
+    }
+  }
+  const fakeSpawn = (bin, args) => {
+    const child = new EventEmitter();
+    child.pid = 92000;
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    fakeRotctld(parseInt(args[args.indexOf("-t") + 1], 10)).then((st) => (child.st = st));
+    child.kill = () => { if (child.st) child.st.server.close(); setImmediate(() => child.emit("exit", 0, null)); return true; };
+    return child;
+  };
+  const origFind = tools.find;
+  tools.find = (tool) => (tool === "rotctld" ? "/fake/rotctld" : null);
+  hamlib.configure(Object.assign({ spawn: fakeSpawn, auto: false }, quiet));
+  const prev = config.getEndpoints();
+  try {
+    config.applyEndpoints({ rotorType: "hamlib", rotorAzOnly: false, rotorHamlibModel: 603, rotorAzDevice: "/dev/ttyUSB7", rotorBaud: 9600, rotorHamlibSplit: false, rotorHamlibElDevice: "/dev/ttyUSB8" });
+    await hamlib.ensure();
+    assert.strictEqual(hamlib._rot().role, "azel");
+    config.applyEndpoints({ rotorHamlibSplit: true });
+    await hamlib.ensure();
+    assert.strictEqual(hamlib._rot().role, "az");
+    assert.deepStrictEqual((await hamlib.status()).rotors.map((r) => r.role), ["az", "el"]);
+  } finally {
+    tools.find = origFind;
+    await hamlib.stopAll();
+    hamlib.configure({ spawn: null });
+    config.applyEndpoints({ rotorType: prev.rotorType, rotorHamlibModel: null, rotorHamlibSplit: false, rotorHamlibElDevice: "", rotorAzDevice: prev.rotorAzDevice, rotorBaud: prev.rotorBaud });
+  }
+});
