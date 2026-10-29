@@ -539,6 +539,25 @@ The rigctld that Pi Sat Track starts for a **Hamlib serial** radio listens on `1
 rigctld accepts several clients at once, so WSJT-X and Pi Sat Track can share it. For start at boot use a
 systemd service (Linux), a launchd agent (Mac) or a scheduled task / shortcut (Windows).
 
+### 14.2 Sharing the rotor with PSTRotator or other rotctld clients (same PC)
+
+With Configure → Rotor → **Controller = Hamlib serial (rotctld)**, Pi Sat Track runs rotctld for you,
+localhost only:
+
+| Port | Daemon |
+|---|---|
+| `127.0.0.1:4537` | AZ / single controller. RT-21 (#405) with *Separate AZ / EL*: AZ + EL in one rotctld (EL port via `-R`). |
+| `127.0.0.1:4538` | EL controller, only for *Separate AZ / EL* on models other than RT-21. |
+
+Other programs on the same PC can connect to these ports. Example (RT-21, Windows): model RT-21 #405,
+*Separate AZ / EL* on, AZ COM5, EL COM3, 4800 → one rotctld on `4537`.
+
+- **PSTRotator:** pick its **Hamlib / rotctld** controller type, `127.0.0.1:4537`. Not *TCP Client*: that
+  uses PSTRotator's own protocol, and rotctld logs `Command 'I' not found!`.
+- Other rotctld clients: Hamlib NET rotctl, `127.0.0.1:4537` (and `4538` for a separate EL controller).
+- Keep **Antenna OFF** in Pi Sat Track while another program steers the rotor, or they fight.
+- The daemons run only while Pi Sat Track is running.
+
 ---
 
 *Pi Sat Track — alpha documentation. Screenshots and platform-specific pages will be added as the wiki grows.*
