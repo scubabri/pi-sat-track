@@ -61,7 +61,7 @@ test("rotSpec: only for Rotor = Hamlib serial with a model", () => {
   for (const t of ["rt21", "gs232", "k3ng", ""]) assert.strictEqual(hamlib.rotSpec(Object.assign({ ROTOR_TYPE: t, ROTOR_HAMLIB_MODEL: 603 }, base)), null, t);
   assert.strictEqual(hamlib.rotSpec(Object.assign({ ROTOR_TYPE: "hamlib", ROTOR_HAMLIB_MODEL: null }, base)), null);
   const s = hamlib.rotSpec(Object.assign({ ROTOR_TYPE: "hamlib", ROTOR_HAMLIB_MODEL: 603 }, base));
-  assert.deepStrictEqual(s.args, ["-m", "603", "-r", "COM9", "-s", "9600", "-T", "127.0.0.1", "-t", "4537"]);
+  assert.deepStrictEqual(s.args, ["-m", "603", "-r", "COM9", "-s", "9600", "-C", "max_el=180", "-T", "127.0.0.1", "-t", "4537"]);
 });
 
 test("config: rotorHamlibModel round-trips; native rotor fields unchanged", () => {
@@ -134,7 +134,7 @@ test("supervisor: rotctld started via (fake) spawn, restarted on change, stopped
     await hamlib.ensure();
     assert.strictEqual(spawned.length, 1);
     assert.strictEqual(spawned[0].bin, "/fake/rotctld");
-    assert.deepStrictEqual(spawned[0].args, ["-m", "603", "-r", "/dev/ttyUSB7", "-s", "9600", "-T", "127.0.0.1", "-t", "4537"]);
+    assert.deepStrictEqual(spawned[0].args, ["-m", "603", "-r", "/dev/ttyUSB7", "-s", "9600", "-C", "max_el=180", "-T", "127.0.0.1", "-t", "4537"]);
     assert.strictEqual(hamlib._rot().sv.status().state, "running");
     assert.strictEqual(hamlib.wantedSpecs().size, 0, "no rigctld for a TCP radio");
     // same config: kept
@@ -254,16 +254,16 @@ test("rotSpecs: RT-21 split = one rotctld with -R (Hamlib native); other models 
   const base = { ROTOR_TYPE: "hamlib", ROTOR_AZ_DEVICE: "COM9", ROTOR_BAUD: 4800, ROTOR_HAMLIB_SPLIT: true, ROTOR_HAMLIB_EL_DEVICE: "COM10" };
   const rt = hamlib.rotSpecs(Object.assign({ ROTOR_HAMLIB_MODEL: 405 }, base));
   assert.strictEqual(rt.length, 1);
-  assert.deepStrictEqual(rt[0].args, ["-m", "405", "-r", "COM9", "-R", "COM10", "-s", "4800", "-T", "127.0.0.1", "-t", "4537"]);
+  assert.deepStrictEqual(rt[0].args, ["-m", "405", "-r", "COM9", "-R", "COM10", "-s", "4800", "-C", "max_el=180", "-T", "127.0.0.1", "-t", "4537"]);
   assert.strictEqual(hamlib.rotEndpoints(Object.assign({ ROTOR_HAMLIB_MODEL: 405 }, base)).el, null);
   const two = hamlib.rotSpecs(Object.assign({ ROTOR_HAMLIB_MODEL: 603, ROTOR_HAMLIB_EL_BAUD: 9600, ROTOR_HAMLIB_EL_MODEL: 601 }, base));
   assert.deepStrictEqual(two.map((w) => [w.key, w.role, w.port]), [["rot", "az", 4537], ["rotEl", "el", 4538]]);
-  assert.deepStrictEqual(two[0].args, ["-m", "603", "-r", "COM9", "-s", "4800", "-T", "127.0.0.1", "-t", "4537"]);
-  assert.deepStrictEqual(two[1].args, ["-m", "601", "-r", "COM10", "-s", "9600", "-T", "127.0.0.1", "-t", "4538"]);
+  assert.deepStrictEqual(two[0].args, ["-m", "603", "-r", "COM9", "-s", "4800", "-C", "max_el=180", "-T", "127.0.0.1", "-t", "4537"]);
+  assert.deepStrictEqual(two[1].args, ["-m", "601", "-r", "COM10", "-s", "9600", "-C", "max_el=180", "-T", "127.0.0.1", "-t", "4538"]);
   assert.deepStrictEqual(hamlib.rotEndpoints(Object.assign({ ROTOR_HAMLIB_MODEL: 603 }, base)).el, { host: "127.0.0.1", port: 4538 });
   // EL model / baud default to the AZ unit's
   const same = hamlib.rotSpecs(Object.assign({ ROTOR_HAMLIB_MODEL: 603 }, base));
-  assert.deepStrictEqual(same[1].args, ["-m", "603", "-r", "COM10", "-s", "4800", "-T", "127.0.0.1", "-t", "4538"]);
+  assert.deepStrictEqual(same[1].args, ["-m", "603", "-r", "COM10", "-s", "4800", "-C", "max_el=180", "-T", "127.0.0.1", "-t", "4538"]);
   // split off / no EL device / AZ only: single controller unchanged
   for (const x of [{ ROTOR_HAMLIB_SPLIT: false }, { ROTOR_HAMLIB_EL_DEVICE: "" }, { ROTOR_AZ_ONLY: true }]) {
     const one = hamlib.rotSpecs(Object.assign({ ROTOR_HAMLIB_MODEL: 603 }, base, x));
@@ -606,5 +606,141 @@ test("driver: Park like native RT-21 — at the park position, Antenna turns off
     hrot._setDeps({ endpoint: null });
     st.server.close();
     config.applyEndpoints({ rotorType: prev.type, rotorParkAz: prev.parkAz, rotorParkEl: prev.parkEl });
+  }
+});
+
+test("driver: null / garbled replies, socket closing mid-read and Antenna off with reads queued never throw (alpha.20 crash)", async () => {
+  // Brian, alpha.20: "TypeError: Cannot read properties of null (reading '0')" at hamlib-rot.js poll,
+  // after park complete -> Antenna off resolved a queued "p" with null; the process exited.
+  const net = require("net");
+  const errs = [];
+  const onRej = (e) => errs.push(e);
+  process.on("unhandledRejection", onRej);
+  process.on("uncaughtException", onRej);
+  let mode = "garbage";
+  const server = net.createServer((s) => {
+    let b = "";
+    s.on("error", () => {});
+    s.on("data", (d) => {
+      b += d;
+      let i;
+      while ((i = b.indexOf("\n")) >= 0) {
+        const c = b.slice(0, i).trim();
+        b = b.slice(i + 1);
+        if (c !== "p") { s.write("RPRT 0\n"); continue; }
+        if (mode === "garbage") s.write("xx\n\n");
+        else if (mode === "close") s.destroy();
+        else if (mode === "slow") setTimeout(() => !s.destroyed && s.write("10.0\n20.0\n"), 400);
+        else s.write("10.0\n20.0\n");
+      }
+    });
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  hrot._setDeps({ endpoint: () => ({ host: "127.0.0.1", port: server.address().port }) });
+  const prev = config.ROTOR_TYPE;
+  config.applyEndpoints({ rotorType: "hamlib" });
+  try {
+    hrot.setAntenna(true);
+    await sleep(1500); // garbled replies: failed reads, still connected
+    assert.strictEqual(hrot.getRotorState().azConnected, true);
+    mode = "close"; // socket closes mid-read
+    await sleep(1500);
+    mode = "slow";
+    await sleep(2500); // reconnected (backoff 1 s), reads in flight
+    hrot.updateTracking({ az: 100, el: 30 }, null, null, { minEl: 0 });
+    hrot.setAntenna(false); // reads / moves queued -> dropped quietly
+    await sleep(800);
+    assert.deepStrictEqual(errs, []);
+    assert.strictEqual(hrot.getRotorState().azConnected, false);
+  } finally {
+    process.off("unhandledRejection", onRej);
+    process.off("uncaughtException", onRej);
+    hrot._setDeps({ endpoint: null });
+    server.close();
+    config.applyEndpoints({ rotorType: prev });
+  }
+});
+
+test("driver: Park pressed with Antenna off -> park complete -> no reconnect, no reads, no throw", async () => {
+  const net = require("net");
+  const cmds = [];
+  let conns = 0;
+  const errs = [];
+  const onRej = (e) => errs.push(e);
+  process.on("unhandledRejection", onRej);
+  const server = net.createServer((s) => {
+    conns++;
+    let b = "";
+    s.on("error", () => {});
+    s.on("data", (d) => {
+      b += d;
+      let i;
+      while ((i = b.indexOf("\n")) >= 0) {
+        const c = b.slice(0, i).trim();
+        b = b.slice(i + 1);
+        cmds.push(c);
+        // slow reads so some are queued when park completes
+        setTimeout(() => !s.destroyed && s.write(c === "p" ? "90.0\n10.0\n" : "RPRT 0\n"), c === "p" ? 300 : 50);
+      }
+    });
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  hrot._setDeps({ endpoint: () => ({ host: "127.0.0.1", port: server.address().port }) });
+  const prev = { type: config.ROTOR_TYPE, parkAz: config.ROTOR_PARK_AZ, parkEl: config.ROTOR_PARK_EL };
+  config.applyEndpoints({ rotorType: "hamlib", rotorParkAz: 90, rotorParkEl: 10 });
+  try {
+    hrot.park();
+    for (let k = 0; k < 60 && hrot.getRotorState().antennaOn; k++) await sleep(100);
+    assert.strictEqual(hrot.getRotorState().antennaOn, false);
+    await sleep(500);
+    const n = cmds.length;
+    const c0 = conns;
+    await sleep(3000);
+    assert.deepStrictEqual(cmds.slice(n), [], "commands after park complete");
+    assert.strictEqual(conns, c0, "reconnected after park complete");
+    assert.deepStrictEqual(errs, []);
+  } finally {
+    process.off("unhandledRejection", onRej);
+    hrot._setDeps({ endpoint: null });
+    server.close();
+    config.applyEndpoints({ rotorType: prev.type, rotorParkAz: prev.parkAz, rotorParkEl: prev.parkEl });
+  }
+});
+
+test("driver: Antenna off with a read queued behind a slow move does not crash (exact alpha.20 path)", async () => {
+  const net = require("net");
+  const errs = [];
+  const onRej = (e) => errs.push(e);
+  process.on("unhandledRejection", onRej);
+  const server = net.createServer((s) => {
+    let b = "";
+    s.on("error", () => {});
+    s.on("data", (d) => {
+      b += d;
+      let i;
+      while ((i = b.indexOf("\n")) >= 0) {
+        const c = b.slice(0, i).trim();
+        b = b.slice(i + 1);
+        setTimeout(() => !s.destroyed && s.write(c === "p" ? "1.0\n2.0\n" : "RPRT 0\n"), c[0] === "P" ? 1500 : 20);
+      }
+    });
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  hrot._setDeps({ endpoint: () => ({ host: "127.0.0.1", port: server.address().port }) });
+  const prev = config.ROTOR_TYPE;
+  config.applyEndpoints({ rotorType: "hamlib" });
+  try {
+    hrot.setAntenna(true);
+    await sleep(200);
+    hrot.updateTracking({ az: 100, el: 30 }, null, null, { minEl: 0 }); // P in flight for 1.5 s
+    await sleep(1100); // the 1 s poll queues "p" behind it
+    hrot.setAntenna(false); // drains the queued "p"
+    await sleep(300);
+    assert.deepStrictEqual(errs.map(String), []);
+  } finally {
+    process.off("unhandledRejection", onRej);
+    hrot._setDeps({ endpoint: null });
+    server.close();
+    config.applyEndpoints({ rotorType: prev });
   }
 });
