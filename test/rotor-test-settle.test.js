@@ -55,6 +55,23 @@ test("AZ wraps across north for the deadband", async () => {
   assert.strictEqual(w.how, "target");
 });
 
+test("coasting inside the deadband is not settled: waits ~3 s of no change, reports the final read", async () => {
+  // Brian, alpha.53: EL cmd 20 read 19 at ~5.1 s while still coasting -> 20
+  const r = rig((t) => (t < 4500 ? Math.round(10 + t / 500) : t < 7000 ? 19 : 20));
+  const w = await waitSettled(r.read, 20, "el", opts(r, { stillDeg: 0.5 }));
+  assert.strictEqual(w.how, "target");
+  assert.strictEqual(w.pos, 20, "final read");
+  assert.ok(w.ms >= 7000 + 3000, "took " + w.ms + " ms");
+  assert.deepStrictEqual(r.reads[r.reads.length - 1][1], 20, "reported value is the last read");
+});
+
+test("on target from the start: still waits the 3 s no-change window (no 2-reads shortcut)", async () => {
+  const r = rig(() => 60);
+  const w = await waitSettled(r.read, 60, "az", opts(r));
+  assert.strictEqual(w.how, "target");
+  assert.ok(w.ms >= 3000, String(w.ms));
+});
+
 test("timeout scales with distance: 30 s min, 90 s max", () => {
   assert.strictEqual(settleTimeoutMs(5), 30000);
   assert.strictEqual(settleTimeoutMs(100), 70000);
