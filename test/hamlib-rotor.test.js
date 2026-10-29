@@ -459,3 +459,152 @@ test("driver: slow rotctld (RT-21 -R, p > 1 s): one poll at a time, Park is not 
     config.applyEndpoints({ rotorType: prev.type, rotorParkAz: prev.parkAz, rotorParkEl: prev.parkEl });
   }
 });
+
+test("driver: moves coalesce (no stale backlog) and a move cut off by a reconnect is resent, not failed", async () => {
+  // Brian, alpha.18: 6x "move failed: rotctld disconnected" — a backlog of queued P dropped on reconnect.
+  const net = require("net");
+  const cmds = [];
+  let lock = Promise.resolve();
+  const server = net.createServer((s) => {
+    let b = "";
+    s.on("error", () => {});
+    s.on("data", (d) => {
+      b += d;
+      let i;
+      while ((i = b.indexOf("\n")) >= 0) {
+        const c = b.slice(0, i).trim();
+        b = b.slice(i + 1);
+        lock = lock.then(() => new Promise((r) => setTimeout(() => {
+          cmds.push(c);
+          if (!s.destroyed) s.write(c === "p" ? "10.0\n20.0\n" : "RPRT 0\n");
+          r();
+        }, c === "p" ? 600 : 100)));
+      }
+    });
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  hrot._setDeps({ endpoint: () => ({ host: "127.0.0.1", port: server.address().port }) });
+  const prev = { type: config.ROTOR_TYPE, minEl: config.ROTOR_MIN_EL };
+  config.applyEndpoints({ rotorType: "hamlib", rotorMinEl: 0 });
+  const warns = [];
+  const ow = console.warn;
+  console.warn = (m) => warns.push(String(m));
+  try {
+    hrot.setAntenna(true);
+    await sleep(100);
+    // several tracking ticks while a poll is in flight: only the newest move is sent
+    for (let k = 0; k < 6; k++) hrot.updateTracking({ az: 100 + k * 5, el: 30 }, null, null, { minEl: 0 });
+    await sleep(1000);
+    const P = cmds.filter((c) => c[0] === "P");
+    assert.ok(P.length <= 2, "moves sent: " + P.join("|"));
+    assert.strictEqual(P[P.length - 1], "P 125.0 30.0");
+    // a move queued behind a poll, then our own reconnect (endpoint re-apply): resent after connect
+    await sleep(50);
+    hrot.updateTracking({ az: 200, el: 40 }, null, null, { minEl: 0 });
+    hrot.applyEndpointChange();
+    for (let t = 0; t < 60 && !cmds.includes("P 200.0 40.0"); t++) await sleep(50);
+    assert.ok(cmds.includes("P 200.0 40.0"), cmds.join("|"));
+    assert.ok(!warns.some((w) => /move failed/.test(w)), warns.join("|"));
+  } finally {
+    console.warn = ow;
+    hrot._setDeps({ endpoint: null });
+    server.close();
+    config.applyEndpoints({ rotorType: prev.type, rotorMinEl: prev.minEl });
+  }
+});
+
+test("driver: Park during contention (2nd client polling, slow reads) is the next P and is not overridden; Stop reaches rotctld", async () => {
+  // Brian, alpha.18: PSTRotator also on 4537; Park pressed twice, rotor kept tracking (stale P backlog).
+  const net = require("net");
+  const cmds = [];
+  let lock = Promise.resolve();
+  const server = net.createServer((s) => {
+    let b = "";
+    s.on("error", () => {});
+    s.on("data", (d) => {
+      b += d;
+      let i;
+      while ((i = b.indexOf("\n")) >= 0) {
+        const c = b.slice(0, i).trim();
+        b = b.slice(i + 1);
+        lock = lock.then(() => new Promise((r) => setTimeout(() => {
+          if (!s.other) cmds.push(c);
+          if (!s.destroyed) s.write(c === "p" ? "10.0\n20.0\n" : "RPRT 0\n");
+          r();
+        }, c === "p" ? 400 : 150)));
+      }
+    });
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const port = server.address().port;
+  // "PSTRotator": a second client polling all the time (rotctld runs one command at a time)
+  const other = net.connect(port, "127.0.0.1");
+  other.on("error", () => {});
+  let otherOn = true;
+  server.once("connection", (s) => (s.other = true));
+  other.on("data", () => otherOn && setTimeout(() => otherOn && other.write("p\n"), 50));
+  other.on("connect", () => other.write("p\n"));
+  await sleep(100);
+  hrot._setDeps({ endpoint: () => ({ host: "127.0.0.1", port }) });
+  const prev = { type: config.ROTOR_TYPE, minEl: config.ROTOR_MIN_EL, parkAz: config.ROTOR_PARK_AZ, parkEl: config.ROTOR_PARK_EL };
+  config.applyEndpoints({ rotorType: "hamlib", rotorMinEl: 0, rotorParkAz: 90, rotorParkEl: 10 });
+  try {
+    hrot.setAntenna(true);
+    await sleep(200);
+    // tracking ticks every 100 ms for 3 s: moves keep landing, no backlog
+    for (let k = 0; k < 30; k++) {
+      hrot.updateTracking({ az: 100 + k * 3, el: 20 + k }, null, null, { minEl: 0 });
+      await sleep(100);
+    }
+    const tracked = cmds.filter((c) => c[0] === "P").length;
+    assert.ok(tracked >= 3, "tracking moves landed: " + tracked);
+    const n = cmds.length;
+    hrot.updateTracking({ az: 250, el: 60 }, null, null, { minEl: 0 }); // queued behind a poll
+    hrot.park();
+    for (let k = 0; k < 10; k++) {
+      hrot.updateTracking({ az: 260 + k, el: 61 + k }, null, null, { minEl: 0 }); // tracker ticks keep coming
+      await sleep(100);
+    }
+    const after = cmds.slice(n).filter((c) => c[0] === "P");
+    assert.ok(after.length >= 1, cmds.slice(n).join("|"));
+    // at most the move already on the wire, then Park; nothing after Park
+    assert.strictEqual(after[after.length - 1], "P 90.0 10.0", after.join("|"));
+    assert.ok(after.length <= 2, after.join("|"));
+    // Antenna off: S is sent before the socket closes
+    hrot.setAntenna(false);
+    for (let k = 0; k < 40 && !cmds.includes("S"); k++) await sleep(50);
+    assert.ok(cmds.includes("S"), cmds.slice(-5).join("|"));
+  } finally {
+    otherOn = false;
+    other.destroy();
+    hrot._setDeps({ endpoint: null });
+    server.close();
+    config.applyEndpoints({ rotorType: prev.type, rotorMinEl: prev.minEl, rotorParkAz: prev.parkAz, rotorParkEl: prev.parkEl });
+  }
+});
+
+test("driver: Park like native RT-21 — at the park position, Antenna turns off (tracking released)", async () => {
+  const st = await fakeRotctld(0);
+  hrot._setDeps({ endpoint: () => ({ host: "127.0.0.1", port: st.server.address().port }) });
+  const prev = { type: config.ROTOR_TYPE, parkAz: config.ROTOR_PARK_AZ, parkEl: config.ROTOR_PARK_EL };
+  config.applyEndpoints({ rotorType: "hamlib", rotorParkAz: 10, rotorParkEl: 20 }); // the fake reads 10 / 20
+  try {
+    hrot.setAntenna(true);
+    await sleep(150);
+    hrot.park();
+    for (let k = 0; k < 40 && hrot.getRotorState().antennaOn; k++) await sleep(100);
+    assert.strictEqual(hrot.getRotorState().antennaOn, false);
+    assert.ok(st.cmds.includes("P 10.0 20.0"), st.cmds.join("|"));
+    // Antenna off after park: our client goes quiet (no P, no polls) so PSTRotator etc. can drive
+    await sleep(300);
+    const n = st.cmds.length;
+    hrot.updateTracking({ az: 200, el: 45 }, null, null, { minEl: 0 });
+    await sleep(2500);
+    assert.deepStrictEqual(st.cmds.slice(n), [], "commands after park complete");
+    assert.strictEqual(hrot.getRotorState().azConnected, false);
+  } finally {
+    hrot._setDeps({ endpoint: null });
+    st.server.close();
+    config.applyEndpoints({ rotorType: prev.type, rotorParkAz: prev.parkAz, rotorParkEl: prev.parkEl });
+  }
+});
