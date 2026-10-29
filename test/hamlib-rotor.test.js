@@ -790,9 +790,9 @@ test("driver: Park from EL 120 with a truncated '12' readback still moves, waits
   }
 });
 
-test("driver: after commanding EL > 99, a low EL readback (Hamlib RT-21 truncation) is flagged, not shown, not used for park", async () => {
+test("driver: a low EL readback is suspect only vs a COMMANDED EL >= 99.5 (reading ~ cmd/10)", async () => {
   const net = require("net");
-  let elRead = "150.000000";
+  let elRead = "15.000000";
   const server = net.createServer((s) => {
     let b = "";
     s.on("error", () => {});
@@ -809,21 +809,15 @@ test("driver: after commanding EL > 99, a low EL readback (Hamlib RT-21 truncati
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   hrot._setDeps({ endpoint: () => ({ host: "127.0.0.1", port: server.address().port }) });
   const prev = { type: config.ROTOR_TYPE, elMax: config.ROTOR_EL_MAX, parkAz: config.ROTOR_PARK_AZ, parkEl: config.ROTOR_PARK_EL };
-  config.applyEndpoints({ rotorType: "hamlib", rotorElMax: 180, rotorParkAz: 270, rotorParkEl: 15 });
+  config.applyEndpoints({ rotorType: "hamlib", rotorElMax: 180, rotorParkAz: 270, rotorParkEl: 150 });
   try {
-    hrot.setAntenna(true);
-    await sleep(1200);
-    assert.strictEqual(hrot.getRotorState().el, 150);
-    elRead = "15.000000"; // truncated 150
-    await sleep(1200);
+    hrot.park(); // commands EL 150; Hamlib reads "15"
+    await sleep(2500);
     let s = hrot.getRotorState();
-    assert.strictEqual(s.el, null);
     assert.strictEqual(s.elSuspect, true);
-    hrot.park(); // readback "15" == Park EL 15: must not complete on it
-    await sleep(4500);
-    assert.strictEqual(hrot.getRotorState().antennaOn, true, "park not complete on a suspect EL readback");
-    elRead = "45.000000"; // a trusted reading clears the flag
-    await sleep(1200);
+    assert.strictEqual(s.el, null);
+    elRead = "45.000000";
+    await sleep(2500);
     s = hrot.getRotorState();
     assert.strictEqual(s.elSuspect, false);
     assert.strictEqual(s.el, 45);
@@ -831,5 +825,64 @@ test("driver: after commanding EL > 99, a low EL readback (Hamlib RT-21 truncati
     hrot._setDeps({ endpoint: null });
     server.close();
     config.applyEndpoints({ rotorType: prev.type, rotorElMax: prev.elMax, rotorParkAz: prev.parkAz, rotorParkEl: prev.parkEl });
+  }
+});
+
+test("driver: Park 120 -> 10 completes once readings settle (not 60 s); reads spaced >= 1 s; a 2nd client is served during Park", async () => {
+  // Brian, alpha.22: after Park, PSTRotator commands waited ~60 s (we held rotctld polling until the
+  // 60 s park timeout, reads back to back with RT-21 reads > 1 s each holding rotctld's lock).
+  const net = require("net");
+  let lock = Promise.resolve();
+  let elNow = 120;
+  let moveAt = null;
+  const ours = [];
+  let otherServedMs = null;
+  const pos = () => (moveAt == null ? 120 : Math.max(10, 120 - ((Date.now() - moveAt) / 1000) * 40));
+  const server = net.createServer((s) => {
+    let b = "";
+    s.on("error", () => {});
+    s.on("data", (d) => {
+      b += d;
+      let i;
+      while ((i = b.indexOf("\n")) >= 0) {
+        const c = b.slice(0, i).trim();
+        b = b.slice(i + 1);
+        const t0 = Date.now();
+        lock = lock.then(() => new Promise((r) => setTimeout(() => {
+          if (!s.other) ours.push([t0, c]);
+          if (c[0] === "P" && !s.other && moveAt == null) moveAt = Date.now();
+          if (s.other && c[0] === "P") otherServedMs = Date.now() - t0;
+          if (!s.destroyed) s.write(c === "p" ? "90.0\n" + pos().toFixed(1) + "\n" : "RPRT 0\n");
+          r();
+        }, c === "p" ? 1100 : 1000)));
+      }
+    });
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const port = server.address().port;
+  hrot._setDeps({ endpoint: () => ({ host: "127.0.0.1", port }) });
+  const prev = { type: config.ROTOR_TYPE, parkAz: config.ROTOR_PARK_AZ, parkEl: config.ROTOR_PARK_EL };
+  config.applyEndpoints({ rotorType: "hamlib", rotorParkAz: 90, rotorParkEl: 10 });
+  try {
+    const t0 = Date.now();
+    hrot.park();
+    await sleep(3000);
+    // "PSTRotator" sends a move during our Park
+    const other = net.connect(port, "127.0.0.1");
+    other.on("error", () => {});
+    server.once("connection", (s) => (s.other = true));
+    other.on("connect", () => other.write("P 120.0 59.0\n"));
+    for (let k = 0; k < 300 && hrot.getRotorState().antennaOn; k++) await sleep(100);
+    const doneMs = Date.now() - t0;
+    other.destroy();
+    assert.strictEqual(hrot.getRotorState().antennaOn, false);
+    assert.ok(doneMs < 20000, "park complete after " + doneMs + " ms");
+    assert.ok(otherServedMs != null && otherServedMs < 4500, "2nd client served after " + otherServedMs + " ms");
+    const reads = ours.filter((x) => x[1] === "p").map((x) => x[0]);
+    for (let k = 1; k < reads.length; k++) assert.ok(reads[k] - reads[k - 1] >= 1000, "reads " + (reads[k] - reads[k - 1]) + " ms apart");
+  } finally {
+    hrot._setDeps({ endpoint: null });
+    server.close();
+    config.applyEndpoints({ rotorType: prev.type, rotorParkAz: prev.parkAz, rotorParkEl: prev.parkEl });
   }
 });
