@@ -275,7 +275,11 @@ function applyRotorStatus(msg) {
     elEl.textContent =
       msg.el != null && Number.isFinite(msg.el)
         ? Number(msg.el).toFixed(1) + "\u00B0"
-        : "-";
+        : msg.elSuspect
+          ? "?"
+          : "-";
+    // Hamlib RT-21: EL readback above 99° unreliable (Hamlib), not shown
+    elEl.title = msg.elSuspect ? "EL > 99°: Hamlib readback unreliable" : "";
   }
 
   if (typeof msg.flipped === "boolean") lastGaugeFlipped = msg.flipped;

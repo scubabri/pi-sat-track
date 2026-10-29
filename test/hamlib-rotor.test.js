@@ -744,3 +744,92 @@ test("driver: Antenna off with a read queued behind a slow move does not crash (
     config.applyEndpoints({ rotorType: prev });
   }
 });
+
+test("driver: Park from EL 120 with a truncated '12' readback still moves, waits, and never sends Stop", async () => {
+  // Brian, alpha.21: rotor at EL 120, Hamlib RT-21 read 12 (within 3° of Park EL 10): park was
+  // "complete" at once and Antenna off sent S, cancelling the park move.
+  const net = require("net");
+  const cmds = [];
+  const server = net.createServer((s) => {
+    let b = "";
+    s.on("error", () => {});
+    s.on("data", (d) => {
+      b += d;
+      let i;
+      while ((i = b.indexOf("\n")) >= 0) {
+        const c = b.slice(0, i).trim();
+        b = b.slice(i + 1);
+        cmds.push(c);
+        s.write(c === "p" ? "90.000000\n12.000000\n" : "RPRT 0\n"); // truncated EL readback
+      }
+    });
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  hrot._setDeps({ endpoint: () => ({ host: "127.0.0.1", port: server.address().port }) });
+  const prev = { type: config.ROTOR_TYPE, parkAz: config.ROTOR_PARK_AZ, parkEl: config.ROTOR_PARK_EL };
+  config.applyEndpoints({ rotorType: "hamlib", rotorParkAz: 90, rotorParkEl: 10 });
+  try {
+    const t0 = Date.now();
+    hrot.park();
+    await sleep(1500);
+    assert.ok(cmds.includes("P 90.0 10.0"), "park move sent: " + cmds.join("|"));
+    assert.strictEqual(hrot.getRotorState().antennaOn, true, "not complete before the move had time");
+    for (let k = 0; k < 60 && hrot.getRotorState().antennaOn; k++) await sleep(100);
+    assert.ok(Date.now() - t0 >= 3000, "waited after the move");
+    assert.strictEqual(hrot.getRotorState().antennaOn, false);
+    assert.ok(!cmds.includes("S"), "park complete must not Stop the park move: " + cmds.join("|"));
+    // Park always moves, even when the readback already says "at park"
+    const n = cmds.filter((c) => c === "P 90.0 10.0").length;
+    hrot.park();
+    await sleep(500);
+    assert.strictEqual(cmds.filter((c) => c === "P 90.0 10.0").length, n + 1);
+  } finally {
+    hrot._setDeps({ endpoint: null });
+    server.close();
+    config.applyEndpoints({ rotorType: prev.type, rotorParkAz: prev.parkAz, rotorParkEl: prev.parkEl });
+  }
+});
+
+test("driver: after commanding EL > 99, a low EL readback (Hamlib RT-21 truncation) is flagged, not shown, not used for park", async () => {
+  const net = require("net");
+  let elRead = "150.000000";
+  const server = net.createServer((s) => {
+    let b = "";
+    s.on("error", () => {});
+    s.on("data", (d) => {
+      b += d;
+      let i;
+      while ((i = b.indexOf("\n")) >= 0) {
+        const c = b.slice(0, i).trim();
+        b = b.slice(i + 1);
+        s.write(c === "p" ? "270.000000\n" + elRead + "\n" : "RPRT 0\n");
+      }
+    });
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  hrot._setDeps({ endpoint: () => ({ host: "127.0.0.1", port: server.address().port }) });
+  const prev = { type: config.ROTOR_TYPE, elMax: config.ROTOR_EL_MAX, parkAz: config.ROTOR_PARK_AZ, parkEl: config.ROTOR_PARK_EL };
+  config.applyEndpoints({ rotorType: "hamlib", rotorElMax: 180, rotorParkAz: 270, rotorParkEl: 15 });
+  try {
+    hrot.setAntenna(true);
+    await sleep(1200);
+    assert.strictEqual(hrot.getRotorState().el, 150);
+    elRead = "15.000000"; // truncated 150
+    await sleep(1200);
+    let s = hrot.getRotorState();
+    assert.strictEqual(s.el, null);
+    assert.strictEqual(s.elSuspect, true);
+    hrot.park(); // readback "15" == Park EL 15: must not complete on it
+    await sleep(4500);
+    assert.strictEqual(hrot.getRotorState().antennaOn, true, "park not complete on a suspect EL readback");
+    elRead = "45.000000"; // a trusted reading clears the flag
+    await sleep(1200);
+    s = hrot.getRotorState();
+    assert.strictEqual(s.elSuspect, false);
+    assert.strictEqual(s.el, 45);
+  } finally {
+    hrot._setDeps({ endpoint: null });
+    server.close();
+    config.applyEndpoints({ rotorType: prev.type, rotorElMax: prev.elMax, rotorParkAz: prev.parkAz, rotorParkEl: prev.parkEl });
+  }
+});
