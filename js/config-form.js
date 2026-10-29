@@ -629,6 +629,14 @@ function readFormConfig() {
       const t = val("cfg-rotor-type") || "rt21";
       const info = findRotorDriver(t);
       const ports = info && info.ports != null ? info.ports : 2;
+      // Hamlib keeps its EL port in rotorHamlibElDevice: leave the native EL device
+      // (RT-21 second port) as is, never overwrite it with the AZ port.
+      if (t === "hamlib") {
+        return (
+          readSerialDeviceField("cfg-rotor-el-device") ||
+          hostSerialDefault("/dev/ttyUSB1")
+        );
+      }
       if (ports === 1) {
         return (
           readSerialDeviceField("cfg-rotor-device") ||

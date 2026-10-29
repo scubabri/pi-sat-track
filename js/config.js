@@ -99,6 +99,12 @@ function sendEndpointsToServer(cfg) {
       rotorAzDevice: cfg.rotorAzDevice,
       rotorElDevice: cfg.rotorElDevice,
       rotorBaud: cfg.rotorBaud,
+      // Hamlib rotor (rotctld): model, separate AZ / EL controller, EL port / baud / model
+      rotorHamlibModel: cfg.rotorHamlibModel != null ? cfg.rotorHamlibModel : null,
+      rotorHamlibSplit: cfg.rotorHamlibSplit === true,
+      rotorHamlibElDevice: cfg.rotorHamlibElDevice || "",
+      rotorHamlibElBaud: cfg.rotorHamlibElBaud != null ? cfg.rotorHamlibElBaud : null,
+      rotorHamlibElModel: cfg.rotorHamlibElModel != null ? cfg.rotorHamlibElModel : null,
       rotorParkAz: cfg.rotorParkAz,
       rotorParkEl: cfg.rotorParkEl,
       rotorElMax: cfg.rotorElMax != null ? cfg.rotorElMax : 180,
