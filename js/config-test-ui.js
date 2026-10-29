@@ -132,7 +132,7 @@ function sendRotorStep(payload) {
     const timer = setTimeout(function () {
       pendingRotorTests.delete(id);
       reject(new Error("Rotor step timed out"));
-    }, 30000);
+    }, payload && (payload.action === "nudge" || payload.action === "goto") ? 105000 : 30000); // moves wait until settled (server max ~90 s)
     pendingRotorTests.set(id, {
       resolve: function (msg) {
         clearTimeout(timer);
